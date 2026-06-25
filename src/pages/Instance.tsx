@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { ChevronDown, ChevronLeft } from "lucide-react";
 import "uplot/dist/uPlot.min.css";
 import { InstanceDetails } from "@/components/instance/InstanceDetails";
 import { PingChart } from "@/components/instance/PingChart";
@@ -9,20 +9,43 @@ import {
   buildLoadTimeRangeOptions,
   buildPingTimeRangeOptions,
 } from "@/components/instance/chartShared";
+import { useAllNodeMeta, useVisibleNodeUuids } from "@/hooks/useNode";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import type { NodeInfo } from "@/types/komari";
 
 const DEFAULT_PING_HOURS = 4;
 
 export function Instance() {
   const { uuid } = useParams<{ uuid: string }>();
+  const navigate = useNavigate();
   const { data: config } = usePublicConfig();
   const themeSettings = useThemeSettings();
+  const allNodes = useAllNodeMeta();
+  const visibleNodeUuids = useVisibleNodeUuids();
   const [chartType, setChartType] = useState<"load" | "ping">("load");
   const [loadHours, setLoadHours] = useState(0);
   const [pingHours, setPingHours] = useState(DEFAULT_PING_HOURS);
   const chartControlsRef = useRef<HTMLDivElement | null>(null);
 
+  const nodeOptions = useMemo(() => {
+    const nodeByUuid = new Map(allNodes.map((node) => [node.uuid, node]));
+    const visibleNodes = visibleNodeUuids
+      .map((nodeUuid) => nodeByUuid.get(nodeUuid))
+      .filter((node): node is NodeInfo => Boolean(node));
+    const currentNode = uuid ? nodeByUuid.get(uuid) : undefined;
+
+    if (
+      currentNode &&
+      !visibleNodes.some((node) => node.uuid === currentNode.uuid)
+    ) {
+      return [currentNode, ...visibleNodes];
+    }
+
+    return visibleNodes;
+  }, [allNodes, uuid, visibleNodeUuids]);
+  const selectedNodeUuid =
+    uuid && nodeOptions.some((node) => node.uuid === uuid) ? uuid : "";
   const loadRanges = useMemo(
     () => buildLoadTimeRangeOptions(config?.record_preserve_time),
     [config?.record_preserve_time],
@@ -79,13 +102,48 @@ export function Instance() {
 
   return (
     <div className="flex flex-col gap-5 py-2">
-      <Link
-        to="/"
-        className="instance-page-back"
-      >
-        <ChevronLeft size={14} />
-        返回
-      </Link>
+      <div className="instance-topbar">
+        <Link
+          to="/"
+          className="instance-page-back"
+        >
+          <ChevronLeft size={14} />
+          返回
+        </Link>
+        <label className="instance-node-switcher" htmlFor="instance-node-switcher">
+          <span className="instance-node-switcher-label">切换 VPS</span>
+          <span className="instance-node-select-wrap">
+            <select
+              id="instance-node-switcher"
+              className="instance-node-select"
+              value={selectedNodeUuid}
+              disabled={
+                nodeOptions.length === 0 ||
+                (nodeOptions.length <= 1 && selectedNodeUuid !== "")
+              }
+              onChange={(event) => {
+                const nextUuid = event.currentTarget.value;
+                if (!nextUuid || nextUuid === uuid) return;
+                startTransition(() => {
+                  navigate(`/instance/${nextUuid}`);
+                });
+              }}
+            >
+              {selectedNodeUuid === "" && (
+                <option value="">
+                  {nodeOptions.length > 0 ? "当前节点不可用" : "加载节点中..."}
+                </option>
+              )}
+              {nodeOptions.map((node) => (
+                <option key={node.uuid} value={node.uuid}>
+                  {formatNodeOptionLabel(node)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} aria-hidden />
+          </span>
+        </label>
+      </div>
       <InstanceDetails uuid={uuid} onNodeReady={alignCharts} />
       <div ref={chartControlsRef} className="instance-chart-controls">
         <div className="instance-segmented">
@@ -181,4 +239,10 @@ export function Instance() {
       </div>
     </div>
   );
+}
+
+function formatNodeOptionLabel(node: NodeInfo) {
+  const name = node.name.trim() || node.uuid;
+  const group = String(node.group || "").trim();
+  return group ? `${group} / ${name}` : name;
 }
