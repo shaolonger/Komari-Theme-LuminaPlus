@@ -241,6 +241,11 @@ function shallowEqualNodeInfo(a: NodeInfo, b: NodeInfo) {
     a.virtualization === b.virtualization &&
     a.os === b.os &&
     a.kernel_version === b.kernel_version &&
+    a.version === b.version &&
+    a.ipv4 === b.ipv4 &&
+    a.ipv6 === b.ipv6 &&
+    a.capability_ping === b.capability_ping &&
+    a.capability_private_ping_targets === b.capability_private_ping_targets &&
     a.gpu_name === b.gpu_name &&
     a.mem_total === b.mem_total &&
     a.swap_total === b.swap_total &&

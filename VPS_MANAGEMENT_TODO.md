@@ -2,7 +2,7 @@
 
 Scope note: GPU monitoring, remote terminal, remote command execution, and automatic update controls are intentionally out of scope for this round.
 
-- [ ] Extend node/admin client models for safe agent metadata: version, public IPs, Ping capability, and private-target Ping capability.
+- [x] Extend node/admin client models for safe agent metadata: version, public IPs, Ping capability, and private-target Ping capability.
 - [ ] Add a homepage operations queue with practical VPS risks: offline/stale reporting, upcoming expiry, traffic quota pressure, and Ping binding misconfiguration.
 - [ ] Let homepage risk chips filter the node grid so urgent VPS can be inspected without manual scanning.
 - [ ] Enhance the instance detail page with operations-oriented sections for agent identity, Ping capability, traffic quota, expiry, and cost metadata.

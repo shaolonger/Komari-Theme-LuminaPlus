@@ -27,6 +27,15 @@ const looseBool = z
     return Boolean(normalized);
   })
   .catch(false);
+const looseBoolNullable = z
+  .union([z.boolean(), z.number(), z.string()])
+  .nullish()
+  .transform((v) => {
+    if (v == null) return null;
+    const parsed = looseBool.safeParse(v);
+    return parsed.success ? parsed.data : null;
+  })
+  .catch(null);
 
 export const NodeInfoSchema = z
   .object({
@@ -41,6 +50,11 @@ export const NodeInfoSchema = z
     virtualization: looseString.default(""),
     os: looseString.default(""),
     kernel_version: looseString.default(""),
+    version: looseString.default(""),
+    ipv4: looseString.default(""),
+    ipv6: looseString.default(""),
+    capability_ping: looseBoolNullable.default(null),
+    capability_private_ping_targets: looseBoolNullable.default(null),
     gpu_name: looseString.default(""),
     mem_total: looseNumber.default(0),
     swap_total: looseNumber.default(0),
@@ -72,6 +86,11 @@ export interface NodeInfo {
   virtualization: string;
   os: string;
   kernel_version: string;
+  version: string;
+  ipv4: string;
+  ipv6: string;
+  capability_ping: boolean | null;
+  capability_private_ping_targets: boolean | null;
   gpu_name: string;
   mem_total: number;
   swap_total: number;
@@ -204,6 +223,11 @@ export const AdminClientSchema = z
     group: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     region: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     weight: looseNumber.default(0),
+    version: looseString.default(""),
+    ipv4: looseString.default(""),
+    ipv6: looseString.default(""),
+    capability_ping: looseBoolNullable.default(null),
+    capability_private_ping_targets: looseBoolNullable.default(null),
   })
   .passthrough();
 
@@ -213,6 +237,11 @@ export interface AdminClient {
   group?: string | null;
   region?: string | null;
   weight: number;
+  version: string;
+  ipv4: string;
+  ipv6: string;
+  capability_ping: boolean | null;
+  capability_private_ping_targets: boolean | null;
 }
 
 export const MeSchema = z
