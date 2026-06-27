@@ -8,4 +8,4 @@ Scope note: GPU monitoring, remote terminal, remote command execution, and autom
 - [x] Enhance the instance detail page with operations-oriented sections for agent identity, Ping capability, traffic quota, expiry, and cost metadata.
 - [x] Add Ping diagnostics to theme management so bound nodes with disabled or potentially restricted Ping capability are visible before saving.
 - [x] Cover the new risk and metadata logic with focused tests.
-- [ ] Run the project checks, update the theme version, tag, push, and publish a GitHub release.
+- [x] Run the project checks, update the theme version, tag, push, and publish a GitHub release.
