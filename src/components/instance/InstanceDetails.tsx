@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
-import { formatBytes, formatUptimeDays } from "@/utils/format";
-import { resolveTrafficUsage } from "@/utils/traffic";
+import { formatBytes, formatExpireDays, formatUptimeDays } from "@/utils/format";
+import { formatRenewalPrice } from "@/utils/billing";
+import { resolveTrafficUsage, trafficTypeLabel } from "@/utils/traffic";
 import { InstancePanel } from "./InstancePanel";
 
 // Intl.DateTimeFormat 构造开销大，复用一个实例，别每次 metrics 更新都重建
@@ -10,6 +11,17 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   second: "2-digit",
 });
+
+function formatCapability(value: boolean | null, enabled = "已启用", disabled = "未启用") {
+  if (value === true) return enabled;
+  if (value === false) return disabled;
+  return "未知";
+}
+
+function formatIpAddress(value: string) {
+  const trimmed = value.trim();
+  return trimmed || "—";
+}
 
 export function InstanceDetails({
   uuid,
@@ -51,6 +63,11 @@ export function InstanceDetails({
     metrics.updatedAt > 0 ? TIME_FORMATTER.format(metrics.updatedAt) : "—";
   const trimmedName = meta.name?.trim();
   const panelTitle = trimmedName ? `${trimmedName} 信息` : "实例信息";
+  const expire = formatExpireDays(meta.expired_at);
+  const expireLabel = expire.unit ? `${expire.value}${expire.unit}` : expire.value;
+  const renewalPrice = formatRenewalPrice(meta) ?? "未填写";
+  const trafficLimitLabel =
+    meta.traffic_limit > 0 ? formatBytes(meta.traffic_limit) : "不限";
 
   return (
     <InstancePanel
@@ -69,7 +86,6 @@ export function InstanceDetails({
           />
           <InfoRow label="架构" value={meta.arch || "—"} />
           <InfoRow label="虚拟化" value={meta.virtualization || "—"} />
-          <InfoRow label="显卡" value={meta.gpu_name || "—"} />
           <InfoRow label="操作系统" value={meta.os || "—"} />
         </div>
 
@@ -121,6 +137,31 @@ export function InstanceDetails({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="instance-info-group">
+          <div className="instance-info-group-title">Agent</div>
+          <InfoRow label="版本" value={meta.version || "未知"} />
+          <InfoRow label="内核" value={meta.kernel_version || "—"} />
+          <InfoRow label="IPv4" value={formatIpAddress(meta.ipv4)} />
+          <InfoRow label="IPv6" value={formatIpAddress(meta.ipv6)} />
+        </div>
+
+        <div className="instance-info-group">
+          <div className="instance-info-group-title">管理</div>
+          <InfoRow label="Ping 能力" value={formatCapability(meta.capability_ping)} />
+          <InfoRow
+            label="私有目标 Ping"
+            value={formatCapability(
+              meta.capability_private_ping_targets,
+              "允许",
+              "默认限制",
+            )}
+          />
+          <InfoRow label="续费" value={renewalPrice} />
+          <InfoRow label="到期" value={expireLabel} />
+          <InfoRow label="流量规则" value={trafficTypeLabel(meta.traffic_limit_type)} />
+          <InfoRow label="流量额度" value={trafficLimitLabel} />
         </div>
       </div>
     </InstancePanel>
