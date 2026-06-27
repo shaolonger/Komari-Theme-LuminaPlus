@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CircleDollarSign } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,6 +26,12 @@ import {
   type OverviewRating,
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
+import { invertHomepagePingTaskBindings } from "@/utils/pingTasks";
+import {
+  getVpsOperationalRisks,
+  type VpsRisk,
+  type VpsRiskKind,
+} from "@/utils/vpsRisk";
 import { Spinner } from "@/components/ui/Spinner";
 import { CompactNodeCard } from "./CompactNodeCard";
 import { CostSummary } from "./CostSummary";
@@ -44,9 +51,97 @@ interface HomeOverview {
   netDown: number;
 }
 
+type HomeRiskFilter = "all" | "attention" | VpsRiskKind;
+type HomeRiskItem = VpsRisk & { name: string };
+
+const HOME_RISK_FILTERS: Array<{ value: HomeRiskFilter; label: string }> = [
+  { value: "all", label: "全部" },
+  { value: "attention", label: "需处理" },
+  { value: "status", label: "上报" },
+  { value: "expiry", label: "到期" },
+  { value: "traffic", label: "流量" },
+  { value: "ping", label: "Ping" },
+];
+
 function formatCompactBytes(value: number): string {
   const [amount, unit = "B"] = formatBytes(value).split(" ");
   return `${amount}${unit[0]}`;
+}
+
+function countRiskNodes(risks: HomeRiskItem[], filter: HomeRiskFilter) {
+  if (filter === "all") return 0;
+  const uuids = new Set<string>();
+  for (const risk of risks) {
+    if (filter === "attention" || risk.kind === filter) {
+      uuids.add(risk.uuid);
+    }
+  }
+  return uuids.size;
+}
+
+function riskMatchesFilter(risks: HomeRiskItem[] | undefined, filter: HomeRiskFilter) {
+  if (filter === "all") return true;
+  if (!risks || risks.length === 0) return false;
+  return filter === "attention" || risks.some((risk) => risk.kind === filter);
+}
+
+function HomeOperationsQueue({
+  risks,
+  selectedFilter,
+  onSelectFilter,
+}: {
+  risks: HomeRiskItem[];
+  selectedFilter: HomeRiskFilter;
+  onSelectFilter: (filter: HomeRiskFilter) => void;
+}) {
+  const topRisks = risks.slice(0, 6);
+  const riskNodes = countRiskNodes(risks, "attention");
+
+  return (
+    <section className="home-ops-panel" aria-label="VPS 运维事项">
+      <div className="home-ops-head">
+        <div>
+          <h2>运维事项</h2>
+          <p>{riskNodes > 0 ? `${riskNodes} 台 VPS 需要关注` : "当前没有高优先级事项"}</p>
+        </div>
+        <div className="home-ops-filters" role="group" aria-label="运维事项筛选">
+          {HOME_RISK_FILTERS.map((filter) => {
+            const count = countRiskNodes(risks, filter.value);
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                data-active={selectedFilter === filter.value ? "true" : "false"}
+                onClick={() => onSelectFilter(filter.value)}
+              >
+                <span>{filter.label}</span>
+                {filter.value !== "all" && <strong>{count}</strong>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="home-ops-list">
+        {topRisks.length > 0 ? (
+          topRisks.map((risk) => (
+            <Link
+              key={`${risk.uuid}-${risk.kind}-${risk.title}`}
+              to={`/instance/${risk.uuid}`}
+              className="home-ops-item"
+              data-severity={risk.severity}
+              title={`${risk.name}: ${risk.detail}`}
+            >
+              <span className="home-ops-node">{risk.name}</span>
+              <span className="home-ops-title">{risk.title}</span>
+              <span className="home-ops-detail">{risk.detail}</span>
+            </Link>
+          ))
+        ) : (
+          <div className="home-ops-empty">暂无需要处理的 VPS</div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function HomeOverviewCards({
@@ -267,6 +362,7 @@ export function NodeGrid() {
   const themeSettings = useThemeSettings();
   const { mode } = useViewMode();
   const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
+  const [selectedRiskFilter, setSelectedRiskFilter] = useState<HomeRiskFilter>("all");
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
   useHomepagePingOverview();
 
@@ -300,6 +396,56 @@ export function NodeGrid() {
       netDown,
     };
   }, [visibleNodes]);
+  const metaByUuid = useMemo(
+    () => new Map(allMeta.map((node) => [node.uuid, node])),
+    [allMeta],
+  );
+  const selectedPingTaskByClient = useMemo(
+    () =>
+      themeSettings.isReady
+        ? invertHomepagePingTaskBindings(themeSettings.homepagePingBindings)
+        : new Map<string, number>(),
+    [themeSettings.homepagePingBindings, themeSettings.isReady],
+  );
+  const risksByUuid = useMemo(() => {
+    const next = new Map<string, HomeRiskItem[]>();
+    for (const node of visibleNodes) {
+      const meta = metaByUuid.get(node.uuid);
+      if (!meta) continue;
+      const risks = getVpsOperationalRisks({
+        uuid: node.uuid,
+        online: node.online,
+        updatedAt: node.updatedAt,
+        trafficUp: node.trafficUp,
+        trafficDown: node.trafficDown,
+        trafficLimit: meta.traffic_limit,
+        trafficLimitType: meta.traffic_limit_type,
+        expiredAt: meta.expired_at,
+        capabilityPing: meta.capability_ping,
+        hasPingBinding: selectedPingTaskByClient.has(node.uuid),
+      }).map((risk) => ({
+        ...risk,
+        name: meta.name.trim() || node.uuid,
+      }));
+      if (risks.length > 0) {
+        next.set(node.uuid, risks);
+      }
+    }
+    return next;
+  }, [metaByUuid, selectedPingTaskByClient, visibleNodes]);
+  const operationRisks = useMemo(
+    () =>
+      Array.from(risksByUuid.values())
+        .flat()
+        .sort((left, right) => {
+          const severityDelta =
+            (right.severity === "critical" ? 1 : 0) -
+            (left.severity === "critical" ? 1 : 0);
+          if (severityDelta !== 0) return severityDelta;
+          return left.name.localeCompare(right.name, "zh-CN");
+        }),
+    [risksByUuid],
+  );
   const showHomeOverview = themeSettings.isReady && themeSettings.showHomeOverview;
   const hasNodes = allMeta.length > 0;
   // 资产概览卡片(剩余价值)始终显示,这样切换花费相关设置不会让整行重排。
@@ -344,21 +490,43 @@ export function NodeGrid() {
     [visibleNodes, themeSettings.homeGroupOrder, themeSettings.isReady],
   );
   const filteredNodes = useMemo(() => {
-    const filtered =
+    const groupFiltered =
       selectedGroup === HOME_ALL_GROUP
         ? visibleNodes
         : visibleNodes.filter((node) => getHomeGroupLabel(node.group) === selectedGroup);
+    const filtered =
+      selectedRiskFilter === "all"
+        ? groupFiltered
+        : groupFiltered.filter((node) =>
+            riskMatchesFilter(risksByUuid.get(node.uuid), selectedRiskFilter),
+          );
     return sortHomeNodeSummaries(
       filtered,
       themeSettings.isReady && themeSettings.moveOfflineNodesBack,
     );
-  }, [visibleNodes, selectedGroup, themeSettings.isReady, themeSettings.moveOfflineNodesBack]);
+  }, [
+    visibleNodes,
+    selectedGroup,
+    selectedRiskFilter,
+    risksByUuid,
+    themeSettings.isReady,
+    themeSettings.moveOfflineNodesBack,
+  ]);
 
   useEffect(() => {
     if (selectedGroup !== HOME_ALL_GROUP && !groupOptions.includes(selectedGroup)) {
       setSelectedGroup(HOME_ALL_GROUP);
     }
   }, [groupOptions, selectedGroup]);
+
+  useEffect(() => {
+    if (
+      selectedRiskFilter !== "all" &&
+      countRiskNodes(operationRisks, selectedRiskFilter) === 0
+    ) {
+      setSelectedRiskFilter("all");
+    }
+  }, [operationRisks, selectedRiskFilter]);
 
   // summary 对象每隔约 1s tick 就换新引用,导致 filteredNodes(以及直接映射 uuid)
   // 不停重建。改用稳定的 uuid 签名作为卡片列表的 key,这样只有集合或顺序真正变化时
@@ -420,6 +588,11 @@ export function NodeGrid() {
             onOpenCostSummary={() => setCostSummaryOpen(true)}
           />
         )}
+        <HomeOperationsQueue
+          risks={operationRisks}
+          selectedFilter={selectedRiskFilter}
+          onSelectFilter={setSelectedRiskFilter}
+        />
         <div className="flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
           <span className="text-[15px]">尚未连接到任何节点</span>
           <span className="text-[12px]">等待后端推送或前往管理后台添加</span>
@@ -454,6 +627,11 @@ export function NodeGrid() {
           onOpenCostSummary={() => setCostSummaryOpen(true)}
         />
       )}
+      <HomeOperationsQueue
+        risks={operationRisks}
+        selectedFilter={selectedRiskFilter}
+        onSelectFilter={setSelectedRiskFilter}
+      />
       {showGroupTabs && (
         <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
           <GroupTabs
@@ -464,7 +642,11 @@ export function NodeGrid() {
         </div>
       )}
       <div className={gridClassName} style={{ gridTemplateColumns: gridColumns }}>
-        {cards}
+        {cards.length > 0 ? (
+          cards
+        ) : (
+          <div className="home-filter-empty">当前筛选下没有匹配的 VPS</div>
+        )}
       </div>
     </>
   );

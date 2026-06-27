@@ -27,6 +27,7 @@ export interface HomeNodeSummary {
   trafficDown: number;
   netUp: number;
   netDown: number;
+  updatedAt: number;
 }
 
 interface TrafficTrendSeries {
@@ -1023,6 +1024,7 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
         trafficDown: metrics?.trafficDown ?? 0,
         netUp: metrics?.netUp ?? 0,
         netDown: metrics?.netDown ?? 0,
+        updatedAt: metrics?.updatedAt ?? 0,
       };
     })
     .filter((item): item is HomeNodeSummary => Boolean(item));
@@ -1042,7 +1044,8 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
         prev.trafficUp === item.trafficUp &&
         prev.trafficDown === item.trafficDown &&
         prev.netUp === item.netUp &&
-        prev.netDown === item.netDown
+        prev.netDown === item.netDown &&
+        prev.updatedAt === item.updatedAt
       );
     })
   ) {
