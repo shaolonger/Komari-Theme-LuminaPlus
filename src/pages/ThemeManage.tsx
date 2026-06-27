@@ -52,6 +52,7 @@ import {
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
+import { buildPingDiagnostics } from "@/utils/pingDiagnostics";
 import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
@@ -507,6 +508,15 @@ export function ThemeManage() {
   const assignedNodeCount = useMemo(
     () => Object.values(draftBindings).reduce((total, clients) => total + clients.length, 0),
     [draftBindings],
+  );
+  const pingDiagnostics = useMemo(
+    () =>
+      buildPingDiagnostics({
+        tasks: sortedTasks,
+        clients: sortedClients,
+        bindings: draftBindings,
+      }),
+    [draftBindings, sortedClients, sortedTasks],
   );
 
   // 每个 client 归属哪个 task 的反查,只在 draftBindings 变化时重建。与「全选可用」reducer
@@ -1245,6 +1255,32 @@ export function ThemeManage() {
               </strong>
             </div>
           </div>
+
+          {pingDiagnostics.length > 0 && (
+            <div className="theme-manage-diagnostics" role="alert">
+              <div className="theme-manage-diagnostics-head">
+                <strong>Ping 诊断</strong>
+                <span>{pingDiagnostics.length} 项</span>
+              </div>
+              <div className="theme-manage-diagnostics-list">
+                {pingDiagnostics.slice(0, 6).map((diagnostic) => (
+                  <div
+                    key={`${diagnostic.kind}-${diagnostic.taskId}-${diagnostic.clientUuid}`}
+                    className="theme-manage-diagnostic-item"
+                  >
+                    <span>{diagnostic.title}</span>
+                    <p>{diagnostic.detail}</p>
+                  </div>
+                ))}
+                {pingDiagnostics.length > 6 && (
+                  <div className="theme-manage-diagnostic-item">
+                    <span>还有 {pingDiagnostics.length - 6} 项</span>
+                    <p>可通过搜索任务或节点逐项检查。</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {(tasksLoading || clientsLoading) && (
             <div className="flex min-h-[20vh] items-center justify-center">

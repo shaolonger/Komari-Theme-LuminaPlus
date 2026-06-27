@@ -368,6 +368,67 @@ body::after {
   font-size: 13px;
 }
 
+.theme-manage-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--status-offline) 24%, var(--hairline));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--status-offline) 7%, var(--surface));
+  padding: 12px;
+}
+
+.theme-manage-diagnostics-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.theme-manage-diagnostics-head span {
+  color: var(--status-offline);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.theme-manage-diagnostics-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 8px;
+}
+
+.theme-manage-diagnostic-item {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--status-offline) 16%, var(--hairline));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elev) 76%, transparent);
+  padding: 10px 11px;
+}
+
+.theme-manage-diagnostic-item span,
+.theme-manage-diagnostic-item p {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-manage-diagnostic-item span {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.theme-manage-diagnostic-item p {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 560;
+}
+
 .control-group {
   display: inline-flex;
   align-items: center;

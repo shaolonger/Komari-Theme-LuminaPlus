@@ -6,6 +6,6 @@ Scope note: GPU monitoring, remote terminal, remote command execution, and autom
 - [x] Add a homepage operations queue with practical VPS risks: offline/stale reporting, upcoming expiry, traffic quota pressure, and Ping binding misconfiguration.
 - [x] Let homepage risk chips filter the node grid so urgent VPS can be inspected without manual scanning.
 - [x] Enhance the instance detail page with operations-oriented sections for agent identity, Ping capability, traffic quota, expiry, and cost metadata.
-- [ ] Add Ping diagnostics to theme management so bound nodes with disabled or potentially restricted Ping capability are visible before saving.
+- [x] Add Ping diagnostics to theme management so bound nodes with disabled or potentially restricted Ping capability are visible before saving.
 - [x] Cover the new risk and metadata logic with focused tests.
 - [ ] Run the project checks, update the theme version, tag, push, and publish a GitHub release.
