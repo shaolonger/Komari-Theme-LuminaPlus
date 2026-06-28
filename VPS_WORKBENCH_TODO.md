@@ -7,4 +7,4 @@ Scope note: this round focuses on daily VPS management decisions. GPU, remote te
 - [x] Add a homepage VPS management workbench with renewal, traffic, data quality, and Ping health summaries.
 - [x] Add homepage search and sort controls for larger VPS fleets.
 - [x] Enhance the instance page with a concise decision summary: completeness, renewal pressure, traffic estimate, and Ping/data-quality state.
-- [ ] Run full checks, update the theme version, tag, push, and publish a GitHub release.
+- [x] Run full checks, update the theme version, tag, push, and publish a GitHub release.
