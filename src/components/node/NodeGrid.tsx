@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleDollarSign } from "lucide-react";
+import { ArrowUpDown, CircleDollarSign, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { useViewMode } from "@/hooks/useViewMode";
+import type { HomeNodeSummary } from "@/services/wsStore";
 import {
   formatBytes,
   formatByteRate,
   formatByteRateLabel,
+  trimFixed,
 } from "@/utils/format";
 import { calculateCostSummary, formatCnyMoney, getExchangeRates } from "@/utils/cost";
 import { speedRateColor } from "@/utils/metricTone";
@@ -27,11 +29,15 @@ import {
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
 import { invertHomepagePingTaskBindings } from "@/utils/pingTasks";
+import type { VpsRisk, VpsRiskKind } from "@/utils/vpsRisk";
 import {
-  getVpsOperationalRisks,
-  type VpsRisk,
-  type VpsRiskKind,
-} from "@/utils/vpsRisk";
+  buildVpsWorkbenchNode,
+  searchWorkbenchNode,
+  sortWorkbenchNodes,
+  summarizeWorkbench,
+  type VpsWorkbenchNode,
+  type WorkbenchSortKey,
+} from "@/utils/vpsWorkbench";
 import { Spinner } from "@/components/ui/Spinner";
 import { CompactNodeCard } from "./CompactNodeCard";
 import { CostSummary } from "./CostSummary";
@@ -53,6 +59,15 @@ interface HomeOverview {
 
 type HomeRiskFilter = "all" | "attention" | VpsRiskKind;
 type HomeRiskItem = VpsRisk & { name: string };
+
+const WORKBENCH_SORT_OPTIONS: Array<{ value: WorkbenchSortKey; label: string }> = [
+  { value: "weight", label: "默认排序" },
+  { value: "risk", label: "风险优先" },
+  { value: "expiry", label: "到期时间" },
+  { value: "traffic", label: "流量压力" },
+  { value: "completeness", label: "资料缺失" },
+  { value: "name", label: "名称" },
+];
 
 const HOME_RISK_FILTERS: Array<{ value: HomeRiskFilter; label: string }> = [
   { value: "all", label: "全部" },
@@ -83,6 +98,171 @@ function riskMatchesFilter(risks: HomeRiskItem[] | undefined, filter: HomeRiskFi
   if (filter === "all") return true;
   if (!risks || risks.length === 0) return false;
   return filter === "attention" || risks.some((risk) => risk.kind === filter);
+}
+
+function formatExpirePressure(node: VpsWorkbenchNode) {
+  if (node.expireDays == null) return "到期未知";
+  if (node.expireDays < 0) return "已过期";
+  if (node.expireDays === 0) return "今日到期";
+  return `${node.expireDays} 天后到期`;
+}
+
+function formatExhaustIn(seconds: number | null) {
+  if (seconds == null) return "当前无明显消耗";
+  if (seconds <= 0) return "已耗尽";
+  const days = seconds / 86400;
+  if (days >= 1) return `约 ${trimFixed(days, days >= 10 ? 0 : 1)} 天耗尽`;
+  const hours = seconds / 3600;
+  if (hours >= 1) return `约 ${trimFixed(hours, 1)} 小时耗尽`;
+  return "不足 1 小时耗尽";
+}
+
+function WorkbenchCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "warning" | "critical" | "ok";
+}) {
+  return (
+    <article className="home-workbench-card" data-tone={tone ?? "ok"}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+function HomeWorkbenchPanel({ nodes }: { nodes: VpsWorkbenchNode[] }) {
+  const summary = useMemo(() => summarizeWorkbench(nodes), [nodes]);
+  const incompleteNodes = useMemo(
+    () => sortWorkbenchNodes(nodes.filter((node) => node.completeness.ratio < 1), "completeness").slice(0, 3),
+    [nodes],
+  );
+  const renewalNodes = useMemo(
+    () =>
+      sortWorkbenchNodes(
+        nodes.filter((node) =>
+          ["expired", "soon", "month"].includes(node.expiryBucket),
+        ),
+        "expiry",
+      ).slice(0, 3),
+    [nodes],
+  );
+  const trafficNodes = useMemo(
+    () =>
+      sortWorkbenchNodes(
+        nodes.filter((node) =>
+          ["warning", "critical", "exhausted"].includes(node.traffic.status),
+        ),
+        "traffic",
+      ).slice(0, 3),
+    [nodes],
+  );
+  const pingNodes = useMemo(
+    () =>
+      nodes
+        .filter((node) =>
+          ["disabled", "no-data", "warning", "critical"].includes(node.ping.state),
+        )
+        .slice(0, 3),
+    [nodes],
+  );
+
+  return (
+    <section className="home-workbench" aria-label="VPS 管理工作台">
+      <div className="home-workbench-head">
+        <div>
+          <h2>VPS 管理工作台</h2>
+          <p>续费、流量、资料完整度和 Ping 覆盖的日常决策摘要。</p>
+        </div>
+      </div>
+      <div className="home-workbench-grid">
+        <WorkbenchCard
+          label="资料完整度"
+          value={`${summary.total - summary.incomplete}/${summary.total}`}
+          detail={summary.incomplete > 0 ? `${summary.incomplete} 台缺少关键资料` : "资料已完整"}
+          tone={summary.incomplete > 0 ? "warning" : "ok"}
+        />
+        <WorkbenchCard
+          label="续费压力"
+          value={`${summary.expired + summary.dueSoon}`}
+          detail={`30 天内 ${summary.dueMonth} 台，已过期 ${summary.expired} 台`}
+          tone={summary.expired > 0 ? "critical" : summary.dueSoon > 0 || summary.dueMonth > 0 ? "warning" : "ok"}
+        />
+        <WorkbenchCard
+          label="流量压力"
+          value={`${summary.trafficPressure}`}
+          detail={summary.trafficPressure > 0 ? "存在临界或预计耗尽节点" : "暂无流量压力"}
+          tone={summary.trafficPressure > 0 ? "warning" : "ok"}
+        />
+        <WorkbenchCard
+          label="Ping 状态"
+          value={`${summary.pingAttention}`}
+          detail={summary.pingAttention > 0 ? "存在不可用或无数据绑定" : "Ping 覆盖正常"}
+          tone={summary.pingAttention > 0 ? "warning" : "ok"}
+        />
+      </div>
+      <div className="home-workbench-lists">
+        <WorkbenchList
+          title="资料待补"
+          empty="关键资料完整"
+          nodes={incompleteNodes}
+          getDetail={(node) => node.completeness.missing.map((item) => item.label).slice(0, 3).join("、")}
+        />
+        <WorkbenchList
+          title="续费关注"
+          empty="近期无需续费"
+          nodes={renewalNodes}
+          getDetail={formatExpirePressure}
+        />
+        <WorkbenchList
+          title="流量预估"
+          empty="暂无流量压力"
+          nodes={trafficNodes}
+          getDetail={(node) => formatExhaustIn(node.traffic.exhaustInSeconds)}
+        />
+        <WorkbenchList
+          title="Ping 关注"
+          empty="Ping 状态正常"
+          nodes={pingNodes}
+          getDetail={(node) => node.ping.detail}
+        />
+      </div>
+    </section>
+  );
+}
+
+function WorkbenchList({
+  title,
+  empty,
+  nodes,
+  getDetail,
+}: {
+  title: string;
+  empty: string;
+  nodes: VpsWorkbenchNode[];
+  getDetail: (node: VpsWorkbenchNode) => string;
+}) {
+  return (
+    <section className="home-workbench-list">
+      <h3>{title}</h3>
+      {nodes.length > 0 ? (
+        nodes.map((node) => (
+          <Link key={node.uuid} to={`/instance/${node.uuid}`} title={node.name}>
+            <span>{node.name}</span>
+            <strong>{getDetail(node) || "—"}</strong>
+          </Link>
+        ))
+      ) : (
+        <p>{empty}</p>
+      )}
+    </section>
+  );
 }
 
 function HomeOperationsQueue({
@@ -363,6 +543,8 @@ export function NodeGrid() {
   const { mode } = useViewMode();
   const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<HomeRiskFilter>("all");
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [workbenchSort, setWorkbenchSort] = useState<WorkbenchSortKey>("weight");
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
   useHomepagePingOverview();
 
@@ -407,32 +589,44 @@ export function NodeGrid() {
         : new Map<string, number>(),
     [themeSettings.homepagePingBindings, themeSettings.isReady],
   );
-  const risksByUuid = useMemo(() => {
-    const next = new Map<string, HomeRiskItem[]>();
+  const workbenchNodesByUuid = useMemo(() => {
+    const next = new Map<string, VpsWorkbenchNode>();
     for (const node of visibleNodes) {
       const meta = metaByUuid.get(node.uuid);
       if (!meta) continue;
-      const risks = getVpsOperationalRisks({
-        uuid: node.uuid,
-        online: node.online,
-        updatedAt: node.updatedAt,
-        trafficUp: node.trafficUp,
-        trafficDown: node.trafficDown,
-        trafficLimit: meta.traffic_limit,
-        trafficLimitType: meta.traffic_limit_type,
-        expiredAt: meta.expired_at,
-        capabilityPing: meta.capability_ping,
-        hasPingBinding: selectedPingTaskByClient.has(node.uuid),
-      }).map((risk) => ({
+      next.set(
+        node.uuid,
+        buildVpsWorkbenchNode({
+          meta,
+          online: node.online,
+          updatedAt: node.updatedAt,
+          trafficUp: node.trafficUp,
+          trafficDown: node.trafficDown,
+          netUp: node.netUp,
+          netDown: node.netDown,
+          hasPingBinding: selectedPingTaskByClient.has(node.uuid),
+        }),
+      );
+    }
+    return next;
+  }, [metaByUuid, selectedPingTaskByClient, visibleNodes]);
+  const workbenchNodes = useMemo(
+    () => Array.from(workbenchNodesByUuid.values()),
+    [workbenchNodesByUuid],
+  );
+  const risksByUuid = useMemo(() => {
+    const next = new Map<string, HomeRiskItem[]>();
+    for (const node of workbenchNodesByUuid.values()) {
+      const risks = node.risks.map((risk) => ({
         ...risk,
-        name: meta.name.trim() || node.uuid,
+        name: node.name,
       }));
       if (risks.length > 0) {
         next.set(node.uuid, risks);
       }
     }
     return next;
-  }, [metaByUuid, selectedPingTaskByClient, visibleNodes]);
+  }, [workbenchNodesByUuid]);
   const operationRisks = useMemo(
     () =>
       Array.from(risksByUuid.values())
@@ -494,25 +688,55 @@ export function NodeGrid() {
       selectedGroup === HOME_ALL_GROUP
         ? visibleNodes
         : visibleNodes.filter((node) => getHomeGroupLabel(node.group) === selectedGroup);
-    const filtered =
+    const normalizedSearch = nodeSearch.trim().toLowerCase();
+    const searchFiltered = normalizedSearch
+      ? groupFiltered.filter((node) => {
+          const workbenchNode = workbenchNodesByUuid.get(node.uuid);
+          const meta = metaByUuid.get(node.uuid);
+          if (workbenchNode && meta) {
+            return searchWorkbenchNode(workbenchNode, meta, normalizedSearch);
+          }
+          return node.uuid.toLowerCase().includes(normalizedSearch);
+        })
+      : groupFiltered;
+    const riskFiltered =
       selectedRiskFilter === "all"
-        ? groupFiltered
-        : groupFiltered.filter((node) =>
+        ? searchFiltered
+        : searchFiltered.filter((node) =>
             riskMatchesFilter(risksByUuid.get(node.uuid), selectedRiskFilter),
           );
-    return sortHomeNodeSummaries(
-      filtered,
-      themeSettings.isReady && themeSettings.moveOfflineNodesBack,
+    const moveOfflineBack = themeSettings.isReady && themeSettings.moveOfflineNodesBack;
+
+    if (workbenchSort === "weight") {
+      return sortHomeNodeSummaries(riskFiltered, moveOfflineBack);
+    }
+
+    const nodeByUuid = new Map<string, HomeNodeSummary>(
+      riskFiltered.map((node) => [node.uuid, node]),
     );
+    const sortableWorkbenchNodes = riskFiltered
+      .map((node) => workbenchNodesByUuid.get(node.uuid))
+      .filter((node): node is VpsWorkbenchNode => Boolean(node));
+    const sortedNodes = sortWorkbenchNodes(sortableWorkbenchNodes, workbenchSort)
+      .map((node) => nodeByUuid.get(node.uuid))
+      .filter((node): node is HomeNodeSummary => Boolean(node));
+    const unmatchedNodes = riskFiltered.filter((node) => !workbenchNodesByUuid.has(node.uuid));
+    return [
+      ...sortedNodes,
+      ...sortHomeNodeSummaries(unmatchedNodes, moveOfflineBack),
+    ];
   }, [
     visibleNodes,
     selectedGroup,
     selectedRiskFilter,
+    nodeSearch,
+    workbenchSort,
+    workbenchNodesByUuid,
+    metaByUuid,
     risksByUuid,
     themeSettings.isReady,
     themeSettings.moveOfflineNodesBack,
   ]);
-
   useEffect(() => {
     if (selectedGroup !== HOME_ALL_GROUP && !groupOptions.includes(selectedGroup)) {
       setSelectedGroup(HOME_ALL_GROUP);
@@ -627,11 +851,38 @@ export function NodeGrid() {
           onOpenCostSummary={() => setCostSummaryOpen(true)}
         />
       )}
+      <HomeWorkbenchPanel nodes={workbenchNodes} />
       <HomeOperationsQueue
         risks={operationRisks}
         selectedFilter={selectedRiskFilter}
         onSelectFilter={setSelectedRiskFilter}
       />
+      <div className="home-workbench-controls">
+        <label className="home-workbench-search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            type="search"
+            value={nodeSearch}
+            onChange={(event) => setNodeSearch(event.target.value)}
+            placeholder="搜索名称、UUID、分组、地区或备注"
+            aria-label="搜索 VPS"
+          />
+        </label>
+        <label className="home-workbench-sort">
+          <ArrowUpDown size={15} aria-hidden="true" />
+          <select
+            value={workbenchSort}
+            onChange={(event) => setWorkbenchSort(event.target.value as WorkbenchSortKey)}
+            aria-label="排序 VPS"
+          >
+            {WORKBENCH_SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {showGroupTabs && (
         <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
           <GroupTabs
