@@ -1,8 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
-import { formatBytes, formatExpireDays, formatUptimeDays } from "@/utils/format";
+import { useHomepagePingOverview, usePingMini } from "@/hooks/usePingMini";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { formatBytes, formatExpireDays, formatUptimeDays, trimFixed } from "@/utils/format";
 import { formatRenewalPrice } from "@/utils/billing";
+import { invertHomepagePingTaskBindings } from "@/utils/pingTasks";
 import { resolveTrafficUsage, trafficTypeLabel } from "@/utils/traffic";
+import {
+  buildVpsWorkbenchNode,
+  type VpsWorkbenchNode,
+} from "@/utils/vpsWorkbench";
 import { InstancePanel } from "./InstancePanel";
 
 // Intl.DateTimeFormat 构造开销大，复用一个实例，别每次 metrics 更新都重建
@@ -23,6 +30,63 @@ function formatIpAddress(value: string) {
   return trimmed || "—";
 }
 
+function formatExpirePressure(node: VpsWorkbenchNode) {
+  if (node.expireDays == null) return "到期未知";
+  if (node.expireDays < 0) return "已过期";
+  if (node.expireDays === 0) return "今日到期";
+  return `${node.expireDays} 天后到期`;
+}
+
+function formatExhaustIn(seconds: number | null) {
+  if (seconds == null) return "当前无明显消耗";
+  if (seconds <= 0) return "已耗尽";
+  const days = seconds / 86400;
+  if (days >= 1) return `约 ${trimFixed(days, days >= 10 ? 0 : 1)} 天耗尽`;
+  const hours = seconds / 3600;
+  if (hours >= 1) return `约 ${trimFixed(hours, 1)} 小时耗尽`;
+  return "不足 1 小时耗尽";
+}
+
+function decisionToneFromPing(state: VpsWorkbenchNode["ping"]["state"]) {
+  if (state === "critical" || state === "disabled") return "critical";
+  if (state === "ok") return "ok";
+  return "warning";
+}
+
+function decisionToneFromExpiry(bucket: VpsWorkbenchNode["expiryBucket"]) {
+  if (bucket === "expired") return "critical";
+  if (bucket === "soon" || bucket === "month" || bucket === "unknown") {
+    return "warning";
+  }
+  return "ok";
+}
+
+function decisionToneFromTraffic(status: VpsWorkbenchNode["traffic"]["status"]) {
+  if (status === "exhausted" || status === "critical") return "critical";
+  if (status === "warning") return "warning";
+  return "ok";
+}
+
+function DecisionSummaryItem({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "ok" | "warning" | "critical";
+}) {
+  return (
+    <div className="instance-decision-item" data-tone={tone}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
 export function InstanceDetails({
   uuid,
   onNodeReady,
@@ -32,7 +96,17 @@ export function InstanceDetails({
 }) {
   const meta = useNodeMeta(uuid);
   const metrics = useNodeMetrics(uuid);
+  const themeSettings = useThemeSettings();
+  useHomepagePingOverview();
+  const ping = usePingMini(uuid);
   const hasAlignedOnReadyRef = useRef(false);
+  const selectedPingTaskByClient = useMemo(
+    () =>
+      themeSettings.isReady
+        ? invertHomepagePingTaskBindings(themeSettings.homepagePingBindings)
+        : new Map<string, number>(),
+    [themeSettings.homepagePingBindings, themeSettings.isReady],
+  );
 
   useEffect(() => {
     hasAlignedOnReadyRef.current = false;
@@ -68,6 +142,36 @@ export function InstanceDetails({
   const renewalPrice = formatRenewalPrice(meta) ?? "未填写";
   const trafficLimitLabel =
     meta.traffic_limit > 0 ? formatBytes(meta.traffic_limit) : "不限";
+  const workbenchNode = buildVpsWorkbenchNode({
+    meta,
+    online: metrics.online,
+    updatedAt: metrics.updatedAt,
+    trafficUp: metrics.trafficUp,
+    trafficDown: metrics.trafficDown,
+    netUp: metrics.netUp,
+    netDown: metrics.netDown,
+    hasPingBinding: selectedPingTaskByClient.has(uuid),
+    ping,
+  });
+  const completenessDetail =
+    workbenchNode.completeness.missing.length > 0
+      ? `缺少 ${workbenchNode.completeness.missing
+          .map((item) => item.label)
+          .slice(0, 4)
+          .join("、")}`
+      : "关键资料完整";
+  const trafficDecisionValue =
+    workbenchNode.traffic.status === "unlimited"
+      ? "不限"
+      : workbenchNode.traffic.status === "exhausted"
+        ? "已耗尽"
+        : `${Math.round(workbenchNode.traffic.fraction * 100)}%`;
+  const trafficDecisionDetail =
+    workbenchNode.traffic.status === "unlimited"
+      ? "未设置流量上限"
+      : `剩余 ${formatBytes(Math.max(0, workbenchNode.traffic.remaining))} · ${formatExhaustIn(
+          workbenchNode.traffic.exhaustInSeconds,
+        )}`;
 
   return (
     <InstancePanel
@@ -76,6 +180,32 @@ export function InstanceDetails({
         isOnline ? undefined : "节点当前离线，以下展示最近一次上报的缓存数据。"
       }
     >
+      <div className="instance-decision-grid">
+        <DecisionSummaryItem
+          label="资料完整度"
+          value={`${workbenchNode.completeness.complete}/${workbenchNode.completeness.total}`}
+          detail={completenessDetail}
+          tone={workbenchNode.completeness.ratio < 1 ? "warning" : "ok"}
+        />
+        <DecisionSummaryItem
+          label="续费压力"
+          value={formatExpirePressure(workbenchNode)}
+          detail={`续费 ${renewalPrice}`}
+          tone={decisionToneFromExpiry(workbenchNode.expiryBucket)}
+        />
+        <DecisionSummaryItem
+          label="流量预估"
+          value={trafficDecisionValue}
+          detail={trafficDecisionDetail}
+          tone={decisionToneFromTraffic(workbenchNode.traffic.status)}
+        />
+        <DecisionSummaryItem
+          label="Ping 状态"
+          value={workbenchNode.ping.label}
+          detail={workbenchNode.ping.detail}
+          tone={decisionToneFromPing(workbenchNode.ping.state)}
+        />
+      </div>
       <div className="instance-info-groups">
         <div className="instance-info-group">
           <div className="instance-info-group-title">系统</div>
