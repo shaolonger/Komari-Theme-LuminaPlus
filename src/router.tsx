@@ -8,6 +8,9 @@ const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })
 const Instance = lazy(() =>
   import("@/pages/Instance").then((m) => ({ default: m.Instance })),
 );
+const Compare = lazy(() =>
+  import("@/pages/Compare").then((m) => ({ default: m.Compare })),
+);
 const NotFound = lazy(() =>
   import("@/pages/NotFound").then((m) => ({ default: m.NotFound })),
 );
@@ -31,6 +34,14 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={<Loading />}>
             <Home />
+          </Suspense>
+        ),
+      },
+      {
+        path: "compare",
+        element: (
+          <Suspense fallback={<Loading />}>
+            <Compare />
           </Suspense>
         ),
       },
