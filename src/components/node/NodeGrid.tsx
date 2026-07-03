@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDown, ChevronDown, CircleDollarSign, Search } from "lucide-react";
+import { ArrowUpDown, BarChart3, ChevronDown, CircleDollarSign, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
@@ -52,6 +52,7 @@ import { NodeCard } from "./NodeCard";
 // ([0-9a-f-]),永远不含逗号。
 const UUID_KEY_SEPARATOR = ",";
 const WORKBENCH_OPEN_STORAGE_KEY = "lumina-home-workbench-open";
+const HOME_COMPARE_SEED_COUNT = 3;
 
 interface HomeOverview {
   totalNodes: number;
@@ -875,6 +876,11 @@ export function NodeGrid() {
       </div>
     ));
   }, [uuidsKey, mode]);
+  const compareHref = useMemo(() => {
+    const seed = filteredNodes.slice(0, HOME_COMPARE_SEED_COUNT).map((node) => node.uuid);
+    if (seed.length < 2) return "/compare";
+    return `/compare?${new URLSearchParams({ nodes: seed.join(",") }).toString()}`;
+  }, [filteredNodes]);
   const showGroupTabs =
     themeSettings.isReady && themeSettings.showGroupTabs && groupOptions.length > 0;
   // 分组标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
@@ -930,6 +936,10 @@ export function NodeGrid() {
         <div className="flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
           <span className="text-[15px]">尚未连接到任何节点</span>
           <span className="text-[12px]">等待后端推送或前往管理后台添加</span>
+          <Link to="/compare" className="home-empty-compare">
+            <BarChart3 size={14} aria-hidden="true" />
+            打开对比工作台
+          </Link>
         </div>
       </>
     );
@@ -993,6 +1003,10 @@ export function NodeGrid() {
             ))}
           </select>
         </label>
+        <Link to={compareHref} className="home-compare-link">
+          <BarChart3 size={15} aria-hidden="true" />
+          对比
+        </Link>
         <HomeRiskFilters
           risks={operationRisks}
           selectedFilter={selectedRiskFilter}
