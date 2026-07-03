@@ -68,7 +68,7 @@ function ping(partial: Partial<PingOverviewItem> = {}): PingOverviewItem {
 }
 
 describe("getConfigCompleteness", () => {
-  it("tracks missing practical VPS metadata", () => {
+  it("ignores admin-only agent version when only public metadata is available", () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     const result = getConfigCompleteness(
@@ -84,7 +84,7 @@ describe("getConfigCompleteness", () => {
     );
 
     expect(result.complete).toBe(1);
-    expect(result.total).toBe(8);
+    expect(result.total).toBe(7);
     expect(result.missing.map((item) => item.key)).toEqual([
       "group",
       "price",
@@ -92,8 +92,23 @@ describe("getConfigCompleteness", () => {
       "expiry",
       "traffic",
       "ping",
-      "agent",
     ]);
+    vi.useRealTimers();
+  });
+
+  it("tracks agent version when authenticated metadata is available", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const result = getConfigCompleteness(
+      node({
+        version: "",
+      }),
+      true,
+      { includeAgentVersion: true },
+    );
+
+    expect(result.total).toBe(8);
+    expect(result.missing.map((item) => item.key)).toEqual(["agent"]);
     vi.useRealTimers();
   });
 });

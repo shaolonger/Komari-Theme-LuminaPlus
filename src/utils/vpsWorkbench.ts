@@ -25,6 +25,7 @@ export interface VpsWorkbenchNodeInput {
   netUp: number;
   netDown: number;
   hasPingBinding: boolean;
+  includeAgentVersion?: boolean;
   ping?: PingOverviewItem;
   now?: number;
 }
@@ -83,7 +84,11 @@ function hasRenewalInfo(meta: NodeInfo) {
   return formatRenewalPrice(meta) != null;
 }
 
-export function getConfigCompleteness(meta: NodeInfo, hasPingBinding: boolean): CompletenessResult {
+export function getConfigCompleteness(
+  meta: NodeInfo,
+  hasPingBinding: boolean,
+  options: { includeAgentVersion?: boolean } = {},
+): CompletenessResult {
   const items: CompletenessItem[] = [
     { key: "region", label: "地区", complete: hasText(meta.region) },
     { key: "group", label: "分组", complete: hasText(meta.group) },
@@ -92,8 +97,10 @@ export function getConfigCompleteness(meta: NodeInfo, hasPingBinding: boolean): 
     { key: "expiry", label: "到期", complete: getExpireDaysRemaining(meta.expired_at) != null },
     { key: "traffic", label: "流量额度", complete: meta.traffic_limit > 0 },
     { key: "ping", label: "Ping 绑定", complete: hasPingBinding },
-    { key: "agent", label: "Agent 版本", complete: hasText(meta.version) },
   ];
+  if (options.includeAgentVersion) {
+    items.push({ key: "agent", label: "Agent 版本", complete: hasText(meta.version) });
+  }
   const complete = items.filter((item) => item.complete).length;
   return {
     complete,
@@ -231,7 +238,9 @@ export function buildVpsWorkbenchNode(input: VpsWorkbenchNodeInput): VpsWorkbenc
     online: input.online,
     expireDays,
     expiryBucket: getExpiryBucket(expireDays),
-    completeness: getConfigCompleteness(meta, input.hasPingBinding),
+    completeness: getConfigCompleteness(meta, input.hasPingBinding, {
+      includeAgentVersion: input.includeAgentVersion,
+    }),
     traffic: getTrafficForecast({
       trafficLimitType: meta.traffic_limit_type,
       trafficUp: input.trafficUp,

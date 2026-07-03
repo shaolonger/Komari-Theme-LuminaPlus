@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMini } from "@/hooks/usePingMini";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { getAdminClients } from "@/services/api";
 import { formatBytes, formatExpireDays, formatUptimeDays, trimFixed } from "@/utils/format";
 import { formatRenewalPrice } from "@/utils/billing";
+import {
+  overlayAdminClientMeta,
+  shouldIncludeAgentVersionCompleteness,
+} from "@/utils/nodeMetaOverlay";
 import { invertHomepagePingTaskBindings } from "@/utils/pingTasks";
 import { resolveTrafficUsage, trafficTypeLabel } from "@/utils/traffic";
 import {
@@ -97,9 +104,23 @@ export function InstanceDetails({
   const meta = useNodeMeta(uuid);
   const metrics = useNodeMetrics(uuid);
   const themeSettings = useThemeSettings();
+  const { data: me } = useAuth();
   useHomepagePingOverview();
   const ping = usePingMini(uuid);
   const hasAlignedOnReadyRef = useRef(false);
+  const adminClientsQuery = useQuery({
+    queryKey: ["admin-clients"],
+    queryFn: getAdminClients,
+    enabled: me?.logged_in === true,
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const adminClient = useMemo(
+    () => adminClientsQuery.data?.find((client) => client.uuid === uuid),
+    [adminClientsQuery.data, uuid],
+  );
+  const hasAdminMetadata =
+    me?.logged_in === true && adminClientsQuery.isSuccess;
   const selectedPingTaskByClient = useMemo(
     () =>
       themeSettings.isReady
@@ -123,27 +144,28 @@ export function InstanceDetails({
 
   if (!meta || !metrics) return null;
 
+  const nodeMeta = overlayAdminClientMeta(meta, adminClient);
   const isOnline = metrics.online;
   const uptime = formatUptimeDays(metrics.uptime);
   // 按 traffic_limit_type (max/sum/up/down/min) 归并上下行，和卡片、后端保持一致——
   // 对非 "sum" 节点直接把上下行相加是错的。
   const trafficUsage = resolveTrafficUsage(
-    meta.traffic_limit_type,
+    nodeMeta.traffic_limit_type,
     metrics.trafficUp,
     metrics.trafficDown,
-    meta.traffic_limit,
+    nodeMeta.traffic_limit,
   );
   const lastUpdated =
     metrics.updatedAt > 0 ? TIME_FORMATTER.format(metrics.updatedAt) : "—";
-  const trimmedName = meta.name?.trim();
+  const trimmedName = nodeMeta.name?.trim();
   const panelTitle = trimmedName ? `${trimmedName} 信息` : "实例信息";
-  const expire = formatExpireDays(meta.expired_at);
+  const expire = formatExpireDays(nodeMeta.expired_at);
   const expireLabel = expire.unit ? `${expire.value}${expire.unit}` : expire.value;
-  const renewalPrice = formatRenewalPrice(meta) ?? "未填写";
+  const renewalPrice = formatRenewalPrice(nodeMeta) ?? "未填写";
   const trafficLimitLabel =
-    meta.traffic_limit > 0 ? formatBytes(meta.traffic_limit) : "不限";
+    nodeMeta.traffic_limit > 0 ? formatBytes(nodeMeta.traffic_limit) : "不限";
   const workbenchNode = buildVpsWorkbenchNode({
-    meta,
+    meta: nodeMeta,
     online: metrics.online,
     updatedAt: metrics.updatedAt,
     trafficUp: metrics.trafficUp,
@@ -151,6 +173,10 @@ export function InstanceDetails({
     netUp: metrics.netUp,
     netDown: metrics.netDown,
     hasPingBinding: selectedPingTaskByClient.has(uuid),
+    includeAgentVersion: shouldIncludeAgentVersionCompleteness({
+      loggedIn: me?.logged_in === true,
+      adminMetadataReady: hasAdminMetadata,
+    }),
     ping,
   });
   const completenessDetail =
@@ -212,11 +238,11 @@ export function InstanceDetails({
           <InfoRow label="状态" value={isOnline ? "在线" : "离线"} />
           <InfoRow
             label="CPU"
-            value={`${meta.cpu_name || "—"}${meta.cpu_cores > 0 ? ` (x${meta.cpu_cores})` : ""}`}
+            value={`${nodeMeta.cpu_name || "—"}${nodeMeta.cpu_cores > 0 ? ` (x${nodeMeta.cpu_cores})` : ""}`}
           />
-          <InfoRow label="架构" value={meta.arch || "—"} />
-          <InfoRow label="虚拟化" value={meta.virtualization || "—"} />
-          <InfoRow label="操作系统" value={meta.os || "—"} />
+          <InfoRow label="架构" value={nodeMeta.arch || "—"} />
+          <InfoRow label="虚拟化" value={nodeMeta.virtualization || "—"} />
+          <InfoRow label="操作系统" value={nodeMeta.os || "—"} />
         </div>
 
         <div className="instance-info-group">
@@ -252,7 +278,7 @@ export function InstanceDetails({
             <span className="instance-info-label">总流量</span>
             <div className="instance-info-traffic">
               <span className="instance-info-value">{`↑ ${formatBytes(metrics.trafficUp)} · ↓ ${formatBytes(metrics.trafficDown)}`}</span>
-              {meta.traffic_limit > 0 && (
+              {nodeMeta.traffic_limit > 0 && (
                 <>
                   <div className="instance-progress-track" aria-hidden>
                     <span
@@ -261,7 +287,7 @@ export function InstanceDetails({
                     />
                   </div>
                   <span className="instance-info-note">
-                    {`${formatBytes(trafficUsage.used)} / ${formatBytes(meta.traffic_limit)}`}
+                    {`${formatBytes(trafficUsage.used)} / ${formatBytes(nodeMeta.traffic_limit)}`}
                   </span>
                 </>
               )}
@@ -271,26 +297,26 @@ export function InstanceDetails({
 
         <div className="instance-info-group">
           <div className="instance-info-group-title">Agent</div>
-          <InfoRow label="版本" value={meta.version || "未知"} />
-          <InfoRow label="内核" value={meta.kernel_version || "—"} />
-          <InfoRow label="IPv4" value={formatIpAddress(meta.ipv4)} />
-          <InfoRow label="IPv6" value={formatIpAddress(meta.ipv6)} />
+          <InfoRow label="版本" value={nodeMeta.version || "未知"} />
+          <InfoRow label="内核" value={nodeMeta.kernel_version || "—"} />
+          <InfoRow label="IPv4" value={formatIpAddress(nodeMeta.ipv4)} />
+          <InfoRow label="IPv6" value={formatIpAddress(nodeMeta.ipv6)} />
         </div>
 
         <div className="instance-info-group">
           <div className="instance-info-group-title">管理</div>
-          <InfoRow label="Ping 能力" value={formatCapability(meta.capability_ping)} />
+          <InfoRow label="Ping 能力" value={formatCapability(nodeMeta.capability_ping)} />
           <InfoRow
             label="私有目标 Ping"
             value={formatCapability(
-              meta.capability_private_ping_targets,
+              nodeMeta.capability_private_ping_targets,
               "允许",
               "默认限制",
             )}
           />
           <InfoRow label="续费" value={renewalPrice} />
           <InfoRow label="到期" value={expireLabel} />
-          <InfoRow label="流量规则" value={trafficTypeLabel(meta.traffic_limit_type)} />
+          <InfoRow label="流量规则" value={trafficTypeLabel(nodeMeta.traffic_limit_type)} />
           <InfoRow label="流量额度" value={trafficLimitLabel} />
         </div>
       </div>

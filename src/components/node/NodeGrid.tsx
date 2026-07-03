@@ -7,6 +7,7 @@ import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { useViewMode } from "@/hooks/useViewMode";
+import { getAdminClients } from "@/services/api";
 import type { HomeNodeSummary } from "@/services/wsStore";
 import {
   formatBytes,
@@ -28,6 +29,10 @@ import {
   type OverviewRating,
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
+import {
+  overlayAdminClientMeta,
+  shouldIncludeAgentVersionCompleteness,
+} from "@/utils/nodeMetaOverlay";
 import { invertHomepagePingTaskBindings } from "@/utils/pingTasks";
 import type { VpsRisk, VpsRiskKind } from "@/utils/vpsRisk";
 import {
@@ -623,6 +628,13 @@ export function NodeGrid() {
   const [workbenchOpen, setWorkbenchOpen] = useState(readStoredWorkbenchOpen);
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
   useHomepagePingOverview();
+  const adminClientsQuery = useQuery({
+    queryKey: ["admin-clients"],
+    queryFn: getAdminClients,
+    enabled: me?.logged_in === true,
+    staleTime: 30_000,
+    retry: 1,
+  });
 
   const visibleNodes = useMemo(
     () => nodes.filter((node) => me?.logged_in === true || !node.hidden),
@@ -654,10 +666,26 @@ export function NodeGrid() {
       netDown,
     };
   }, [visibleNodes]);
-  const metaByUuid = useMemo(
-    () => new Map(allMeta.map((node) => [node.uuid, node])),
-    [allMeta],
+  const adminClientByUuid = useMemo(
+    () => new Map((adminClientsQuery.data ?? []).map((node) => [node.uuid, node])),
+    [adminClientsQuery.data],
   );
+  const hasAdminMetadata =
+    me?.logged_in === true && adminClientsQuery.isSuccess;
+  const workbenchMetaByUuid = useMemo(
+    () =>
+      new Map(
+        allMeta.map((node) => [
+          node.uuid,
+          overlayAdminClientMeta(node, adminClientByUuid.get(node.uuid)),
+        ]),
+      ),
+    [adminClientByUuid, allMeta],
+  );
+  const includeAgentVersion = shouldIncludeAgentVersionCompleteness({
+    loggedIn: me?.logged_in === true,
+    adminMetadataReady: hasAdminMetadata,
+  });
   const selectedPingTaskByClient = useMemo(
     () =>
       themeSettings.isReady
@@ -668,7 +696,7 @@ export function NodeGrid() {
   const workbenchNodesByUuid = useMemo(() => {
     const next = new Map<string, VpsWorkbenchNode>();
     for (const node of visibleNodes) {
-      const meta = metaByUuid.get(node.uuid);
+      const meta = workbenchMetaByUuid.get(node.uuid);
       if (!meta) continue;
       next.set(
         node.uuid,
@@ -681,11 +709,12 @@ export function NodeGrid() {
           netUp: node.netUp,
           netDown: node.netDown,
           hasPingBinding: selectedPingTaskByClient.has(node.uuid),
+          includeAgentVersion,
         }),
       );
     }
     return next;
-  }, [metaByUuid, selectedPingTaskByClient, visibleNodes]);
+  }, [includeAgentVersion, selectedPingTaskByClient, visibleNodes, workbenchMetaByUuid]);
   const workbenchNodes = useMemo(
     () => Array.from(workbenchNodesByUuid.values()),
     [workbenchNodesByUuid],
@@ -771,7 +800,7 @@ export function NodeGrid() {
     const searchFiltered = normalizedSearch
       ? groupFiltered.filter((node) => {
           const workbenchNode = workbenchNodesByUuid.get(node.uuid);
-          const meta = metaByUuid.get(node.uuid);
+          const meta = workbenchMetaByUuid.get(node.uuid);
           if (workbenchNode && meta) {
             return searchWorkbenchNode(workbenchNode, meta, normalizedSearch);
           }
@@ -811,10 +840,10 @@ export function NodeGrid() {
     nodeSearch,
     workbenchSort,
     workbenchNodesByUuid,
-    metaByUuid,
     risksByUuid,
     themeSettings.isReady,
     themeSettings.moveOfflineNodesBack,
+    workbenchMetaByUuid,
   ]);
   useEffect(() => {
     if (selectedGroup !== HOME_ALL_GROUP && !groupOptions.includes(selectedGroup)) {
