@@ -8,4 +8,4 @@ Scope note: this round optimizes the home-page VPS scanning experience with an A
 - [x] Adjust configuration completeness so admin-only/private fields do not create false "missing Agent version" warnings for public metadata.
 - [x] Make the desktop default VPS card view more compact and improve the compact card for fast scanning.
 - [x] Add tests for admin metadata merging, privacy-aware completeness, and workbench summary behavior.
-- [ ] Run full checks, update the theme version, tag, push, and publish a GitHub release.
+- [x] Run full checks, update the theme version, tag, push, and publish a GitHub release.
