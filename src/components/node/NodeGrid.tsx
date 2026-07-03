@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDown, CircleDollarSign, Search } from "lucide-react";
+import { ArrowUpDown, ChevronDown, CircleDollarSign, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
@@ -46,6 +46,7 @@ import { NodeCard } from "./NodeCard";
 // 把多个 uuid 拼成单个签名串作为 memo key。逗号安全:uuid 是标准 UUID
 // ([0-9a-f-]),永远不含逗号。
 const UUID_KEY_SEPARATOR = ",";
+const WORKBENCH_OPEN_STORAGE_KEY = "lumina-home-workbench-open";
 
 interface HomeOverview {
   totalNodes: number;
@@ -100,6 +101,11 @@ function riskMatchesFilter(risks: HomeRiskItem[] | undefined, filter: HomeRiskFi
   return filter === "attention" || risks.some((risk) => risk.kind === filter);
 }
 
+function readStoredWorkbenchOpen() {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(WORKBENCH_OPEN_STORAGE_KEY) === "true";
+}
+
 function formatExpirePressure(node: VpsWorkbenchNode) {
   if (node.expireDays == null) return "到期未知";
   if (node.expireDays < 0) return "已过期";
@@ -137,8 +143,22 @@ function WorkbenchCard({
   );
 }
 
-function HomeWorkbenchPanel({ nodes }: { nodes: VpsWorkbenchNode[] }) {
+function HomeWorkbenchPanel({
+  nodes,
+  overview,
+  risks,
+  expanded,
+  onToggle,
+}: {
+  nodes: VpsWorkbenchNode[];
+  overview: HomeOverview;
+  risks: HomeRiskItem[];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const summary = useMemo(() => summarizeWorkbench(nodes), [nodes]);
+  const riskNodes = countRiskNodes(risks, "attention");
+  const topRisks = risks.slice(0, 2);
   const incompleteNodes = useMemo(
     () => sortWorkbenchNodes(nodes.filter((node) => node.completeness.ratio < 1), "completeness").slice(0, 3),
     [nodes],
@@ -174,65 +194,111 @@ function HomeWorkbenchPanel({ nodes }: { nodes: VpsWorkbenchNode[] }) {
   );
 
   return (
-    <section className="home-workbench" aria-label="VPS 管理工作台">
-      <div className="home-workbench-head">
+    <section className="home-workbench" aria-label="VPS 管理工作台" data-expanded={expanded ? "true" : "false"}>
+      <div className="home-fleet-strip">
         <div>
-          <h2>VPS 管理工作台</h2>
-          <p>续费、流量、资料完整度和 Ping 覆盖的日常决策摘要。</p>
+          <p className="home-fleet-eyebrow">VPS 管理工作台</p>
+          <h2>{riskNodes > 0 ? `${riskNodes} 台需要关注` : "舰队状态平稳"}</h2>
         </div>
+        <div className="home-fleet-metrics" aria-label="舰队状态摘要">
+          <span>
+            在线
+            <strong>{overview.onlineNodes}/{overview.totalNodes}</strong>
+          </span>
+          <span data-tone={riskNodes > 0 ? "warning" : "ok"}>
+            待处理
+            <strong>{riskNodes}</strong>
+          </span>
+          <span data-tone={summary.expired > 0 || summary.dueSoon > 0 ? "warning" : "ok"}>
+            30 天到期
+            <strong>{summary.dueMonth + summary.dueSoon + summary.expired}</strong>
+          </span>
+          <span data-tone={summary.trafficPressure > 0 ? "warning" : "ok"}>
+            流量压力
+            <strong>{summary.trafficPressure}</strong>
+          </span>
+          <span data-tone={summary.incomplete > 0 ? "warning" : "ok"}>
+            资料待补
+            <strong>{summary.incomplete}</strong>
+          </span>
+        </div>
+        <button
+          type="button"
+          className="home-fleet-toggle"
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          <ChevronDown size={16} aria-hidden="true" />
+          <span>{expanded ? "收起" : "展开"}</span>
+        </button>
       </div>
-      <div className="home-workbench-grid">
-        <WorkbenchCard
-          label="资料完整度"
-          value={`${summary.total - summary.incomplete}/${summary.total}`}
-          detail={summary.incomplete > 0 ? `${summary.incomplete} 台缺少关键资料` : "资料已完整"}
-          tone={summary.incomplete > 0 ? "warning" : "ok"}
-        />
-        <WorkbenchCard
-          label="续费压力"
-          value={`${summary.expired + summary.dueSoon}`}
-          detail={`30 天内 ${summary.dueMonth} 台，已过期 ${summary.expired} 台`}
-          tone={summary.expired > 0 ? "critical" : summary.dueSoon > 0 || summary.dueMonth > 0 ? "warning" : "ok"}
-        />
-        <WorkbenchCard
-          label="流量压力"
-          value={`${summary.trafficPressure}`}
-          detail={summary.trafficPressure > 0 ? "存在临界或预计耗尽节点" : "暂无流量压力"}
-          tone={summary.trafficPressure > 0 ? "warning" : "ok"}
-        />
-        <WorkbenchCard
-          label="Ping 状态"
-          value={`${summary.pingAttention}`}
-          detail={summary.pingAttention > 0 ? "存在不可用或无数据绑定" : "Ping 覆盖正常"}
-          tone={summary.pingAttention > 0 ? "warning" : "ok"}
-        />
-      </div>
-      <div className="home-workbench-lists">
-        <WorkbenchList
-          title="资料待补"
-          empty="关键资料完整"
-          nodes={incompleteNodes}
-          getDetail={(node) => node.completeness.missing.map((item) => item.label).slice(0, 3).join("、")}
-        />
-        <WorkbenchList
-          title="续费关注"
-          empty="近期无需续费"
-          nodes={renewalNodes}
-          getDetail={formatExpirePressure}
-        />
-        <WorkbenchList
-          title="流量预估"
-          empty="暂无流量压力"
-          nodes={trafficNodes}
-          getDetail={(node) => formatExhaustIn(node.traffic.exhaustInSeconds)}
-        />
-        <WorkbenchList
-          title="Ping 关注"
-          empty="Ping 状态正常"
-          nodes={pingNodes}
-          getDetail={(node) => node.ping.detail}
-        />
-      </div>
+      {!expanded && topRisks.length > 0 && (
+        <div className="home-fleet-nudge" aria-label="优先关注">
+          {topRisks.map((risk) => (
+            <Link key={`${risk.uuid}-${risk.kind}-${risk.title}`} to={`/instance/${risk.uuid}`}>
+              <strong>{risk.name}</strong>
+              <span>{risk.detail}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+      {expanded && (
+        <div className="home-workbench-details">
+          <HomeOperationsQueue risks={risks} />
+          <div className="home-workbench-grid">
+            <WorkbenchCard
+              label="资料完整度"
+              value={`${summary.total - summary.incomplete}/${summary.total}`}
+              detail={summary.incomplete > 0 ? `${summary.incomplete} 台缺少关键资料` : "资料已完整"}
+              tone={summary.incomplete > 0 ? "warning" : "ok"}
+            />
+            <WorkbenchCard
+              label="续费压力"
+              value={`${summary.expired + summary.dueSoon}`}
+              detail={`30 天内 ${summary.dueMonth} 台，已过期 ${summary.expired} 台`}
+              tone={summary.expired > 0 ? "critical" : summary.dueSoon > 0 || summary.dueMonth > 0 ? "warning" : "ok"}
+            />
+            <WorkbenchCard
+              label="流量压力"
+              value={`${summary.trafficPressure}`}
+              detail={summary.trafficPressure > 0 ? "存在临界或预计耗尽节点" : "暂无流量压力"}
+              tone={summary.trafficPressure > 0 ? "warning" : "ok"}
+            />
+            <WorkbenchCard
+              label="Ping 状态"
+              value={`${summary.pingAttention}`}
+              detail={summary.pingAttention > 0 ? "存在不可用或无数据绑定" : "Ping 覆盖正常"}
+              tone={summary.pingAttention > 0 ? "warning" : "ok"}
+            />
+          </div>
+          <div className="home-workbench-lists">
+            <WorkbenchList
+              title="资料待补"
+              empty="关键资料完整"
+              nodes={incompleteNodes}
+              getDetail={(node) => node.completeness.missing.map((item) => item.label).slice(0, 3).join("、")}
+            />
+            <WorkbenchList
+              title="续费关注"
+              empty="近期无需续费"
+              nodes={renewalNodes}
+              getDetail={formatExpirePressure}
+            />
+            <WorkbenchList
+              title="流量预估"
+              empty="暂无流量压力"
+              nodes={trafficNodes}
+              getDetail={(node) => formatExhaustIn(node.traffic.exhaustInSeconds)}
+            />
+            <WorkbenchList
+              title="Ping 关注"
+              empty="Ping 状态正常"
+              nodes={pingNodes}
+              getDetail={(node) => node.ping.detail}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -267,12 +333,8 @@ function WorkbenchList({
 
 function HomeOperationsQueue({
   risks,
-  selectedFilter,
-  onSelectFilter,
 }: {
   risks: HomeRiskItem[];
-  selectedFilter: HomeRiskFilter;
-  onSelectFilter: (filter: HomeRiskFilter) => void;
 }) {
   const topRisks = risks.slice(0, 6);
   const riskNodes = countRiskNodes(risks, "attention");
@@ -283,22 +345,6 @@ function HomeOperationsQueue({
         <div>
           <h2>运维事项</h2>
           <p>{riskNodes > 0 ? `${riskNodes} 台 VPS 需要关注` : "当前没有高优先级事项"}</p>
-        </div>
-        <div className="home-ops-filters" role="group" aria-label="运维事项筛选">
-          {HOME_RISK_FILTERS.map((filter) => {
-            const count = countRiskNodes(risks, filter.value);
-            return (
-              <button
-                key={filter.value}
-                type="button"
-                data-active={selectedFilter === filter.value ? "true" : "false"}
-                onClick={() => onSelectFilter(filter.value)}
-              >
-                <span>{filter.label}</span>
-                {filter.value !== "all" && <strong>{count}</strong>}
-              </button>
-            );
-          })}
         </div>
       </div>
       <div className="home-ops-list">
@@ -321,6 +367,35 @@ function HomeOperationsQueue({
         )}
       </div>
     </section>
+  );
+}
+
+function HomeRiskFilters({
+  risks,
+  selectedFilter,
+  onSelectFilter,
+}: {
+  risks: HomeRiskItem[];
+  selectedFilter: HomeRiskFilter;
+  onSelectFilter: (filter: HomeRiskFilter) => void;
+}) {
+  return (
+    <div className="home-risk-filter-strip" role="group" aria-label="运维事项筛选">
+      {HOME_RISK_FILTERS.map((filter) => {
+        const count = countRiskNodes(risks, filter.value);
+        return (
+          <button
+            key={filter.value}
+            type="button"
+            data-active={selectedFilter === filter.value ? "true" : "false"}
+            onClick={() => onSelectFilter(filter.value)}
+          >
+            <span>{filter.label}</span>
+            {filter.value !== "all" && <strong>{count}</strong>}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -545,6 +620,7 @@ export function NodeGrid() {
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<HomeRiskFilter>("all");
   const [nodeSearch, setNodeSearch] = useState("");
   const [workbenchSort, setWorkbenchSort] = useState<WorkbenchSortKey>("weight");
+  const [workbenchOpen, setWorkbenchOpen] = useState(readStoredWorkbenchOpen);
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
   useHomepagePingOverview();
 
@@ -675,6 +751,9 @@ export function NodeGrid() {
   useEffect(() => {
     if (!shouldRenderCostSummary && costSummaryOpen) setCostSummaryOpen(false);
   }, [shouldRenderCostSummary, costSummaryOpen]);
+  useEffect(() => {
+    window.localStorage.setItem(WORKBENCH_OPEN_STORAGE_KEY, String(workbenchOpen));
+  }, [workbenchOpen]);
   const groupOptions = useMemo(
     () =>
       sortHomeGroupOptions(
@@ -812,10 +891,12 @@ export function NodeGrid() {
             onOpenCostSummary={() => setCostSummaryOpen(true)}
           />
         )}
-        <HomeOperationsQueue
+        <HomeWorkbenchPanel
+          nodes={workbenchNodes}
+          overview={overview}
           risks={operationRisks}
-          selectedFilter={selectedRiskFilter}
-          onSelectFilter={setSelectedRiskFilter}
+          expanded={workbenchOpen}
+          onToggle={() => setWorkbenchOpen((value) => !value)}
         />
         <div className="flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
           <span className="text-[15px]">尚未连接到任何节点</span>
@@ -851,11 +932,12 @@ export function NodeGrid() {
           onOpenCostSummary={() => setCostSummaryOpen(true)}
         />
       )}
-      <HomeWorkbenchPanel nodes={workbenchNodes} />
-      <HomeOperationsQueue
+      <HomeWorkbenchPanel
+        nodes={workbenchNodes}
+        overview={overview}
         risks={operationRisks}
-        selectedFilter={selectedRiskFilter}
-        onSelectFilter={setSelectedRiskFilter}
+        expanded={workbenchOpen}
+        onToggle={() => setWorkbenchOpen((value) => !value)}
       />
       <div className="home-workbench-controls">
         <label className="home-workbench-search">
@@ -882,6 +964,11 @@ export function NodeGrid() {
             ))}
           </select>
         </label>
+        <HomeRiskFilters
+          risks={operationRisks}
+          selectedFilter={selectedRiskFilter}
+          onSelectFilter={setSelectedRiskFilter}
+        />
       </div>
       {showGroupTabs && (
         <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
