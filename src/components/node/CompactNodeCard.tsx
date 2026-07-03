@@ -44,8 +44,8 @@ import type {
 import type { ByteRateDisplay } from "@/utils/format";
 import type { TrafficDisplay } from "@/utils/traffic";
 
-const TRAFFIC_DOT_COUNT = 16;
-const HEALTH_BAR_COUNT = 18;
+const TRAFFIC_DOT_COUNT = 14;
+const HEALTH_BAR_COUNT = 16;
 type CompactNode = NodeInfo & NodeMetrics;
 type CompactTag = { label: string; color: string };
 type CompactExpire = { value: string; unit: string };

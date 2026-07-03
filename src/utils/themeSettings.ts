@@ -52,7 +52,7 @@ export interface ResolvedThemeSettings {
 
 export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   defaultAppearance: "system",
-  desktopNodeViewMode: "large",
+  desktopNodeViewMode: "compact",
   mobileNodeViewMode: "compact",
   enableAdminButton: true,
   showPingChart: true,

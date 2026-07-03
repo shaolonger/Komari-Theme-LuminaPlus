@@ -6,14 +6,14 @@
      `auto <length>` 保留一个占位尺寸让滚动条稳定;浏览器在首次渲染后记住每张卡片的真实高度,因此
      紧凑卡片(高度随计费/流量小块变化)滚动回来时不会跳动。该值只是首帧估算,并非沿用大卡片的 438px。 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 300px;
+  contain-intrinsic-size: auto 268px;
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     linear-gradient(
       180deg,
@@ -21,7 +21,7 @@
       color-mix(in srgb, var(--surface-a) 98%, black 2%) 100%
   );
   box-shadow: var(--shadow-card);
-  padding: 14px 16px;
+  padding: 12px 14px;
   color: var(--text-primary);
   transition:
     transform 180ms cubic-bezier(0.32, 0.72, 0, 1),
@@ -61,8 +61,8 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  min-height: 30px;
-  gap: 12px;
+  min-height: 28px;
+  gap: 10px;
 }
 
 .compact-node-title-wrap {
@@ -84,7 +84,7 @@
 
 .compact-node-title-row {
   min-width: 0;
-  gap: 8px;
+  gap: 7px;
 }
 
 .compact-node-title {
@@ -93,7 +93,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 720;
   line-height: 1.2;
   transition: color 160ms ease;
@@ -107,14 +107,14 @@
   display: inline-flex;
   width: fit-content;
   max-width: 10rem;
-  height: 22px;
+  height: 20px;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   border-radius: 7px;
   background: var(--tag-gray-bg);
   color: var(--tag-gray-fg);
-  padding: 0 0.56rem;
+  padding: 0 0.5rem;
   font-size: 10.5px;
   font-weight: 680;
   line-height: 1;
@@ -124,16 +124,16 @@
 
 .compact-node-actions {
   flex: 0 0 auto;
-  gap: 7px;
+  gap: 6px;
 }
 
 .compact-node-detail-link {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 9px;
   background: color-mix(in srgb, var(--surface-elev-a) 58%, transparent);
   color: var(--text-tertiary);
   transition:
@@ -151,11 +151,11 @@
 .compact-node-chip-row {
   display: flex;
   min-width: 0;
-  min-height: 24px;
-  max-height: 24px;
+  min-height: 22px;
+  max-height: 22px;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   overflow: hidden;
 }
 
@@ -169,21 +169,21 @@
   flex-wrap: wrap;
   align-content: flex-start;
   align-items: center;
-  gap: 6px;
-  max-height: 22px;
+  gap: 5px;
+  max-height: 20px;
   overflow: hidden;
 }
 
 .compact-node-tag {
   display: inline-flex;
-  height: 22px;
-  min-height: 22px;
-  max-height: 22px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  padding: 0 0.55rem;
-  font-size: 11px;
+  border-radius: 7px;
+  padding: 0 0.5rem;
+  font-size: 10.5px;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -206,16 +206,16 @@
 .compact-node-vitals {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
+  gap: 8px 10px;
   border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 9px;
+  padding-top: 8px;
 }
 
 .compact-node-gauge {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
 .compact-node-gauge-head,
@@ -224,7 +224,7 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
 }
 
 .compact-node-gauge-label {
@@ -244,9 +244,9 @@
 .compact-node-gauge strong {
   flex: 0 0 auto;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 780;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 /* 单条分段进度条(原本是 18 个 <span>)。填充是直到 --compact-gauge-fill 的硬停止渐变;
@@ -254,7 +254,7 @@
    周期 = (100% + 2px) / 18,缝隙 = 每个周期的最后 2px。 */
 .compact-node-gauge-track {
   min-width: 0;
-  height: 8px;
+  height: 7px;
   overflow: hidden;
   background: linear-gradient(
     to right,
@@ -289,7 +289,7 @@
   grid-template-columns: repeat(var(--compact-info-columns, 3), minmax(0, 1fr));
   gap: calc(7px - var(--ci-shrink) * 0.8px);
   border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 8px;
+  padding-top: 7px;
 }
 
 /* 必显的流量配额条。复用 .compact-node-gauge-track(由该容器上设置的 --compact-gauge-*
@@ -299,22 +299,22 @@
   min-width: 0;
   flex-direction: column;
   border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 9px;
+  padding-top: 8px;
 }
 
 .compact-node-traffic-body {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto 8px;
+  grid-template-rows: auto 7px;
   align-items: center;
-  row-gap: 6px;
+  row-gap: 5px;
 }
 
 .compact-node-traffic-body.has-uptime {
   grid-template-columns: minmax(0, 1fr) max-content;
   grid-template-rows: auto auto;
-  column-gap: 9px;
+  column-gap: 8px;
   row-gap: 3px;
 }
 
@@ -404,14 +404,14 @@
   position: relative;
   display: flex;
   min-width: 0;
-  min-height: 48px;
+  min-height: 44px;
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 56%, transparent);
-  border-radius: 9px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--fill-tertiary) 70%, transparent);
-  padding: calc(6px - var(--ci-shrink) * 0.4px) calc(8px - var(--ci-shrink) * 1px);
+  padding: calc(5px - var(--ci-shrink) * 0.35px) calc(7px - var(--ci-shrink) * 0.8px);
   color: var(--text-secondary);
   text-align: left;
 }
@@ -452,7 +452,7 @@
   color: var(--compact-info-row-color, var(--text-primary));
   font-size: calc(11.5px - var(--ci-shrink) * 0.6px);
   font-weight: 760;
-  letter-spacing: calc(var(--ci-shrink) * -0.01em);
+  letter-spacing: 0;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -475,7 +475,7 @@
 
 .compact-node-traffic-pulse {
   display: grid;
-  grid-template-columns: repeat(16, minmax(0, 1fr));
+  grid-template-columns: repeat(14, minmax(0, 1fr));
   align-items: center;
   gap: 1.5px;
   min-width: 0;
@@ -507,9 +507,9 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: end;
-  gap: 10px;
+  gap: 8px;
   border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 9px;
+  padding-top: 8px;
 }
 
 .compact-node-health-item {
@@ -531,9 +531,9 @@
 .compact-node-health-value {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -541,11 +541,11 @@
 .compact-node-health-bars {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(18, minmax(0, 1fr));
+  grid-template-columns: repeat(16, minmax(0, 1fr));
   align-items: end;
   gap: 1.5px;
   min-width: 0;
-  height: 14px;
+  height: 12px;
   overflow: visible;
 }
 

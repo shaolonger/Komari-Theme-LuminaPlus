@@ -879,10 +879,10 @@ export function NodeGrid() {
     themeSettings.isReady && themeSettings.showGroupTabs && groupOptions.length > 0;
   // 分组标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
   // 边缘和第一张卡片对齐。
-  const gridClassName = mode === "compact" ? "grid gap-3 xl:gap-4" : "grid gap-4 xl:gap-5";
+  const gridClassName = mode === "compact" ? "grid gap-3" : "grid gap-4 xl:gap-5";
   const gridColumns =
     mode === "compact"
-      ? "repeat(auto-fill, minmax(min(100%, 340px), 1fr))"
+      ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))"
       : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))";
 
   if (!themeSettings.isReady) {
