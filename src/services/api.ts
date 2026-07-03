@@ -39,6 +39,7 @@ const RpcRecordsSchema = z
 const LOAD_RECORDS_PER_HOUR = 12;
 const PING_RECORDS_PER_HOUR = 240;
 const MAX_RPC_RECORDS = 20_000;
+const MAX_COMPARE_RECORDS_PER_NODE = 5_000;
 const OVERVIEW_PING_MAX_COUNT = 4_000;
 // 普通 HTTP GET(/api/nodes、/api/public、load/ping 兜底)自身没有传输超时,
 // 在这里统一兜底,half-open socket 能快速失败而不是无限挂住调用方。
@@ -57,6 +58,18 @@ interface PingOverviewResponse {
   tasks: PingTask[];
   basicInfo: PingBasicInfo[];
 }
+
+export type ComparisonLoadType =
+  | "cpu"
+  | "ram"
+  | "swap"
+  | "load"
+  | "disk"
+  | "network"
+  | "process"
+  | "connections";
+
+export type ComparisonLoadRecords = Record<string, LoadRecordsResponse["records"]>;
 
 export class ApiRequestError extends Error {
   constructor(
@@ -93,6 +106,13 @@ function getRecordsMaxCount(hours: number, recordsPerHour: number) {
   return Math.min(
     MAX_RPC_RECORDS,
     Math.max(recordsPerHour, Math.ceil(safeHours * recordsPerHour)),
+  );
+}
+
+export function getComparisonRecordsMaxCount(hours: number, recordsPerHour = LOAD_RECORDS_PER_HOUR) {
+  return Math.min(
+    MAX_COMPARE_RECORDS_PER_NODE,
+    getRecordsMaxCount(hours, recordsPerHour),
   );
 }
 
@@ -283,6 +303,44 @@ export async function getLoadRecords(
   }
 }
 
+export async function getComparisonLoadRecords({
+  uuids,
+  hours = 6,
+  loadType,
+}: {
+  uuids: string[];
+  hours?: number;
+  loadType: ComparisonLoadType;
+}): Promise<ComparisonLoadRecords> {
+  const uniqueUuids = Array.from(new Set(uuids.filter(Boolean)));
+  if (uniqueUuids.length === 0) return {};
+
+  const maxCount = getComparisonRecordsMaxCount(hours, LOAD_RECORDS_PER_HOUR);
+  const entries = await Promise.all(
+    uniqueUuids.map(async (uuid) => {
+      try {
+        const payload = await rpcCall(
+          "common:getRecords",
+          {
+            uuid,
+            hours,
+            type: "load",
+            load_type: loadType,
+            maxCount,
+          },
+          RpcRecordsSchema,
+        );
+        return [uuid, normalizeRpcLoadRecords(uuid, payload).records] as const;
+      } catch {
+        const fallback = await getLoadRecords(uuid, hours);
+        return [uuid, fallback.records] as const;
+      }
+    }),
+  );
+
+  return Object.fromEntries(entries);
+}
+
 export async function getPingRecords(
   uuid: string,
   hours = 6,
@@ -310,6 +368,51 @@ export async function getPingRecords(
       }),
     )) as PingRecordsResponse;
   }
+}
+
+export async function getComparisonPingRecords({
+  uuids,
+  hours = 6,
+}: {
+  uuids: string[];
+  hours?: number;
+}): Promise<PingRecordsResponse> {
+  const uniqueUuids = Array.from(new Set(uuids.filter(Boolean)));
+  if (uniqueUuids.length === 0) {
+    return { count: 0, records: [], tasks: [] };
+  }
+
+  const responses = await Promise.all(
+    uniqueUuids.map(async (uuid) => {
+      const response = await getPingRecords(uuid, hours);
+      return {
+        ...response,
+        records: response.records.map((record) => ({
+          ...record,
+          client: record.client || uuid,
+        })),
+      };
+    }),
+  );
+  const taskById = new Map<number, PingTask>();
+  const records = responses.flatMap((response) => response.records);
+  for (const response of responses) {
+    for (const task of response.tasks) {
+      if (!taskById.has(task.id)) taskById.set(task.id, task);
+    }
+  }
+
+  records.sort((a, b) => {
+    const at = typeof a.time === "number" ? a.time : Date.parse(a.time);
+    const bt = typeof b.time === "number" ? b.time : Date.parse(b.time);
+    return at - bt;
+  });
+
+  return {
+    count: records.length,
+    records,
+    tasks: Array.from(taskById.values()).sort((a, b) => a.id - b.id),
+  };
 }
 
 export async function getAdminPingTasks(): Promise<PingTask[]> {
