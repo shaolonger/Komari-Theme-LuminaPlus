@@ -42,6 +42,165 @@
   height: 100%;
 }
 
+.fleet3d-label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fleet3d-node-label {
+  position: absolute;
+  display: inline-grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  max-width: min(190px, calc(100vw - 32px));
+  min-height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(18, 19, 22, 0.68);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.09) inset,
+    0 10px 24px -18px rgba(0, 0, 0, 0.8);
+  color: #f7f8fb;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+}
+
+.fleet3d-node-label strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet3d-node-label small {
+  color: rgba(247, 248, 251, 0.62);
+  font-size: 10px;
+  font-weight: 780;
+}
+
+.fleet3d-node-label-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #8fffc1;
+  box-shadow: 0 0 12px rgba(143, 255, 193, 0.72);
+}
+
+.fleet3d-node-label.is-offline .fleet3d-node-label-dot,
+.fleet3d-node-label.is-critical .fleet3d-node-label-dot {
+  background: #ff6678;
+  box-shadow: 0 0 14px rgba(255, 102, 120, 0.78);
+}
+
+.fleet3d-node-label.is-warning .fleet3d-node-label-dot {
+  background: #ffc857;
+  box-shadow: 0 0 14px rgba(255, 200, 87, 0.72);
+}
+
+.fleet3d-node-label.is-unknown .fleet3d-node-label-dot {
+  background: #d7e2f5;
+  box-shadow: 0 0 12px rgba(215, 226, 245, 0.58);
+}
+
+.fleet3d-node-label.is-selected {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.fleet3d-node-label.is-compare {
+  border-color: rgba(126, 231, 255, 0.42);
+}
+
+.fleet3d-hover-card {
+  position: absolute;
+  z-index: 5;
+  width: min(292px, calc(100% - 24px));
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(20, 21, 25, 0.78);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 24px 48px -28px rgba(0, 0, 0, 0.88);
+  color: #f7f8fb;
+  padding: 11px;
+  pointer-events: none;
+}
+
+.fleet3d-hover-card.is-critical,
+.fleet3d-hover-card.is-offline {
+  border-color: rgba(255, 102, 120, 0.34);
+}
+
+.fleet3d-hover-card.is-warning {
+  border-color: rgba(255, 200, 87, 0.32);
+}
+
+.fleet3d-hover-heading {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.fleet3d-hover-heading span {
+  color: rgba(247, 248, 251, 0.54);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.fleet3d-hover-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet3d-hover-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.fleet3d-hover-metrics span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 7px;
+  color: rgba(247, 248, 251, 0.58);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.fleet3d-hover-metrics b {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7f8fb;
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet3d-hover-card p {
+  margin: 9px 0 0;
+  color: rgba(247, 248, 251, 0.64);
+  font-size: 11px;
+  font-weight: 680;
+  line-height: 1.4;
+}
+
 .fleet3d-marquee {
   position: absolute;
   z-index: 6;

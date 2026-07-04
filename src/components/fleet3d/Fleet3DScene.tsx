@@ -9,12 +9,40 @@ import type {
   Fleet3DQuality,
   Fleet3DRendererMode,
 } from "@/utils/fleet3d";
+import { formatByteRateLabel } from "@/utils/format";
 
 interface MarqueeRect {
   left: number;
   top: number;
   width: number;
   height: number;
+}
+
+interface SceneLabel {
+  uuid: string;
+  name: string;
+  x: number;
+  y: number;
+  tone: "online" | "offline" | "unknown" | "warning" | "critical";
+  selected: boolean;
+  inCompare: boolean;
+  resource: number;
+  traffic: number;
+}
+
+interface HoverCard {
+  uuid: string;
+  name: string;
+  group: string;
+  x: number;
+  y: number;
+  tone: "online" | "offline" | "unknown" | "warning" | "critical";
+  status: string;
+  risk: string;
+  resource: string;
+  traffic: string;
+  ping: string;
+  summary: string;
 }
 
 interface Fleet3DSceneProps {
@@ -39,6 +67,16 @@ const NODE_CORE_RADIUS = 0.105;
 const NODE_GLOW_RADIUS = 0.22;
 const GLOBE_RADIUS = 4.9;
 const MAX_TRAFFIC_PARTICLES_PER_DIRECTION = 26;
+const STATUS_LABELS: Record<Fleet3DNode["status"], string> = {
+  online: "在线",
+  offline: "离线",
+  unknown: "未知",
+};
+const RISK_LABELS: Record<Fleet3DNode["risk"]["tone"], string> = {
+  none: "正常",
+  warning: "需关注",
+  critical: "高风险",
+};
 const CAMERA_PRESETS: Record<Fleet3DCameraPreset, THREE.Vector3> = {
   overview: new THREE.Vector3(0, 5.6, 12.5),
   close: new THREE.Vector3(0, 4.1, 8.4),
@@ -90,6 +128,7 @@ interface SceneRuntime {
   pingHalos: PingHalo[];
   startMs: number;
   frame: number;
+  labelTick: number;
   focusSignature: string;
 }
 
@@ -658,6 +697,125 @@ function buildMarqueeRect(
   };
 }
 
+function nodeTone(node: Fleet3DNode): SceneLabel["tone"] {
+  if (node.status === "offline") return "offline";
+  if (node.risk.tone === "critical" || node.visual.trafficTone === "critical") return "critical";
+  if (
+    node.risk.tone === "warning" ||
+    node.visual.trafficTone === "warning" ||
+    node.visual.expiryTone === "warning" ||
+    node.visual.completenessTone === "warning" ||
+    node.visual.pingTone === "warning"
+  ) {
+    return "warning";
+  }
+  return node.status;
+}
+
+function labelPriority(node: Fleet3DNode, selected: boolean, inCompare: boolean) {
+  return (
+    (selected ? 100 : 0) +
+    (inCompare ? 70 : 0) +
+    (node.risk.tone === "critical" ? 52 : node.risk.tone === "warning" ? 34 : 0) +
+    (node.status === "offline" ? 44 : 0) +
+    node.visual.resourcePeakRatio * 18 +
+    node.visual.trafficPressure * 16
+  );
+}
+
+function boxesOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+function buildSceneLabels(runtime: SceneRuntime, latest: LatestSceneState): SceneLabel[] {
+  const canvasRect = runtime.renderer.domElement.getBoundingClientRect();
+  const compareSet = new Set(latest.compareUuids);
+  const projected = latest.nodes
+    .map((node) => {
+      const group = runtime.nodeGroups.get(node.uuid);
+      if (!group) return null;
+      const point = group.position.clone().applyMatrix4(runtime.root.matrixWorld).project(runtime.camera);
+      if (point.z < -1 || point.z > 1) return null;
+      const x = ((point.x + 1) / 2) * canvasRect.width;
+      const y = ((1 - point.y) / 2) * canvasRect.height;
+      if (x < 6 || x > canvasRect.width - 6 || y < 6 || y > canvasRect.height - 6) return null;
+      const selected = node.uuid === latest.selectedUuid;
+      const inCompare = compareSet.has(node.uuid);
+      return { node, x, y, selected, inCompare, priority: labelPriority(node, selected, inCompare) };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((left, right) => right.priority - left.priority || left.node.name.localeCompare(right.node.name, "zh-CN"));
+
+  const placed: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+  const labels: SceneLabel[] = [];
+  for (const item of projected) {
+    const width = clamp(70 + item.node.name.length * 6.2, 92, 190);
+    const height = 31;
+    const left = clamp(item.x - width / 2, 8, Math.max(8, canvasRect.width - width - 8));
+    const top = clamp(item.y - 46, 8, Math.max(8, canvasRect.height - height - 8));
+    const box = { left, top, right: left + width, bottom: top + height };
+    const mustShow =
+      item.selected ||
+      item.inCompare ||
+      item.node.status === "offline" ||
+      item.node.risk.tone !== "none" ||
+      item.node.visual.trafficTone === "critical";
+    if (!mustShow && placed.some((existing) => boxesOverlap(existing, box))) continue;
+    placed.push(box);
+    labels.push({
+      uuid: item.node.uuid,
+      name: item.node.name,
+      x: left + width / 2,
+      y: top,
+      tone: nodeTone(item.node),
+      selected: item.selected,
+      inCompare: item.inCompare,
+      resource: Math.round(item.node.visual.resourcePeakRatio * 100),
+      traffic: Math.round(item.node.visual.trafficPressure * 100),
+    });
+  }
+  return labels;
+}
+
+function sceneLabelsSignature(labels: SceneLabel[]) {
+  return labels
+    .map((label) =>
+      [
+        label.uuid,
+        Math.round(label.x),
+        Math.round(label.y),
+        label.tone,
+        label.selected ? 1 : 0,
+        label.inCompare ? 1 : 0,
+        label.resource,
+        label.traffic,
+      ].join(":"),
+    )
+    .join("|");
+}
+
+function buildHoverCard(node: Fleet3DNode, point: { x: number; y: number }, rect: DOMRect): HoverCard {
+  const width = Math.min(292, Math.max(232, rect.width - 24));
+  const height = 184;
+  return {
+    uuid: node.uuid,
+    name: node.name,
+    group: node.group,
+    x: clamp(point.x + 18, 12, Math.max(12, rect.width - width - 12)),
+    y: clamp(point.y + 18, 12, Math.max(12, rect.height - height - 12)),
+    tone: nodeTone(node),
+    status: STATUS_LABELS[node.status],
+    risk: RISK_LABELS[node.risk.tone],
+    resource: `${Math.round(node.visual.resourcePeakRatio * 100)}%`,
+    traffic: formatByteRateLabel(node.netRate),
+    ping: node.ping.latency == null ? "无样本" : `${Math.round(node.ping.latency)} ms`,
+    summary: node.visual.summary,
+  };
+}
+
 function rebuildSceneObjects(
   runtime: SceneRuntime,
   {
@@ -780,6 +938,8 @@ export function Fleet3DScene({
     onSnapshotReady,
   });
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
+  const [labels, setLabels] = useState<SceneLabel[]>([]);
+  const [hoverCard, setHoverCard] = useState<HoverCard | null>(null);
 
   useEffect(() => {
     latestRef.current = {
@@ -925,6 +1085,7 @@ export function Fleet3DScene({
       pingHalos: [],
       startMs: performance.now(),
       frame: 0,
+      labelTick: 0,
       focusSignature: focusSignature(null, initial.cameraPreset),
     };
     runtimeRef.current = runtime;
@@ -997,6 +1158,7 @@ export function Fleet3DScene({
       if (pointerDown) {
         const distance = Math.hypot(point.x - pointerDown.x, point.y - pointerDown.y);
         didDrag = distance > 6;
+        setHoverCard(null);
         if (pointerShiftSelect) {
           const next = buildMarqueeRect(pointerDown, point);
           if (didDrag) setMarquee(next);
@@ -1005,10 +1167,13 @@ export function Fleet3DScene({
       }
 
       const uuid = pickNode(event);
+      const node = uuid ? latestRef.current.nodes.find((item) => item.uuid === uuid) : null;
       if (uuid !== hoveredUuid) {
         hoveredUuid = uuid ?? null;
         renderer.domElement.style.cursor = uuid ? "pointer" : "grab";
       }
+      renderer.domElement.dataset.hoverUuid = uuid ?? "";
+      setHoverCard(node ? buildHoverCard(node, point, rect) : null);
     };
 
     const updateCameraDataset = () => {
@@ -1038,6 +1203,7 @@ export function Fleet3DScene({
       pointerDown = toCanvasPoint(event, renderer.domElement.getBoundingClientRect());
       pointerShiftSelect = event.shiftKey;
       didDrag = false;
+      setHoverCard(null);
       if (pointerShiftSelect) controls.enabled = false;
       renderer.domElement.setPointerCapture(event.pointerId);
     };
@@ -1062,6 +1228,13 @@ export function Fleet3DScene({
       controls.enabled = true;
     };
 
+    const handlePointerLeave = () => {
+      hoveredUuid = null;
+      renderer.domElement.dataset.hoverUuid = "";
+      renderer.domElement.style.cursor = "grab";
+      setHoverCard(null);
+    };
+
     const handleDoubleClick = (event: MouseEvent) => {
       const uuid = pickNode(event as unknown as PointerEvent);
       if (!uuid) return;
@@ -1078,6 +1251,7 @@ export function Fleet3DScene({
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
+    renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
     const animate = () => {
@@ -1095,6 +1269,13 @@ export function Fleet3DScene({
         group.scale.setScalar(pulse);
       });
       updateCameraDataset();
+      runtime.labelTick += 1;
+      if (runtime.labelTick % 8 === 0) {
+        const nextLabels = buildSceneLabels(runtime, latestRef.current);
+        setLabels((current) =>
+          sceneLabelsSignature(current) === sceneLabelsSignature(nextLabels) ? current : nextLabels,
+        );
+      }
       renderer.render(scene, camera);
       runtime.frame = window.requestAnimationFrame(animate);
     };
@@ -1106,6 +1287,7 @@ export function Fleet3DScene({
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("contextmenu", preventContextMenu);
       controls.dispose();
@@ -1115,6 +1297,8 @@ export function Fleet3DScene({
       disposeObject(scene);
       renderer.dispose();
       setMarquee(null);
+      setLabels([]);
+      setHoverCard(null);
     };
   }, []);
 
@@ -1171,7 +1355,49 @@ export function Fleet3DScene({
       data-fleet3d-scene
       data-layout-mode={layoutMode}
       data-renderer-mode={rendererMode}
+      data-selected-uuid={selectedUuid ?? ""}
+      data-compare-count={compareUuids.length}
+      data-label-count={labels.length}
     >
+      <div className="fleet3d-label-layer" aria-hidden="true">
+        {labels.map((label) => (
+          <div
+            key={label.uuid}
+            className={[
+              "fleet3d-node-label",
+              `is-${label.tone}`,
+              label.selected ? "is-selected" : "",
+              label.inCompare ? "is-compare" : "",
+            ].filter(Boolean).join(" ")}
+            style={{ left: label.x, top: label.y }}
+            data-node-label={label.uuid}
+          >
+            <span className="fleet3d-node-label-dot" />
+            <strong>{label.name}</strong>
+            <small>{label.resource}%</small>
+          </div>
+        ))}
+      </div>
+      {hoverCard && (
+        <div
+          className={`fleet3d-hover-card is-${hoverCard.tone}`}
+          style={{ left: hoverCard.x, top: hoverCard.y }}
+          data-hover-card={hoverCard.uuid}
+        >
+          <div className="fleet3d-hover-heading">
+            <span>{hoverCard.group}</span>
+            <strong>{hoverCard.name}</strong>
+          </div>
+          <div className="fleet3d-hover-metrics">
+            <span>状态 <b>{hoverCard.status}</b></span>
+            <span>风险 <b>{hoverCard.risk}</b></span>
+            <span>资源 <b>{hoverCard.resource}</b></span>
+            <span>带宽 <b>{hoverCard.traffic}</b></span>
+            <span>Ping <b>{hoverCard.ping}</b></span>
+          </div>
+          <p>{hoverCard.summary}</p>
+        </div>
+      )}
       {marquee && (
         <div
           className="fleet3d-marquee"
