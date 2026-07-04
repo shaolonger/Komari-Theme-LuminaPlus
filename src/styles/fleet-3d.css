@@ -501,7 +501,7 @@
 }
 
 .fleet3d-focus-panel {
-  top: 286px;
+  top: 304px;
   left: 16px;
   display: grid;
   width: min(430px, calc(100% - 382px));
@@ -680,7 +680,7 @@
   }
 
   .fleet3d-focus-panel {
-    top: 338px;
+    top: 356px;
     right: 16px;
     width: auto;
   }
@@ -732,6 +732,7 @@
   }
 
   .fleet3d-status-strip {
+    display: none;
     grid-template-columns: repeat(4, minmax(58px, 1fr));
     gap: 5px;
     padding: 6px;
@@ -746,14 +747,14 @@
   }
 
   .fleet3d-filterbar {
-    top: 254px;
+    top: 72px;
     left: 10px;
     max-width: calc(100% - 20px);
     overflow-x: auto;
   }
 
   .fleet3d-timeline-panel {
-    top: 374px;
+    top: 132px;
     right: 10px;
     left: 10px;
     width: auto;
@@ -765,7 +766,7 @@
   }
 
   .fleet3d-focus-panel {
-    top: 518px;
+    top: 294px;
     right: 10px;
     left: 10px;
     width: auto;
