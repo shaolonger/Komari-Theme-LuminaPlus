@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Fleet3DNode, Fleet3DOrbit } from "@/utils/fleet3d";
+import type { Fleet3DCameraPreset, Fleet3DNode, Fleet3DOrbit } from "@/utils/fleet3d";
 
 interface MarqueeRect {
   left: number;
@@ -15,6 +15,9 @@ interface Fleet3DSceneProps {
   selectedUuid: string | null;
   compareUuids: string[];
   riskScan: boolean;
+  cameraPreset: Fleet3DCameraPreset;
+  focusCenter: [number, number, number] | null;
+  focusedUuids: string[];
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
 }
@@ -22,6 +25,11 @@ interface Fleet3DSceneProps {
 const NODE_CORE_RADIUS = 0.105;
 const NODE_GLOW_RADIUS = 0.22;
 const MAX_TRAFFIC_PARTICLES_PER_DIRECTION = 26;
+const CAMERA_PRESETS: Record<Fleet3DCameraPreset, THREE.Vector3> = {
+  overview: new THREE.Vector3(0, 5.6, 12.5),
+  close: new THREE.Vector3(0, 4.1, 8.4),
+  wide: new THREE.Vector3(0, 7.4, 16.8),
+};
 
 interface TrafficStream {
   points: THREE.Points;
@@ -110,6 +118,7 @@ function createNodeMesh(
   selected: boolean,
   inCompare: boolean,
   riskScan: boolean,
+  focusDimmed: boolean,
 ) {
   const group = new THREE.Group();
   group.position.set(node.position[0], node.position[1], node.position[2]);
@@ -118,6 +127,7 @@ function createNodeMesh(
   const color = new THREE.Color(node.color);
   const glow = new THREE.Color(node.glowColor);
   const riskDimmed = riskScan && node.risk.tone === "none" && !selected && !inCompare;
+  const dimmed = riskDimmed || focusDimmed;
   const riskEmphasis = riskScan && node.risk.tone !== "none";
   const riskColor =
     node.risk.tone === "critical"
@@ -129,11 +139,11 @@ function createNodeMesh(
   const coreMaterial = new THREE.MeshStandardMaterial({
     color: riskEmphasis ? riskColor : color,
     emissive: riskEmphasis ? riskColor : glow,
-    emissiveIntensity: riskDimmed ? 0.18 : riskEmphasis ? 1.9 : selected ? 1.8 : inCompare ? 1.25 : 0.82,
+    emissiveIntensity: dimmed ? 0.16 : riskEmphasis ? 1.9 : selected ? 1.8 : inCompare ? 1.25 : 0.82,
     roughness: 0.28,
     metalness: 0.22,
-    transparent: riskDimmed,
-    opacity: riskDimmed ? 0.34 : 1,
+    transparent: dimmed,
+    opacity: dimmed ? 0.3 : 1,
   });
   const core = new THREE.Mesh(coreGeometry, coreMaterial);
   core.userData.uuid = node.uuid;
@@ -143,7 +153,7 @@ function createNodeMesh(
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: riskEmphasis ? riskColor : glow,
     transparent: true,
-    opacity: riskDimmed ? 0.025 : riskEmphasis ? 0.24 : selected ? 0.22 : inCompare ? 0.16 : 0.1,
+    opacity: dimmed ? 0.02 : riskEmphasis ? 0.24 : selected ? 0.22 : inCompare ? 0.16 : 0.1,
     depthWrite: false,
   });
   const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
@@ -397,6 +407,9 @@ export function Fleet3DScene({
   selectedUuid,
   compareUuids,
   riskScan,
+  cameraPreset,
+  focusCenter,
+  focusedUuids,
   onSelectNode,
   onMarqueeSelect,
 }: Fleet3DSceneProps) {
@@ -408,9 +421,14 @@ export function Fleet3DScene({
     if (!container) return;
 
     const compareSet = new Set(compareUuids);
+    const focusedSet = new Set(focusedUuids);
+    const hasFocus = focusedSet.size > 0 && focusedSet.size < nodes.length;
+    const focusVector = focusCenter
+      ? new THREE.Vector3(focusCenter[0], focusCenter[1], focusCenter[2])
+      : null;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
-    camera.position.set(0, 5.6, 12.5);
+    camera.position.copy(CAMERA_PRESETS[cameraPreset]);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({
@@ -446,7 +464,8 @@ export function Fleet3DScene({
     for (const node of nodes) {
       const selected = node.uuid === selectedUuid;
       const inCompare = compareSet.has(node.uuid);
-      const mesh = createNodeMesh(node, selected, inCompare, riskScan);
+      const focusDimmed = hasFocus && !focusedSet.has(node.uuid) && !selected && !inCompare;
+      const mesh = createNodeMesh(node, selected, inCompare, riskScan, focusDimmed);
       nodeGroups.set(node.uuid, mesh);
       hitTargets.push(mesh);
       root.add(mesh);
@@ -457,18 +476,19 @@ export function Fleet3DScene({
       ]);
       root.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
 
-      const upStream = riskScan && node.risk.tone === "none" ? null : createTrafficStream(node, "up");
+      const suppressAuxiliary = focusDimmed || (riskScan && node.risk.tone === "none");
+      const upStream = suppressAuxiliary ? null : createTrafficStream(node, "up");
       if (upStream) {
         trafficStreams.push(upStream);
         root.add(upStream.points);
       }
-      const downStream = riskScan && node.risk.tone === "none" ? null : createTrafficStream(node, "down");
+      const downStream = suppressAuxiliary ? null : createTrafficStream(node, "down");
       if (downStream) {
         trafficStreams.push(downStream);
         root.add(downStream.points);
       }
 
-      const pingHalo = createPingHalo(node);
+      const pingHalo = focusDimmed ? null : createPingHalo(node);
       if (pingHalo) {
         pingHalos.push(pingHalo);
         root.add(pingHalo.group);
@@ -579,8 +599,16 @@ export function Fleet3DScene({
     const startMs = performance.now();
     const animate = () => {
       const elapsed = (performance.now() - startMs) / 1000;
-      root.rotation.y = elapsed * 0.085;
+      const targetRotationY = focusVector ? 0 : elapsed * 0.085;
+      root.rotation.y += (targetRotationY - root.rotation.y) * 0.055;
       root.rotation.x = Math.sin(elapsed * 0.32) * 0.04;
+      const targetRootPosition = new THREE.Vector3(0, 0, 0);
+      if (focusVector) {
+        targetRootPosition.copy(focusVector).applyEuler(root.rotation).multiplyScalar(-1);
+      }
+      root.position.lerp(targetRootPosition, 0.075);
+      camera.position.lerp(CAMERA_PRESETS[cameraPreset], 0.045);
+      camera.lookAt(0, 0, 0);
       starField.rotation.y = elapsed * 0.025;
       starField.rotation.x = Math.sin(elapsed * 0.17) * 0.035;
       trafficStreams.forEach((stream) => updateTrafficStream(stream, elapsed));
@@ -608,7 +636,18 @@ export function Fleet3DScene({
       renderer.dispose();
       setMarquee(null);
     };
-  }, [compareUuids, nodes, onMarqueeSelect, onSelectNode, orbits, riskScan, selectedUuid]);
+  }, [
+    cameraPreset,
+    compareUuids,
+    focusCenter,
+    focusedUuids,
+    nodes,
+    onMarqueeSelect,
+    onSelectNode,
+    orbits,
+    riskScan,
+    selectedUuid,
+  ]);
 
   return (
     <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene>

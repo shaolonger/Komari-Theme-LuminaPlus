@@ -11,7 +11,11 @@ import {
   buildFleet3DModel,
   buildFleet3DReplayState,
   filterFleet3DNodes,
+  getFleet3DFocusOptions,
+  resolveFleet3DFocus,
+  type Fleet3DCameraPreset,
   type Fleet3DFilter,
+  type Fleet3DFocusKind,
   type Fleet3DNode,
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
@@ -23,6 +27,16 @@ const TIMELINE_RANGES = [
   { value: 4, label: "4h" },
   { value: 24, label: "1d" },
 ] as const;
+const CAMERA_PRESETS: Array<{ value: Fleet3DCameraPreset; label: string }> = [
+  { value: "overview", label: "全景" },
+  { value: "close", label: "近景" },
+  { value: "wide", label: "广角" },
+];
+const FOCUS_KIND_OPTIONS: Array<{ value: Fleet3DFocusKind; label: string }> = [
+  { value: "all", label: "全部" },
+  { value: "group", label: "分组" },
+  { value: "region", label: "地区" },
+];
 
 const STATUS_LABELS: Record<Fleet3DStatus, string> = {
   online: "在线",
@@ -212,6 +226,9 @@ export function Fleet3D() {
   const [timelinePlaying, setTimelinePlaying] = useState(false);
   const [timelineHours, setTimelineHours] = useState<(typeof TIMELINE_RANGES)[number]["value"]>(4);
   const [timelineProgress, setTimelineProgress] = useState(1);
+  const [focusKind, setFocusKind] = useState<Fleet3DFocusKind>("all");
+  const [focusValue, setFocusValue] = useState("");
+  const [cameraPreset, setCameraPreset] = useState<Fleet3DCameraPreset>("overview");
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -243,6 +260,18 @@ export function Fleet3D() {
     [model.nodes, replayQuery.data, timelineEnabled, timelineProgress],
   );
   const renderedNodes = replayState?.nodes ?? model.nodes;
+  const focusOptions = useMemo(
+    () =>
+      focusKind === "all"
+        ? []
+        : getFleet3DFocusOptions(renderedNodes, focusKind),
+    [focusKind, renderedNodes],
+  );
+  const activeFocusValue = focusKind === "all" ? "" : focusValue || focusOptions[0] || "";
+  const focusState = useMemo(
+    () => resolveFleet3DFocus(renderedNodes, focusKind, activeFocusValue),
+    [activeFocusValue, focusKind, renderedNodes],
+  );
   const visibleNodes = useMemo(
     () => filterFleet3DNodes(renderedNodes, filter),
     [filter, renderedNodes],
@@ -292,6 +321,9 @@ export function Fleet3D() {
         selectedUuid={selectedUuid}
         compareUuids={compareUuids}
         riskScan={riskScan}
+        cameraPreset={cameraPreset}
+        focusCenter={focusState.center}
+        focusedUuids={focusState.kind === "all" ? [] : focusState.uuids}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
       />
@@ -344,6 +376,55 @@ export function Fleet3D() {
           </button>
         ))}
       </nav>
+
+      <div className="fleet3d-focus-panel" aria-label="聚焦与相机">
+        <div className="fleet3d-focus-selects">
+          <label>
+            <span>聚焦</span>
+            <select
+              value={focusKind}
+              onChange={(event) => {
+                const next = event.target.value as Fleet3DFocusKind;
+                setFocusKind(next);
+                setFocusValue("");
+              }}
+            >
+              {FOCUS_KIND_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {focusKind !== "all" && (
+            <label>
+              <span>{focusKind === "group" ? "分组" : "地区"}</span>
+              <select
+                value={activeFocusValue}
+                onChange={(event) => setFocusValue(event.target.value)}
+              >
+                {focusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="fleet3d-camera-presets">
+          {CAMERA_PRESETS.map((preset) => (
+            <button
+              key={preset.value}
+              type="button"
+              className={cameraPreset === preset.value ? "is-active" : ""}
+              onClick={() => setCameraPreset(preset.value)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {model.nodes.length === 0 && (
         <div className="fleet3d-empty-state">

@@ -6,6 +6,8 @@ import { getVpsOperationalRisks, strongestRiskSeverity } from "@/utils/vpsRisk";
 
 export type Fleet3DStatus = "online" | "offline" | "unknown";
 export type Fleet3DFilter = "all" | Fleet3DStatus;
+export type Fleet3DFocusKind = "all" | "group" | "region";
+export type Fleet3DCameraPreset = "overview" | "close" | "wide";
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
 export type Fleet3DRiskTone = "none" | "warning" | "critical";
 
@@ -79,6 +81,14 @@ export interface Fleet3DReplayState {
   nodes: Fleet3DNode[];
   timestamp: number;
   sampleCount: number;
+}
+
+export interface Fleet3DFocusState {
+  kind: Fleet3DFocusKind;
+  value: string;
+  label: string;
+  uuids: string[];
+  center: [number, number, number] | null;
 }
 
 const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }> = {
@@ -392,5 +402,59 @@ export function buildFleet3DReplayState(
     nodes: replayNodes,
     timestamp,
     sampleCount,
+  };
+}
+
+export function getFleet3DFocusOptions(nodes: Fleet3DNode[], kind: Exclude<Fleet3DFocusKind, "all">) {
+  return Array.from(new Set(nodes.map((node) => (kind === "group" ? node.group : node.region))))
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+export function resolveFleet3DFocus(
+  nodes: Fleet3DNode[],
+  kind: Fleet3DFocusKind,
+  value: string,
+): Fleet3DFocusState {
+  if (kind === "all" || !value) {
+    return {
+      kind: "all",
+      value: "",
+      label: "全部",
+      uuids: nodes.map((node) => node.uuid),
+      center: null,
+    };
+  }
+
+  const focused = nodes.filter((node) => (kind === "group" ? node.group : node.region) === value);
+  if (focused.length === 0) {
+    return {
+      kind: "all",
+      value: "",
+      label: "全部",
+      uuids: nodes.map((node) => node.uuid),
+      center: null,
+    };
+  }
+
+  const center = focused.reduce(
+    (acc, node) => {
+      acc[0] += node.position[0];
+      acc[1] += node.position[1];
+      acc[2] += node.position[2];
+      return acc;
+    },
+    [0, 0, 0] as [number, number, number],
+  );
+  center[0] /= focused.length;
+  center[1] /= focused.length;
+  center[2] /= focused.length;
+
+  return {
+    kind,
+    value,
+    label: value,
+    uuids: focused.map((node) => node.uuid),
+    center,
   };
 }

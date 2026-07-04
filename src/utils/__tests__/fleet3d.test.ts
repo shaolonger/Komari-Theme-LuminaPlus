@@ -4,6 +4,8 @@ import {
   buildFleet3DModel,
   buildFleet3DReplayState,
   filterFleet3DNodes,
+  getFleet3DFocusOptions,
+  resolveFleet3DFocus,
 } from "@/utils/fleet3d";
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { LoadRecord, NodeInfo, PingOverviewItem } from "@/types/komari";
@@ -231,5 +233,20 @@ describe("fleet 3D helpers", () => {
     expect(replay.nodes[0]?.replay?.active).toBe(true);
     expect(replay.nodes[0]?.replay?.pressure).toBeGreaterThan(0.7);
     expect(replay.nodes[0]?.color).toBe("#ff6678");
+  });
+
+  it("resolves group focus targets and centers", () => {
+    const model = buildFleet3DModel([
+      node({ uuid: "a", group: "edge" }),
+      node({ uuid: "b", group: "edge" }),
+      node({ uuid: "c", group: "core" }),
+    ], []);
+
+    expect(getFleet3DFocusOptions(model.nodes, "group")).toEqual(["core", "edge"]);
+    const focus = resolveFleet3DFocus(model.nodes, "group", "edge");
+
+    expect(focus.uuids).toEqual(["a", "b"]);
+    expect(focus.center).not.toBeNull();
+    expect(focus.label).toBe("edge");
   });
 });
