@@ -93,6 +93,17 @@ export interface Fleet3DFocusState {
   center: [number, number, number] | null;
 }
 
+export interface Fleet3DCruiseTarget {
+  id: string;
+  label: string;
+  detail: string;
+  uuids: string[];
+  center: [number, number, number] | null;
+  cameraPreset: Fleet3DCameraPreset;
+  riskScan: boolean;
+  attentionUuid: string | null;
+}
+
 export interface Fleet3DRendererCapability {
   mode: Fleet3DRendererMode;
   label: string;
@@ -106,6 +117,11 @@ const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }>
   online: { color: "#50d890", glowColor: "#8fffc1" },
   offline: { color: "#ff5d73", glowColor: "#ff9aaa" },
   unknown: { color: "#93a4bd", glowColor: "#d7e2f5" },
+};
+const STATUS_LABELS_FALLBACK: Record<Fleet3DStatus, string> = {
+  online: "在线",
+  offline: "离线",
+  unknown: "未知",
 };
 
 function hashString(value: string) {
@@ -252,6 +268,38 @@ function replayTone(pressure: number) {
   if (pressure >= 0.82) return { color: "#ff6678", glowColor: "#ff9aaa" };
   if (pressure >= 0.6) return { color: "#ffc857", glowColor: "#ffe0a3" };
   return { color: "#50d890", glowColor: "#8fffc1" };
+}
+
+function riskWeight(node: Fleet3DNode) {
+  if (node.risk.tone === "critical") return 2 + node.risk.score;
+  if (node.risk.tone === "warning") return 1 + node.risk.score;
+  return node.status === "offline" ? 0.7 : 0;
+}
+
+function centerOfNodes(nodes: Fleet3DNode[]): [number, number, number] | null {
+  if (nodes.length === 0) return null;
+  const center = nodes.reduce(
+    (acc, node) => {
+      acc[0] += node.position[0];
+      acc[1] += node.position[1];
+      acc[2] += node.position[2];
+      return acc;
+    },
+    [0, 0, 0] as [number, number, number],
+  );
+  center[0] /= nodes.length;
+  center[1] /= nodes.length;
+  center[2] /= nodes.length;
+  return center;
+}
+
+function groupByValue(nodes: Fleet3DNode[], key: "group" | "region") {
+  const grouped = new Map<string, Fleet3DNode[]>();
+  for (const node of nodes) {
+    const value = key === "group" ? node.group : node.region;
+    grouped.set(value, [...(grouped.get(value) ?? []), node]);
+  }
+  return grouped;
 }
 
 export function buildCompareHref(uuids: string[]) {
@@ -432,6 +480,71 @@ export function buildFleet3DModel(
 export function filterFleet3DNodes(nodes: Fleet3DNode[], filter: Fleet3DFilter) {
   if (filter === "all") return nodes;
   return nodes.filter((node) => node.status === filter);
+}
+
+export function buildFleet3DCruiseTargets(nodes: Fleet3DNode[]): Fleet3DCruiseTarget[] {
+  if (nodes.length === 0) return [];
+
+  const sortedRiskNodes = [...nodes]
+    .filter((node) => node.risk.tone !== "none" || node.status === "offline")
+    .sort((left, right) => riskWeight(right) - riskWeight(left) || left.name.localeCompare(right.name, "zh-CN"));
+  const riskTargets = sortedRiskNodes.slice(0, 4).map((node) => ({
+    id: `attention:${node.uuid}`,
+    label: node.name,
+    detail: node.risk.issues[0] ?? STATUS_LABELS_FALLBACK[node.status],
+    uuids: [node.uuid],
+    center: centerOfNodes([node]),
+    cameraPreset: "close" as const,
+    riskScan: true,
+    attentionUuid: node.uuid,
+  }));
+
+  const groupTargets = Array.from(groupByValue(nodes, "group").entries())
+    .map(([group, groupNodes]) => {
+      const topRiskNode = [...groupNodes].sort((left, right) => riskWeight(right) - riskWeight(left))[0] ?? null;
+      return {
+        id: `group:${group}`,
+        label: group,
+        detail: `${groupNodes.length} 台 VPS`,
+        uuids: groupNodes.map((node) => node.uuid),
+        center: centerOfNodes(groupNodes),
+        cameraPreset: groupNodes.length > 4 ? ("overview" as const) : ("close" as const),
+        riskScan: groupNodes.some((node) => node.risk.tone !== "none"),
+        attentionUuid: topRiskNode && riskWeight(topRiskNode) > 0 ? topRiskNode.uuid : null,
+      };
+    })
+    .sort((left, right) => right.uuids.length - left.uuids.length || left.label.localeCompare(right.label, "zh-CN"));
+
+  const regionTargets = Array.from(groupByValue(nodes, "region").entries())
+    .filter(([, regionNodes]) => regionNodes.length > 1)
+    .map(([region, regionNodes]) => ({
+      id: `region:${region}`,
+      label: region,
+      detail: `${regionNodes.length} 台 VPS`,
+      uuids: regionNodes.map((node) => node.uuid),
+      center: centerOfNodes(regionNodes),
+      cameraPreset: "overview" as const,
+      riskScan: regionNodes.some((node) => node.risk.tone !== "none"),
+      attentionUuid: null,
+    }))
+    .sort((left, right) => right.uuids.length - left.uuids.length || left.label.localeCompare(right.label, "zh-CN"))
+    .slice(0, 3);
+
+  return [
+    ...riskTargets,
+    ...groupTargets,
+    ...regionTargets,
+    {
+      id: "fleet:all",
+      label: "全局态势",
+      detail: `${nodes.length} 台 VPS`,
+      uuids: nodes.map((node) => node.uuid),
+      center: null,
+      cameraPreset: "wide",
+      riskScan: sortedRiskNodes.length > 0,
+      attentionUuid: sortedRiskNodes[0]?.uuid ?? null,
+    },
+  ];
 }
 
 export function buildFleet3DReplayState(

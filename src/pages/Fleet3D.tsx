@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, ChevronLeft, Network, X } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, Network, Radar, X } from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
 import { getComparisonLoadRecords } from "@/services/api";
 import {
   buildCompareHref,
+  buildFleet3DCruiseTargets,
   buildFleet3DModel,
   buildFleet3DReplayState,
   detectFleet3DRendererCapability,
@@ -25,6 +26,7 @@ import {
 import { formatBytes, formatByteRateLabel } from "@/utils/format";
 
 const MAX_COMPARE_NODES = 8;
+const CRUISE_STEP_MS = 6500;
 const TIMELINE_RANGES = [
   { value: 1, label: "1h" },
   { value: 4, label: "4h" },
@@ -239,6 +241,8 @@ export function Fleet3D() {
   const [cameraPreset, setCameraPreset] = useState<Fleet3DCameraPreset>("overview");
   const [quality, setQuality] = useState<Fleet3DQuality>("balanced");
   const [rendererCapability, setRendererCapability] = useState<Fleet3DRendererCapability | null>(null);
+  const [cruiseMode, setCruiseMode] = useState(false);
+  const [cruiseIndex, setCruiseIndex] = useState(0);
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -286,6 +290,21 @@ export function Fleet3D() {
     () => filterFleet3DNodes(renderedNodes, filter),
     [filter, renderedNodes],
   );
+  const cruiseTargets = useMemo(
+    () => buildFleet3DCruiseTargets(visibleNodes),
+    [visibleNodes],
+  );
+  const activeCruiseTarget = cruiseMode && cruiseTargets.length > 0
+    ? cruiseTargets[cruiseIndex % cruiseTargets.length]
+    : null;
+  const effectiveFocusedUuids = activeCruiseTarget
+    ? activeCruiseTarget.uuids
+    : focusState.kind === "all"
+      ? []
+      : focusState.uuids;
+  const effectiveFocusCenter = activeCruiseTarget?.center ?? focusState.center;
+  const effectiveCameraPreset = activeCruiseTarget?.cameraPreset ?? cameraPreset;
+  const effectiveRiskScan = riskScan || Boolean(activeCruiseTarget?.riskScan);
   const selectedNode = useMemo(
     () => renderedNodes.find((node) => node.uuid === selectedUuid) ?? null,
     [renderedNodes, selectedUuid],
@@ -311,6 +330,30 @@ export function Fleet3D() {
     setRendererCapability(detectFleet3DRendererCapability());
   }, []);
 
+  useEffect(() => {
+    if (!cruiseMode || cruiseTargets.length > 0) return;
+    setCruiseMode(false);
+    setCruiseIndex(0);
+  }, [cruiseMode, cruiseTargets.length]);
+
+  useEffect(() => {
+    if (cruiseTargets.length === 0) return;
+    setCruiseIndex((value) => value % cruiseTargets.length);
+  }, [cruiseTargets.length]);
+
+  useEffect(() => {
+    if (!cruiseMode || cruiseTargets.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setCruiseIndex((value) => (value + 1) % cruiseTargets.length);
+    }, CRUISE_STEP_MS);
+    return () => window.clearInterval(timer);
+  }, [cruiseMode, cruiseTargets.length]);
+
+  useEffect(() => {
+    if (!activeCruiseTarget) return;
+    setSelectedUuid(activeCruiseTarget.attentionUuid ?? activeCruiseTarget.uuids[0] ?? null);
+  }, [activeCruiseTarget]);
+
   const toggleCompare = useCallback((uuid: string) => {
     setCompareUuids((current) => {
       if (current.includes(uuid)) return current.filter((item) => item !== uuid);
@@ -325,6 +368,15 @@ export function Fleet3D() {
 
   const handleSelectNode = useCallback((uuid: string | null) => {
     setSelectedUuid(uuid);
+    if (cruiseMode) setCruiseMode(false);
+  }, [cruiseMode]);
+
+  const toggleCruiseMode = useCallback(() => {
+    setCruiseMode((value) => {
+      const next = !value;
+      if (next) setCruiseIndex(0);
+      return next;
+    });
   }, []);
 
   return (
@@ -334,10 +386,10 @@ export function Fleet3D() {
         orbits={model.orbits}
         selectedUuid={selectedUuid}
         compareUuids={compareUuids}
-        riskScan={riskScan}
-        cameraPreset={cameraPreset}
-        focusCenter={focusState.center}
-        focusedUuids={focusState.kind === "all" ? [] : focusState.uuids}
+        riskScan={effectiveRiskScan}
+        cameraPreset={effectiveCameraPreset}
+        focusCenter={effectiveFocusCenter}
+        focusedUuids={effectiveFocusedUuids}
         quality={quality}
         rendererMode={rendererCapability?.mode ?? "unavailable"}
         onSelectNode={handleSelectNode}
@@ -367,6 +419,17 @@ export function Fleet3D() {
           <StatPill label="未知" value={model.unknown} tone="unknown" />
         </div>
         <div className="fleet3d-action-group">
+          <button
+            type="button"
+            className={`fleet3d-cruise-button ${cruiseMode ? "is-active" : ""}`}
+            onClick={toggleCruiseMode}
+            disabled={cruiseTargets.length === 0}
+            aria-pressed={cruiseMode}
+          >
+            <Radar size={16} aria-hidden="true" />
+            <span>巡航</span>
+            <strong>{cruiseTargets.length}</strong>
+          </button>
           <button
             type="button"
             className={`fleet3d-risk-button ${riskScan ? "is-active" : ""}`}
@@ -458,6 +521,13 @@ export function Fleet3D() {
             </button>
           ))}
         </div>
+        {activeCruiseTarget && (
+          <div className="fleet3d-cruise-status" aria-live="polite">
+            <span>NOC 巡航</span>
+            <strong>{activeCruiseTarget.label}</strong>
+            <small>{activeCruiseTarget.detail}</small>
+          </div>
+        )}
       </div>
 
       {model.nodes.length === 0 && (

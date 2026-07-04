@@ -164,6 +164,7 @@
 
 .fleet3d-icon-button,
 .fleet3d-compare-button,
+.fleet3d-cruise-button,
 .fleet3d-risk-button,
 .fleet3d-inspector-actions a,
 .fleet3d-inspector-actions button,
@@ -192,6 +193,7 @@
 
 .fleet3d-icon-button:hover,
 .fleet3d-compare-button:hover,
+.fleet3d-cruise-button:hover,
 .fleet3d-risk-button:hover,
 .fleet3d-inspector-actions a:hover,
 .fleet3d-inspector-actions button:hover,
@@ -202,6 +204,7 @@
 
 .fleet3d-icon-button:active,
 .fleet3d-compare-button:active,
+.fleet3d-cruise-button:active,
 .fleet3d-risk-button:active,
 .fleet3d-inspector-actions a:active,
 .fleet3d-inspector-actions button:active,
@@ -264,10 +267,22 @@
 }
 
 .fleet3d-compare-button,
+.fleet3d-cruise-button,
 .fleet3d-risk-button {
   min-width: 88px;
   border-radius: 8px;
   padding: 0 13px;
+}
+
+.fleet3d-cruise-button.is-active {
+  border-color: rgba(106, 167, 255, 0.42);
+  background: rgba(106, 167, 255, 0.16);
+  color: #bcd6ff;
+}
+
+.fleet3d-cruise-button:disabled {
+  opacity: 0.48;
+  pointer-events: none;
 }
 
 .fleet3d-risk-button.is-active {
@@ -277,6 +292,7 @@
 }
 
 .fleet3d-compare-button strong,
+.fleet3d-cruise-button strong,
 .fleet3d-risk-button strong {
   display: inline-flex;
   min-width: 20px;
@@ -287,6 +303,11 @@
   background: rgba(143, 255, 193, 0.14);
   color: #8fffc1;
   font-size: 11px;
+}
+
+.fleet3d-cruise-button strong {
+  background: rgba(106, 167, 255, 0.14);
+  color: #bcd6ff;
 }
 
 .fleet3d-risk-button strong {
@@ -623,6 +644,37 @@
   color: #8fffc1;
 }
 
+.fleet3d-cruise-status {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  border: 1px solid rgba(106, 167, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(106, 167, 255, 0.1);
+  padding: 0 10px;
+}
+
+.fleet3d-cruise-status span,
+.fleet3d-cruise-status small {
+  color: rgba(247, 248, 251, 0.58);
+  font-size: 10px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.fleet3d-cruise-status strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7f8fb;
+  font-size: 12px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fleet3d-compare-tray {
   right: 16px;
   bottom: 16px;
@@ -763,12 +815,14 @@
   }
 
   .fleet3d-compare-button,
+  .fleet3d-cruise-button,
   .fleet3d-risk-button {
     min-width: 42px;
     padding: 0 9px;
   }
 
   .fleet3d-compare-button span,
+  .fleet3d-cruise-button span,
   .fleet3d-risk-button span {
     display: none;
   }
@@ -829,6 +883,15 @@
   .fleet3d-camera-presets button,
   .fleet3d-quality-controls button {
     flex: 1 1 0;
+  }
+
+  .fleet3d-cruise-status {
+    grid-template-columns: minmax(0, 1fr) auto;
+    border-radius: 8px;
+  }
+
+  .fleet3d-cruise-status span {
+    display: none;
   }
 
   .fleet3d-inspector {

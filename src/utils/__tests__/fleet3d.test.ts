@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCompareHref,
+  buildFleet3DCruiseTargets,
   buildFleet3DModel,
   buildFleet3DReplayState,
   detectFleet3DRendererCapability,
@@ -213,6 +214,34 @@ describe("fleet 3D helpers", () => {
       webgpu: false,
       webgl2: false,
       webgl1: false,
+    });
+  });
+
+  it("builds cruise targets with attention nodes first", () => {
+    const model = buildFleet3DModel(
+      [
+        node({ uuid: "a", name: "alpha", group: "edge", region: "US" }),
+        node({ uuid: "b", name: "beta", group: "edge", region: "US" }),
+        node({ uuid: "c", name: "gamma", group: "core", region: "JP" }),
+      ],
+      [
+        summary({ uuid: "a", online: false }),
+        summary({ uuid: "b", online: true }),
+        summary({ uuid: "c", online: true }),
+      ],
+    );
+    const targets = buildFleet3DCruiseTargets(model.nodes);
+
+    expect(targets[0]).toMatchObject({
+      id: "attention:a",
+      attentionUuid: "a",
+      riskScan: true,
+      cameraPreset: "close",
+    });
+    expect(targets.some((target) => target.id === "group:edge")).toBe(true);
+    expect(targets[targets.length - 1]).toMatchObject({
+      id: "fleet:all",
+      cameraPreset: "wide",
     });
   });
 

@@ -25,7 +25,7 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 ## Phase 3 - Advanced Presentation And WebGPU Enhancement
 
 - [x] Add optional WebGPU renderer capability detection with WebGL2 fallback.
-- [ ] Add NOC auto-cruise mode that rotates through groups and highlights attention nodes.
+- [x] Add NOC auto-cruise mode that rotates through groups and highlights attention nodes.
 - [ ] Add share/export snapshot support for a 3D fleet state image.
 - [ ] Add guided anomaly storytelling that sequences through the top issues in the scene.
 - [ ] Add optional globe mode when reliable region/country coordinates are available.
