@@ -655,13 +655,15 @@
 }
 
 .fleet3d-camera-presets,
-.fleet3d-quality-controls {
+.fleet3d-quality-controls,
+.fleet3d-layout-controls {
   display: inline-flex;
   gap: 5px;
 }
 
 .fleet3d-camera-presets button,
-.fleet3d-quality-controls button {
+.fleet3d-quality-controls button,
+.fleet3d-layout-controls button {
   display: inline-flex;
   min-height: 30px;
   align-items: center;
@@ -686,8 +688,29 @@
   grid-column: 1 / -1;
 }
 
+.fleet3d-layout-controls {
+  grid-column: 1 / -1;
+}
+
+.fleet3d-layout-controls button {
+  gap: 5px;
+}
+
+.fleet3d-layout-controls button:disabled {
+  opacity: 0.44;
+  pointer-events: none;
+}
+
+.fleet3d-layout-controls small {
+  color: rgba(247, 248, 251, 0.5);
+  font-size: 10px;
+  font-weight: 760;
+}
+
 .fleet3d-quality-controls button:hover,
-.fleet3d-quality-controls button.is-active {
+.fleet3d-quality-controls button.is-active,
+.fleet3d-layout-controls button:hover,
+.fleet3d-layout-controls button.is-active {
   border-color: rgba(143, 255, 193, 0.34);
   background: rgba(143, 255, 193, 0.12);
   color: #8fffc1;
@@ -1031,12 +1054,14 @@
   }
 
   .fleet3d-camera-presets,
-  .fleet3d-quality-controls {
+  .fleet3d-quality-controls,
+  .fleet3d-layout-controls {
     justify-content: space-between;
   }
 
   .fleet3d-camera-presets button,
-  .fleet3d-quality-controls button {
+  .fleet3d-quality-controls button,
+  .fleet3d-layout-controls button {
     flex: 1 1 0;
   }
 

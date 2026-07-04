@@ -3,6 +3,7 @@ import {
   buildCompareHref,
   buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
+  buildFleet3DGlobeLayout,
   buildFleet3DModel,
   buildFleet3DReplayState,
   detectFleet3DRendererCapability,
@@ -267,6 +268,25 @@ describe("fleet 3D helpers", () => {
       title: "down-node",
     });
     expect(story[0]?.issues.length).toBeGreaterThan(0);
+  });
+
+  it("builds globe layout only from reliable region matches", () => {
+    const model = buildFleet3DModel([
+      node({ uuid: "us", name: "us-node", group: "edge", region: "US" }),
+      node({ uuid: "hk", name: "hk-node", group: "edge", region: "香港" }),
+      node({ uuid: "unknown", name: "unknown-node", group: "core", region: "Moon" }),
+    ], []);
+    const layout = buildFleet3DGlobeLayout(model.nodes);
+
+    expect(layout.available).toBe(true);
+    expect(layout.matched).toBe(2);
+    expect(layout.unmatched).toBe(1);
+    expect(layout.nodes.find((item) => item.uuid === "us")?.position).not.toEqual(
+      model.nodes.find((item) => item.uuid === "us")?.position,
+    );
+    expect(layout.nodes.find((item) => item.uuid === "unknown")?.position).toEqual(
+      model.nodes.find((item) => item.uuid === "unknown")?.position,
+    );
   });
 
   it("maps historical records into replay pressure", () => {

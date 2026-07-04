@@ -9,6 +9,7 @@ export type Fleet3DFilter = "all" | Fleet3DStatus;
 export type Fleet3DFocusKind = "all" | "group" | "region";
 export type Fleet3DCameraPreset = "overview" | "close" | "wide";
 export type Fleet3DQuality = "high" | "balanced" | "eco";
+export type Fleet3DLayoutMode = "orbit" | "globe";
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
 export type Fleet3DRiskTone = "none" | "warning" | "critical";
 export type Fleet3DRendererMode = "webgpu" | "webgl2" | "webgl1" | "unavailable";
@@ -114,6 +115,14 @@ export interface Fleet3DStoryStep {
   center: [number, number, number];
 }
 
+export interface Fleet3DGlobeLayout {
+  nodes: Fleet3DNode[];
+  matched: number;
+  unmatched: number;
+  total: number;
+  available: boolean;
+}
+
 export interface Fleet3DRendererCapability {
   mode: Fleet3DRendererMode;
   label: string;
@@ -133,6 +142,21 @@ const STATUS_LABELS_FALLBACK: Record<Fleet3DStatus, string> = {
   offline: "离线",
   unknown: "未知",
 };
+const GLOBE_RADIUS = 5.2;
+const REGION_COORDINATES = [
+  { patterns: ["united states", "usa", "us", "美国", "洛杉矶", "纽约", "lax", "nyc", "chicago", "dallas"], lat: 37.1, lon: -95.7 },
+  { patterns: ["hong kong", "hk", "香港"], lat: 22.32, lon: 114.17 },
+  { patterns: ["japan", "jp", "日本", "tokyo", "osaka", "东京", "大阪"], lat: 36.2, lon: 138.25 },
+  { patterns: ["singapore", "sg", "新加坡"], lat: 1.35, lon: 103.82 },
+  { patterns: ["taiwan", "tw", "台湾", "taipei", "台北"], lat: 23.7, lon: 121 },
+  { patterns: ["south korea", "korea", "kr", "韩国", "seoul", "首尔"], lat: 36.5, lon: 127.8 },
+  { patterns: ["germany", "de", "德国", "frankfurt", "法兰克福"], lat: 51.1, lon: 10.4 },
+  { patterns: ["netherlands", "nl", "荷兰", "amsterdam", "阿姆斯特丹"], lat: 52.1, lon: 5.3 },
+  { patterns: ["united kingdom", "uk", "gb", "英国", "london", "伦敦"], lat: 55.4, lon: -3.4 },
+  { patterns: ["france", "fr", "法国", "paris", "巴黎"], lat: 46.2, lon: 2.2 },
+  { patterns: ["canada", "ca", "加拿大", "toronto", "vancouver", "多伦多", "温哥华"], lat: 56.1, lon: -106.3 },
+  { patterns: ["australia", "au", "澳大利亚", "sydney", "悉尼"], lat: -25.3, lon: 133.8 },
+] as const;
 
 function hashString(value: string) {
   let hash = 2166136261;
@@ -310,6 +334,42 @@ function groupByValue(nodes: Fleet3DNode[], key: "group" | "region") {
     grouped.set(value, [...(grouped.get(value) ?? []), node]);
   }
   return grouped;
+}
+
+function normalizeLocationText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, " ")
+    .trim();
+}
+
+function resolveRegionCoordinate(node: Fleet3DNode) {
+  const haystack = normalizeLocationText(`${node.region} ${node.group} ${node.name}`);
+  if (!haystack) return null;
+  return REGION_COORDINATES.find((item) =>
+    item.patterns.some((pattern) => {
+      const normalizedPattern = normalizeLocationText(pattern);
+      if (/^[a-z]{2}$/.test(normalizedPattern)) {
+        return new RegExp(`(^|\\s)${normalizedPattern}(\\s|$)`).test(haystack);
+      }
+      return haystack.includes(normalizedPattern);
+    }),
+  ) ?? null;
+}
+
+function globePosition(lat: number, lon: number, seed: number): [number, number, number] {
+  const jitterLat = (((seed >>> 8) % 1000) / 1000 - 0.5) * 2.4;
+  const jitterLon = (((seed >>> 16) % 1000) / 1000 - 0.5) * 3.2;
+  const safeLat = clamp(lat + jitterLat, -78, 78);
+  const safeLon = lon + jitterLon;
+  const phi = ((90 - safeLat) * Math.PI) / 180;
+  const theta = ((safeLon + 180) * Math.PI) / 180;
+  const radius = GLOBE_RADIUS + (((seed >>> 24) % 1000) / 1000) * 0.32;
+  return [
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta),
+  ];
 }
 
 export function buildCompareHref(uuids: string[]) {
@@ -571,6 +631,27 @@ export function buildFleet3DAnomalyStory(nodes: Fleet3DNode[], limit = 6): Fleet
       tone: node.risk.tone,
       center: node.position,
     }));
+}
+
+export function buildFleet3DGlobeLayout(nodes: Fleet3DNode[]): Fleet3DGlobeLayout {
+  let matched = 0;
+  const globeNodes = nodes.map((node) => {
+    const coordinate = resolveRegionCoordinate(node);
+    if (!coordinate) return node;
+    matched += 1;
+    return {
+      ...node,
+      position: globePosition(coordinate.lat, coordinate.lon, hashString(node.uuid)),
+    } satisfies Fleet3DNode;
+  });
+
+  return {
+    nodes: globeNodes,
+    matched,
+    unmatched: nodes.length - matched,
+    total: nodes.length,
+    available: matched >= 2,
+  };
 }
 
 export function buildFleet3DReplayState(

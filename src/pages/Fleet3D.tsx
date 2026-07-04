@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Globe2,
   Network,
   Radar,
   Route,
@@ -20,6 +21,7 @@ import {
   buildCompareHref,
   buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
+  buildFleet3DGlobeLayout,
   buildFleet3DModel,
   buildFleet3DReplayState,
   detectFleet3DRendererCapability,
@@ -29,6 +31,7 @@ import {
   type Fleet3DCameraPreset,
   type Fleet3DFilter,
   type Fleet3DFocusKind,
+  type Fleet3DLayoutMode,
   type Fleet3DNode,
   type Fleet3DQuality,
   type Fleet3DRendererCapability,
@@ -265,6 +268,7 @@ export function Fleet3D() {
   const [snapshotStatus, setSnapshotStatus] = useState<SnapshotStatus>("idle");
   const [storyMode, setStoryMode] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
+  const [layoutMode, setLayoutMode] = useState<Fleet3DLayoutMode>("orbit");
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -296,21 +300,27 @@ export function Fleet3D() {
     [model.nodes, replayQuery.data, timelineEnabled, timelineProgress],
   );
   const renderedNodes = replayState?.nodes ?? model.nodes;
+  const globeLayout = useMemo(
+    () => buildFleet3DGlobeLayout(renderedNodes),
+    [renderedNodes],
+  );
+  const activeLayoutMode = layoutMode === "globe" && globeLayout.available ? "globe" : "orbit";
+  const layoutNodes = activeLayoutMode === "globe" ? globeLayout.nodes : renderedNodes;
   const focusOptions = useMemo(
     () =>
       focusKind === "all"
         ? []
-        : getFleet3DFocusOptions(renderedNodes, focusKind),
-    [focusKind, renderedNodes],
+        : getFleet3DFocusOptions(layoutNodes, focusKind),
+    [focusKind, layoutNodes],
   );
   const activeFocusValue = focusKind === "all" ? "" : focusValue || focusOptions[0] || "";
   const focusState = useMemo(
-    () => resolveFleet3DFocus(renderedNodes, focusKind, activeFocusValue),
-    [activeFocusValue, focusKind, renderedNodes],
+    () => resolveFleet3DFocus(layoutNodes, focusKind, activeFocusValue),
+    [activeFocusValue, focusKind, layoutNodes],
   );
   const visibleNodes = useMemo(
-    () => filterFleet3DNodes(renderedNodes, filter),
-    [filter, renderedNodes],
+    () => filterFleet3DNodes(layoutNodes, filter),
+    [filter, layoutNodes],
   );
   const cruiseTargets = useMemo(
     () => buildFleet3DCruiseTargets(visibleNodes),
@@ -337,15 +347,15 @@ export function Fleet3D() {
   const effectiveCameraPreset = activeStoryStep ? "close" : activeCruiseTarget?.cameraPreset ?? cameraPreset;
   const effectiveRiskScan = riskScan || Boolean(activeCruiseTarget?.riskScan) || Boolean(activeStoryStep);
   const selectedNode = useMemo(
-    () => renderedNodes.find((node) => node.uuid === selectedUuid) ?? null,
-    [renderedNodes, selectedUuid],
+    () => layoutNodes.find((node) => node.uuid === selectedUuid) ?? null,
+    [layoutNodes, selectedUuid],
   );
   const compareNodes = useMemo(
     () =>
       compareUuids
-        .map((uuid) => renderedNodes.find((node) => node.uuid === uuid))
+        .map((uuid) => layoutNodes.find((node) => node.uuid === uuid))
         .filter((node): node is Fleet3DNode => Boolean(node)),
-    [compareUuids, renderedNodes],
+    [compareUuids, layoutNodes],
   );
   const compareHref = useMemo(() => buildCompareHref(compareUuids), [compareUuids]);
 
@@ -360,6 +370,10 @@ export function Fleet3D() {
   useEffect(() => {
     setRendererCapability(detectFleet3DRendererCapability());
   }, []);
+
+  useEffect(() => {
+    if (layoutMode === "globe" && !globeLayout.available) setLayoutMode("orbit");
+  }, [globeLayout.available, layoutMode]);
 
   useEffect(() => {
     if (!cruiseMode || cruiseTargets.length > 0) return;
@@ -466,6 +480,7 @@ export function Fleet3D() {
         compareUuids={compareUuids}
         riskScan={effectiveRiskScan}
         cameraPreset={effectiveCameraPreset}
+        layoutMode={activeLayoutMode}
         focusCenter={effectiveFocusCenter}
         focusedUuids={effectiveFocusedUuids}
         quality={quality}
@@ -621,6 +636,26 @@ export function Fleet3D() {
               {option.label}
             </button>
           ))}
+        </div>
+        <div className="fleet3d-layout-controls" aria-label="空间布局">
+          <button
+            type="button"
+            className={activeLayoutMode === "orbit" ? "is-active" : ""}
+            onClick={() => setLayoutMode("orbit")}
+          >
+            星图
+          </button>
+          <button
+            type="button"
+            className={activeLayoutMode === "globe" ? "is-active" : ""}
+            onClick={() => setLayoutMode("globe")}
+            disabled={!globeLayout.available}
+            title={globeLayout.available ? "按可靠地区坐标显示地球模式" : "可定位地区不足，暂不可用"}
+          >
+            <Globe2 size={13} aria-hidden="true" />
+            <span>地球</span>
+            <small>{globeLayout.matched}/{globeLayout.total}</small>
+          </button>
         </div>
         {activeCruiseTarget && (
           <div className="fleet3d-cruise-status" aria-live="polite">

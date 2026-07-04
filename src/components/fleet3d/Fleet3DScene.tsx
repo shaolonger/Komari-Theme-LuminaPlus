@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type {
   Fleet3DCameraPreset,
+  Fleet3DLayoutMode,
   Fleet3DNode,
   Fleet3DOrbit,
   Fleet3DQuality,
@@ -22,6 +23,7 @@ interface Fleet3DSceneProps {
   compareUuids: string[];
   riskScan: boolean;
   cameraPreset: Fleet3DCameraPreset;
+  layoutMode: Fleet3DLayoutMode;
   focusCenter: [number, number, number] | null;
   focusedUuids: string[];
   quality: Fleet3DQuality;
@@ -34,6 +36,7 @@ interface Fleet3DSceneProps {
 
 const NODE_CORE_RADIUS = 0.105;
 const NODE_GLOW_RADIUS = 0.22;
+const GLOBE_RADIUS = 4.9;
 const MAX_TRAFFIC_PARTICLES_PER_DIRECTION = 26;
 const CAMERA_PRESETS: Record<Fleet3DCameraPreset, THREE.Vector3> = {
   overview: new THREE.Vector3(0, 5.6, 12.5),
@@ -128,6 +131,54 @@ function createOrbit(orbit: Fleet3DOrbit) {
     opacity: 0.17,
   });
   return new THREE.Line(geometry, material);
+}
+
+function createGlobe() {
+  const group = new THREE.Group();
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(GLOBE_RADIUS, 64, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x2d77ff,
+      transparent: true,
+      opacity: 0.055,
+      depthWrite: false,
+    }),
+  );
+  group.add(sphere);
+
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: 0x8ea7d7,
+    transparent: true,
+    opacity: 0.18,
+  });
+
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const points: THREE.Vector3[] = [];
+    const y = Math.sin((lat * Math.PI) / 180) * GLOBE_RADIUS;
+    const radius = Math.cos((lat * Math.PI) / 180) * GLOBE_RADIUS;
+    for (let index = 0; index <= 144; index += 1) {
+      const angle = (index / 144) * Math.PI * 2;
+      points.push(new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius));
+    }
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial.clone()));
+  }
+
+  for (let lon = 0; lon < 180; lon += 30) {
+    const points: THREE.Vector3[] = [];
+    for (let index = 0; index <= 144; index += 1) {
+      const angle = (index / 144) * Math.PI * 2;
+      points.push(
+        new THREE.Vector3(
+          Math.cos(angle) * GLOBE_RADIUS,
+          Math.sin(angle) * GLOBE_RADIUS,
+          0,
+        ).applyAxisAngle(new THREE.Vector3(0, 1, 0), (lon * Math.PI) / 180),
+      );
+    }
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial.clone()));
+  }
+
+  return group;
 }
 
 function createNodeMesh(
@@ -427,6 +478,7 @@ export function Fleet3DScene({
   compareUuids,
   riskScan,
   cameraPreset,
+  layoutMode,
   focusCenter,
   focusedUuids,
   quality,
@@ -498,9 +550,13 @@ export function Fleet3DScene({
     const starField = createStarField(QUALITY_SETTINGS[quality].stars);
     scene.add(starField);
 
-    const orbitGroup = new THREE.Group();
-    orbits.forEach((orbit) => orbitGroup.add(createOrbit(orbit)));
-    root.add(orbitGroup);
+    if (layoutMode === "globe") {
+      root.add(createGlobe());
+    } else {
+      const orbitGroup = new THREE.Group();
+      orbits.forEach((orbit) => orbitGroup.add(createOrbit(orbit)));
+      root.add(orbitGroup);
+    }
 
     const lineMaterial = new THREE.LineBasicMaterial({
       color: 0x6a8fff,
@@ -692,6 +748,7 @@ export function Fleet3DScene({
     compareUuids,
     focusCenter,
     focusedUuids,
+    layoutMode,
     nodes,
     onMarqueeSelect,
     onSelectNode,
@@ -709,7 +766,13 @@ export function Fleet3DScene({
   }, [onSnapshotReady, snapshotRequestId]);
 
   return (
-    <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene data-renderer-mode={rendererMode}>
+    <div
+      ref={containerRef}
+      className="fleet3d-scene"
+      data-fleet3d-scene
+      data-layout-mode={layoutMode}
+      data-renderer-mode={rendererMode}
+    >
       {marquee && (
         <div
           className="fleet3d-marquee"
