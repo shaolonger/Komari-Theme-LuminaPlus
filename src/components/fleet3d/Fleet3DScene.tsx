@@ -26,8 +26,10 @@ interface Fleet3DSceneProps {
   focusedUuids: string[];
   quality: Fleet3DQuality;
   rendererMode: Fleet3DRendererMode;
+  snapshotRequestId: number;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
+  onSnapshotReady: (dataUrl: string | null) => void;
 }
 
 const NODE_CORE_RADIUS = 0.105;
@@ -429,16 +431,20 @@ export function Fleet3DScene({
   focusedUuids,
   quality,
   rendererMode,
+  snapshotRequestId,
   onSelectNode,
   onMarqueeSelect,
+  onSnapshotReady,
 }: Fleet3DSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const snapshotRef = useRef<(() => string | null) | null>(null);
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    snapshotRef.current = null;
     const compareSet = new Set(compareUuids);
     const focusedSet = new Set(focusedUuids);
     const hasFocus = focusedSet.size > 0 && focusedSet.size < nodes.length;
@@ -478,6 +484,13 @@ export function Fleet3DScene({
     renderer.domElement.className = "fleet3d-canvas";
     renderer.domElement.dataset.renderer = runtimeLabel;
     container.appendChild(renderer.domElement);
+    snapshotRef.current = () => {
+      try {
+        return renderer.domElement.toDataURL("image/png");
+      } catch {
+        return null;
+      }
+    };
 
     const root = new THREE.Group();
     scene.add(root);
@@ -668,6 +681,7 @@ export function Fleet3DScene({
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      snapshotRef.current = null;
       renderer.domElement.remove();
       disposeObject(scene);
       renderer.dispose();
@@ -681,12 +695,18 @@ export function Fleet3DScene({
     nodes,
     onMarqueeSelect,
     onSelectNode,
+    onSnapshotReady,
     orbits,
     quality,
     rendererMode,
     riskScan,
     selectedUuid,
   ]);
+
+  useEffect(() => {
+    if (snapshotRequestId <= 0) return;
+    onSnapshotReady(snapshotRef.current?.() ?? null);
+  }, [onSnapshotReady, snapshotRequestId]);
 
   return (
     <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene data-renderer-mode={rendererMode}>

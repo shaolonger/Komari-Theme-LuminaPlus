@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, ChevronLeft, Network, Radar, X } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, Download, Network, Radar, X } from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
@@ -60,6 +60,8 @@ const RISK_LABELS = {
   critical: "高风险",
 } as const;
 
+type SnapshotStatus = "idle" | "saving" | "saved" | "failed";
+
 const FILTERS: Array<{ value: Fleet3DFilter; label: string }> = [
   { value: "all", label: "全部" },
   { value: "online", label: "在线" },
@@ -104,6 +106,11 @@ function formatReplayTime(timestamp: number) {
 function formatReplayPressure(node: Fleet3DNode) {
   if (!node.replay?.active) return "实时";
   return `${Math.round(node.replay.pressure * 100)}%`;
+}
+
+function snapshotFileName() {
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  return `lumina-3d-fleet-${timestamp}.png`;
 }
 
 function formatPingLatency(node: Fleet3DNode) {
@@ -243,6 +250,8 @@ export function Fleet3D() {
   const [rendererCapability, setRendererCapability] = useState<Fleet3DRendererCapability | null>(null);
   const [cruiseMode, setCruiseMode] = useState(false);
   const [cruiseIndex, setCruiseIndex] = useState(0);
+  const [snapshotRequestId, setSnapshotRequestId] = useState(0);
+  const [snapshotStatus, setSnapshotStatus] = useState<SnapshotStatus>("idle");
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -354,6 +363,12 @@ export function Fleet3D() {
     setSelectedUuid(activeCruiseTarget.attentionUuid ?? activeCruiseTarget.uuids[0] ?? null);
   }, [activeCruiseTarget]);
 
+  useEffect(() => {
+    if (snapshotStatus === "idle" || snapshotStatus === "saving") return;
+    const timer = window.setTimeout(() => setSnapshotStatus("idle"), 2200);
+    return () => window.clearTimeout(timer);
+  }, [snapshotStatus]);
+
   const toggleCompare = useCallback((uuid: string) => {
     setCompareUuids((current) => {
       if (current.includes(uuid)) return current.filter((item) => item !== uuid);
@@ -379,6 +394,23 @@ export function Fleet3D() {
     });
   }, []);
 
+  const requestSnapshot = useCallback(() => {
+    setSnapshotStatus("saving");
+    setSnapshotRequestId((value) => value + 1);
+  }, []);
+
+  const handleSnapshotReady = useCallback((dataUrl: string | null) => {
+    if (!dataUrl) {
+      setSnapshotStatus("failed");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = snapshotFileName();
+    link.click();
+    setSnapshotStatus("saved");
+  }, []);
+
   return (
     <section className="fleet3d-page" aria-label="VPS 3D 星图">
       <Fleet3DScene
@@ -392,8 +424,10 @@ export function Fleet3D() {
         focusedUuids={effectiveFocusedUuids}
         quality={quality}
         rendererMode={rendererCapability?.mode ?? "unavailable"}
+        snapshotRequestId={snapshotRequestId}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
+        onSnapshotReady={handleSnapshotReady}
       />
 
       <header className="fleet3d-topbar">
@@ -439,6 +473,16 @@ export function Fleet3D() {
             <AlertTriangle size={16} aria-hidden="true" />
             <span>风险</span>
             <strong>{model.riskCritical + model.riskWarning}</strong>
+          </button>
+          <button
+            type="button"
+            className={`fleet3d-snapshot-button is-${snapshotStatus}`}
+            onClick={requestSnapshot}
+            disabled={snapshotStatus === "saving"}
+            title="导出当前 3D 星图快照"
+          >
+            <Download size={16} aria-hidden="true" />
+            <span>{snapshotStatus === "saving" ? "生成中" : snapshotStatus === "saved" ? "已保存" : "快照"}</span>
           </button>
           <Link to={compareHref} className="fleet3d-compare-button">
             <BarChart3 size={16} aria-hidden="true" />
