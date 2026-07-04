@@ -20,7 +20,7 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 - [x] Add risk scan mode that dims healthy VPS and emphasizes expiry, traffic pressure, offline, and data-completeness issues.
 - [x] Add timeline replay for 1h/4h/1d ranges using existing history APIs, with synchronized node color/scale transitions.
 - [x] Add group/region focus transitions and camera presets for large fleets.
-- [ ] Add visual performance controls for low-power devices.
+- [x] Add visual performance controls for low-power devices.
 
 ## Phase 3 - Advanced Presentation And WebGPU Enhancement
 

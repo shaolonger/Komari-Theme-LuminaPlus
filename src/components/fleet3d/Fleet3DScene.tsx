@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Fleet3DCameraPreset, Fleet3DNode, Fleet3DOrbit } from "@/utils/fleet3d";
+import type {
+  Fleet3DCameraPreset,
+  Fleet3DNode,
+  Fleet3DOrbit,
+  Fleet3DQuality,
+} from "@/utils/fleet3d";
 
 interface MarqueeRect {
   left: number;
@@ -18,6 +23,7 @@ interface Fleet3DSceneProps {
   cameraPreset: Fleet3DCameraPreset;
   focusCenter: [number, number, number] | null;
   focusedUuids: string[];
+  quality: Fleet3DQuality;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
 }
@@ -29,6 +35,14 @@ const CAMERA_PRESETS: Record<Fleet3DCameraPreset, THREE.Vector3> = {
   overview: new THREE.Vector3(0, 5.6, 12.5),
   close: new THREE.Vector3(0, 4.1, 8.4),
   wide: new THREE.Vector3(0, 7.4, 16.8),
+};
+const QUALITY_SETTINGS: Record<
+  Fleet3DQuality,
+  { pixelRatio: number; stars: number; particleRatio: number; pulseHalos: boolean }
+> = {
+  high: { pixelRatio: 2, stars: 720, particleRatio: 1, pulseHalos: true },
+  balanced: { pixelRatio: 1.5, stars: 520, particleRatio: 0.72, pulseHalos: true },
+  eco: { pixelRatio: 1, stars: 280, particleRatio: 0.38, pulseHalos: false },
 };
 
 interface TrafficStream {
@@ -57,8 +71,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function createStarField() {
-  const count = 720;
+function createStarField(count: number) {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   for (let index = 0; index < count; index += 1) {
@@ -201,18 +214,20 @@ function createNodeMesh(
   return group;
 }
 
-function trafficParticleCount(rate: number) {
+function trafficParticleCount(rate: number, quality: Fleet3DQuality) {
   if (!Number.isFinite(rate) || rate <= 0) return 0;
   const density = clamp(Math.log10(rate + 1) / 6, 0, 1);
-  return Math.max(3, Math.round(4 + density * MAX_TRAFFIC_PARTICLES_PER_DIRECTION));
+  const ratio = QUALITY_SETTINGS[quality].particleRatio;
+  return Math.max(2, Math.round((4 + density * MAX_TRAFFIC_PARTICLES_PER_DIRECTION) * ratio));
 }
 
 function createTrafficStream(
   node: Fleet3DNode,
   direction: "up" | "down",
+  quality: Fleet3DQuality,
 ): TrafficStream | null {
   const rate = direction === "up" ? node.netUp : node.netDown;
-  const count = trafficParticleCount(rate);
+  const count = trafficParticleCount(rate, quality);
   if (count === 0) return null;
 
   const nodePosition = new THREE.Vector3(
@@ -318,7 +333,7 @@ function createPingRingGeometry(radius: number, fragmentation: number, seed: num
   return geometry;
 }
 
-function createPingHalo(node: Fleet3DNode): PingHalo | null {
+function createPingHalo(node: Fleet3DNode, quality: Fleet3DQuality): PingHalo | null {
   if (node.ping.tone === "none" || node.ping.radius <= 0) return null;
 
   const group = new THREE.Group();
@@ -340,7 +355,7 @@ function createPingHalo(node: Fleet3DNode): PingHalo | null {
   group.add(ring);
 
   let pulse: PingHalo["pulse"];
-  if (node.ping.pulse > 0.2) {
+  if (QUALITY_SETTINGS[quality].pulseHalos && node.ping.pulse > 0.2) {
     const pulseMaterial = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -410,6 +425,7 @@ export function Fleet3DScene({
   cameraPreset,
   focusCenter,
   focusedUuids,
+  quality,
   onSelectNode,
   onMarqueeSelect,
 }: Fleet3DSceneProps) {
@@ -438,14 +454,14 @@ export function Fleet3DScene({
       preserveDrawingBuffer: true,
     });
     renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[quality].pixelRatio, window.devicePixelRatio || 1));
     renderer.domElement.className = "fleet3d-canvas";
     container.appendChild(renderer.domElement);
 
     const root = new THREE.Group();
     scene.add(root);
 
-    const starField = createStarField();
+    const starField = createStarField(QUALITY_SETTINGS[quality].stars);
     scene.add(starField);
 
     const orbitGroup = new THREE.Group();
@@ -477,18 +493,18 @@ export function Fleet3DScene({
       root.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
 
       const suppressAuxiliary = focusDimmed || (riskScan && node.risk.tone === "none");
-      const upStream = suppressAuxiliary ? null : createTrafficStream(node, "up");
+      const upStream = suppressAuxiliary ? null : createTrafficStream(node, "up", quality);
       if (upStream) {
         trafficStreams.push(upStream);
         root.add(upStream.points);
       }
-      const downStream = suppressAuxiliary ? null : createTrafficStream(node, "down");
+      const downStream = suppressAuxiliary ? null : createTrafficStream(node, "down", quality);
       if (downStream) {
         trafficStreams.push(downStream);
         root.add(downStream.points);
       }
 
-      const pingHalo = focusDimmed ? null : createPingHalo(node);
+      const pingHalo = focusDimmed ? null : createPingHalo(node, quality);
       if (pingHalo) {
         pingHalos.push(pingHalo);
         root.add(pingHalo.group);
@@ -645,6 +661,7 @@ export function Fleet3DScene({
     onMarqueeSelect,
     onSelectNode,
     orbits,
+    quality,
     riskScan,
     selectedUuid,
   ]);

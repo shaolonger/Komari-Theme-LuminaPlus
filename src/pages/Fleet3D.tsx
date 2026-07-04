@@ -17,6 +17,7 @@ import {
   type Fleet3DFilter,
   type Fleet3DFocusKind,
   type Fleet3DNode,
+  type Fleet3DQuality,
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
 import { formatBytes, formatByteRateLabel } from "@/utils/format";
@@ -36,6 +37,11 @@ const FOCUS_KIND_OPTIONS: Array<{ value: Fleet3DFocusKind; label: string }> = [
   { value: "all", label: "全部" },
   { value: "group", label: "分组" },
   { value: "region", label: "地区" },
+];
+const QUALITY_OPTIONS: Array<{ value: Fleet3DQuality; label: string }> = [
+  { value: "high", label: "高画质" },
+  { value: "balanced", label: "均衡" },
+  { value: "eco", label: "省电" },
 ];
 
 const STATUS_LABELS: Record<Fleet3DStatus, string> = {
@@ -229,6 +235,7 @@ export function Fleet3D() {
   const [focusKind, setFocusKind] = useState<Fleet3DFocusKind>("all");
   const [focusValue, setFocusValue] = useState("");
   const [cameraPreset, setCameraPreset] = useState<Fleet3DCameraPreset>("overview");
+  const [quality, setQuality] = useState<Fleet3DQuality>("balanced");
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -324,6 +331,7 @@ export function Fleet3D() {
         cameraPreset={cameraPreset}
         focusCenter={focusState.center}
         focusedUuids={focusState.kind === "all" ? [] : focusState.uuids}
+        quality={quality}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
       />
@@ -421,6 +429,18 @@ export function Fleet3D() {
               onClick={() => setCameraPreset(preset.value)}
             >
               {preset.label}
+            </button>
+          ))}
+        </div>
+        <div className="fleet3d-quality-controls" aria-label="视觉质量">
+          {QUALITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={quality === option.value ? "is-active" : ""}
+              onClick={() => setQuality(option.value)}
+            >
+              {option.label}
             </button>
           ))}
         </div>

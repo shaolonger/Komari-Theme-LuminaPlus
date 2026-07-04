@@ -8,6 +8,7 @@ export type Fleet3DStatus = "online" | "offline" | "unknown";
 export type Fleet3DFilter = "all" | Fleet3DStatus;
 export type Fleet3DFocusKind = "all" | "group" | "region";
 export type Fleet3DCameraPreset = "overview" | "close" | "wide";
+export type Fleet3DQuality = "high" | "balanced" | "eco";
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
 export type Fleet3DRiskTone = "none" | "warning" | "critical";
 
