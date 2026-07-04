@@ -10,6 +10,7 @@ import {
   buildCompareHref,
   buildFleet3DModel,
   buildFleet3DReplayState,
+  detectFleet3DRendererCapability,
   filterFleet3DNodes,
   getFleet3DFocusOptions,
   resolveFleet3DFocus,
@@ -18,6 +19,7 @@ import {
   type Fleet3DFocusKind,
   type Fleet3DNode,
   type Fleet3DQuality,
+  type Fleet3DRendererCapability,
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
 import { formatBytes, formatByteRateLabel } from "@/utils/format";
@@ -236,6 +238,7 @@ export function Fleet3D() {
   const [focusValue, setFocusValue] = useState("");
   const [cameraPreset, setCameraPreset] = useState<Fleet3DCameraPreset>("overview");
   const [quality, setQuality] = useState<Fleet3DQuality>("balanced");
+  const [rendererCapability, setRendererCapability] = useState<Fleet3DRendererCapability | null>(null);
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -304,6 +307,10 @@ export function Fleet3D() {
     return () => window.clearInterval(timer);
   }, [timelineEnabled, timelinePlaying]);
 
+  useEffect(() => {
+    setRendererCapability(detectFleet3DRendererCapability());
+  }, []);
+
   const toggleCompare = useCallback((uuid: string) => {
     setCompareUuids((current) => {
       if (current.includes(uuid)) return current.filter((item) => item !== uuid);
@@ -332,6 +339,7 @@ export function Fleet3D() {
         focusCenter={focusState.center}
         focusedUuids={focusState.kind === "all" ? [] : focusState.uuids}
         quality={quality}
+        rendererMode={rendererCapability?.mode ?? "unavailable"}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
       />
@@ -344,6 +352,12 @@ export function Fleet3D() {
           <div>
             <p className="fleet3d-eyebrow">LuminaPlus</p>
             <h1>VPS 3D 星图</h1>
+            <span
+              className={`fleet3d-renderer-pill is-${rendererCapability?.mode ?? "unavailable"}`}
+              title={rendererCapability?.detail ?? "正在检测 3D 渲染能力"}
+            >
+              {rendererCapability?.label ?? "检测中"}
+            </span>
           </div>
         </div>
         <div className="fleet3d-status-strip" aria-label="舰队状态">

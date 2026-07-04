@@ -11,6 +11,7 @@ export type Fleet3DCameraPreset = "overview" | "close" | "wide";
 export type Fleet3DQuality = "high" | "balanced" | "eco";
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
 export type Fleet3DRiskTone = "none" | "warning" | "critical";
+export type Fleet3DRendererMode = "webgpu" | "webgl2" | "webgl1" | "unavailable";
 
 export interface Fleet3DPingSignal {
   assigned: boolean;
@@ -90,6 +91,15 @@ export interface Fleet3DFocusState {
   label: string;
   uuids: string[];
   center: [number, number, number] | null;
+}
+
+export interface Fleet3DRendererCapability {
+  mode: Fleet3DRendererMode;
+  label: string;
+  detail: string;
+  webgpu: boolean;
+  webgl2: boolean;
+  webgl1: boolean;
 }
 
 const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }> = {
@@ -248,6 +258,82 @@ export function buildCompareHref(uuids: string[]) {
   const selected = Array.from(new Set(uuids.filter(Boolean))).slice(0, 8);
   if (selected.length < 2) return "/compare";
   return `/compare?${new URLSearchParams({ nodes: selected.join(",") }).toString()}`;
+}
+
+export function detectFleet3DRendererCapability(): Fleet3DRendererCapability {
+  if (typeof document === "undefined") {
+    return {
+      mode: "unavailable",
+      label: "等待检测",
+      detail: "浏览器环境加载后检测 3D 渲染能力",
+      webgpu: false,
+      webgl2: false,
+      webgl1: false,
+    };
+  }
+
+  const navigatorWithGpu = typeof navigator === "undefined"
+    ? null
+    : (navigator as Navigator & { gpu?: unknown });
+  const webgpu = Boolean(navigatorWithGpu?.gpu);
+  const canvas = document.createElement("canvas");
+  let webgl2 = false;
+  let webgl1 = false;
+
+  try {
+    webgl2 = Boolean(canvas.getContext("webgl2", { failIfMajorPerformanceCaveat: false }));
+    webgl1 = webgl2
+      ? true
+      : Boolean(
+          canvas.getContext("webgl", { failIfMajorPerformanceCaveat: false }) ||
+            canvas.getContext("experimental-webgl", { failIfMajorPerformanceCaveat: false }),
+        );
+  } catch {
+    webgl2 = false;
+    webgl1 = false;
+  }
+
+  if (webgpu) {
+    return {
+      mode: "webgpu",
+      label: "WebGPU 可用",
+      detail: webgl2 ? "当前以 WebGL2 稳定回退渲染，可安全接入 WebGPU 管线" : "浏览器暴露 WebGPU，WebGL 回退能力有限",
+      webgpu,
+      webgl2,
+      webgl1,
+    };
+  }
+
+  if (webgl2) {
+    return {
+      mode: "webgl2",
+      label: "WebGL2 回退",
+      detail: "当前设备使用 WebGL2 稳定渲染 3D 星图",
+      webgpu,
+      webgl2,
+      webgl1,
+    };
+  }
+
+  if (webgl1) {
+    return {
+      mode: "webgl1",
+      label: "WebGL 回退",
+      detail: "当前设备可运行基础 3D 渲染，建议使用省电画质",
+      webgpu,
+      webgl2,
+      webgl1,
+    };
+  }
+
+  return {
+    mode: "unavailable",
+    label: "渲染不可用",
+    detail: "当前浏览器未提供可用的 3D 图形上下文",
+    webgpu,
+    webgl2,
+    webgl1,
+  };
 }
 
 export function buildFleet3DModel(

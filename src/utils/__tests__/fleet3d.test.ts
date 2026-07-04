@@ -3,6 +3,7 @@ import {
   buildCompareHref,
   buildFleet3DModel,
   buildFleet3DReplayState,
+  detectFleet3DRendererCapability,
   filterFleet3DNodes,
   getFleet3DFocusOptions,
   resolveFleet3DFocus,
@@ -204,6 +205,15 @@ describe("fleet 3D helpers", () => {
   it("builds compare deep links from selected nodes", () => {
     expect(buildCompareHref(["a"])).toBe("/compare");
     expect(buildCompareHref(["a", "b", "a"])).toBe("/compare?nodes=a%2Cb");
+  });
+
+  it("keeps renderer detection safe outside the browser", () => {
+    expect(detectFleet3DRendererCapability()).toMatchObject({
+      mode: "unavailable",
+      webgpu: false,
+      webgl2: false,
+      webgl1: false,
+    });
   });
 
   it("maps historical records into replay pressure", () => {

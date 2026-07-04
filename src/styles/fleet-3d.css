@@ -119,6 +119,41 @@
   line-height: 1.16;
 }
 
+.fleet3d-renderer-pill {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  border: 1px solid rgba(126, 231, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(126, 231, 255, 0.1);
+  color: #aeefff;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fleet3d-renderer-pill.is-webgpu {
+  border-color: rgba(143, 255, 193, 0.34);
+  background: rgba(143, 255, 193, 0.12);
+  color: #8fffc1;
+}
+
+.fleet3d-renderer-pill.is-webgl1 {
+  border-color: rgba(255, 200, 87, 0.32);
+  background: rgba(255, 200, 87, 0.12);
+  color: #ffe0a3;
+}
+
+.fleet3d-renderer-pill.is-unavailable {
+  border-color: rgba(255, 102, 120, 0.34);
+  background: rgba(255, 102, 120, 0.12);
+  color: #ffb1bd;
+}
+
 .fleet3d-eyebrow {
   margin: 0 0 3px;
   color: rgba(247, 248, 251, 0.56);
@@ -713,6 +748,13 @@
 
   .fleet3d-titlebar h1 {
     font-size: 15px;
+  }
+
+  .fleet3d-renderer-pill {
+    max-width: 112px;
+    overflow: hidden;
+    padding: 0 7px;
+    text-overflow: ellipsis;
   }
 
   .fleet3d-action-group {

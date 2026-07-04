@@ -5,6 +5,7 @@ import type {
   Fleet3DNode,
   Fleet3DOrbit,
   Fleet3DQuality,
+  Fleet3DRendererMode,
 } from "@/utils/fleet3d";
 
 interface MarqueeRect {
@@ -24,6 +25,7 @@ interface Fleet3DSceneProps {
   focusCenter: [number, number, number] | null;
   focusedUuids: string[];
   quality: Fleet3DQuality;
+  rendererMode: Fleet3DRendererMode;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
 }
@@ -426,6 +428,7 @@ export function Fleet3DScene({
   focusCenter,
   focusedUuids,
   quality,
+  rendererMode,
   onSelectNode,
   onMarqueeSelect,
 }: Fleet3DSceneProps) {
@@ -447,15 +450,33 @@ export function Fleet3DScene({
     camera.position.copy(CAMERA_PRESETS[cameraPreset]);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: "high-performance",
-      preserveDrawingBuffer: true,
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance",
+        preserveDrawingBuffer: true,
+      });
+    } catch {
+      container.dataset.rendererMode = "unavailable";
+      container.dataset.rendererRuntime = "unavailable";
+      return;
+    }
+    const renderingContext = renderer.getContext();
+    const runtimeMode =
+      typeof WebGL2RenderingContext !== "undefined" &&
+      renderingContext instanceof WebGL2RenderingContext
+        ? "webgl2"
+        : "webgl1";
+    const runtimeLabel =
+      rendererMode === "webgpu" ? `webgpu-detected-${runtimeMode}-fallback` : runtimeMode;
+    container.dataset.rendererMode = rendererMode;
+    container.dataset.rendererRuntime = runtimeLabel;
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[quality].pixelRatio, window.devicePixelRatio || 1));
     renderer.domElement.className = "fleet3d-canvas";
+    renderer.domElement.dataset.renderer = runtimeLabel;
     container.appendChild(renderer.domElement);
 
     const root = new THREE.Group();
@@ -662,12 +683,13 @@ export function Fleet3DScene({
     onSelectNode,
     orbits,
     quality,
+    rendererMode,
     riskScan,
     selectedUuid,
   ]);
 
   return (
-    <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene>
+    <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene data-renderer-mode={rendererMode}>
       {marquee && (
         <div
           className="fleet3d-marquee"
