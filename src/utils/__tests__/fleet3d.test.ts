@@ -60,6 +60,9 @@ function summary(partial: Partial<HomeNodeSummary>): HomeNodeSummary {
     hidden: false,
     weight: 0,
     online: true,
+    cpuPct: 0,
+    ramPct: 0,
+    diskPct: 0,
     trafficUp: 0,
     trafficDown: 0,
     netUp: 0,
@@ -191,6 +194,46 @@ describe("buildFleet3DModel", () => {
     expect(model.nodes[0]?.risk.tone).toBe("critical");
     expect(model.nodes[0]?.risk.issues).toContain("节点离线");
     expect(model.nodes[0]?.risk.score).toBeGreaterThan(0.5);
+  });
+
+  it("encodes glanceable resource, traffic, and expiry visuals", () => {
+    const model = buildFleet3DModel(
+      [
+        node({
+          uuid: "hot",
+          group: "edge",
+          region: "US",
+          traffic_limit: 100,
+          traffic_limit_type: "sum",
+          expired_at: "2000-01-01T00:00:00Z",
+        }),
+      ],
+      [
+        summary({
+          uuid: "hot",
+          cpuPct: 96,
+          ramPct: 74,
+          diskPct: 32,
+          trafficUp: 72,
+          trafficDown: 23,
+          netUp: 2048,
+          netDown: 4096,
+        }),
+      ],
+    );
+    const visual = model.nodes[0]!.visual;
+
+    expect(visual.resourceArcs.find((arc) => arc.key === "cpu")).toMatchObject({
+      ratio: 0.96,
+      tone: "critical",
+    });
+    expect(visual.resourceArcs.find((arc) => arc.key === "memory")).toMatchObject({
+      tone: "warning",
+    });
+    expect(visual.trafficTone).toBe("critical");
+    expect(visual.expiryTone).toBe("critical");
+    expect(visual.badges).toEqual(expect.arrayContaining(["risk", "traffic", "expiry"]));
+    expect(visual.summary).toContain("资源 96%");
   });
 });
 

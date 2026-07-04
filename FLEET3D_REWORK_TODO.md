@@ -16,7 +16,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 
 - [x] Create this rework TODO file with detailed scope, acceptance criteria, and recovery instructions.
 - [x] Refactor `Fleet3DScene` into a stable Three.js runtime: initialize renderer/camera/controls once, update scene objects through refs, prevent camera resets, and add OrbitControls drag/zoom/pan support.
-- [ ] Redesign VPS node visual encoding so each node is glanceable: status core, risk ring, CPU/memory/disk mini arcs, ping halo, traffic plume, expiry/traffic/completeness badges, and consistent scale rules.
+- [x] Redesign VPS node visual encoding so each node is glanceable: status core, risk ring, CPU/memory/disk mini arcs, ping halo, traffic plume, expiry/traffic/completeness badges, and consistent scale rules.
 - [ ] Add scene labels and hover affordances: viewport-aware node labels, hover tooltip with key metrics, click selection, double-click focus, Shift-drag compare marquee, and visible selected/focused state.
 - [ ] Update 3D page controls around the new interaction model: fit-all button, manual/auto state, cruise/story pause on user interaction, clearer legends, and reduced overlay obstruction.
 - [ ] Add deterministic unit tests for visual encoding, camera/automation state helpers, and interaction-facing data contracts.

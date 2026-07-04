@@ -21,6 +21,7 @@ import {
   buildCompareHref,
   buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
+  buildFleet3DDemoModel,
   buildFleet3DGlobeLayout,
   buildFleet3DModel,
   buildFleet3DReplayState,
@@ -249,6 +250,7 @@ export function Fleet3D() {
   const allNodes = useAllNodeMeta();
   const summaries = useHomeNodeSummaries();
   useHomepagePingOverview();
+  const demoMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
   const [filter, setFilter] = useState<Fleet3DFilter>("all");
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [compareUuids, setCompareUuids] = useState<string[]>([]);
@@ -275,9 +277,10 @@ export function Fleet3D() {
     [allNodes],
   );
   const pingByUuid = usePingMiniMap(visibleUuids);
+  const demoModel = useMemo(() => (demoMode ? buildFleet3DDemoModel() : null), [demoMode]);
   const model = useMemo(
-    () => buildFleet3DModel(allNodes, summaries, pingByUuid),
-    [allNodes, pingByUuid, summaries],
+    () => demoModel ?? buildFleet3DModel(allNodes, summaries, pingByUuid),
+    [allNodes, demoModel, pingByUuid, summaries],
   );
   const visibleKey = useMemo(() => visibleUuids.join(","), [visibleUuids]);
   const replayQuery = useQuery({
@@ -472,7 +475,7 @@ export function Fleet3D() {
   }, []);
 
   return (
-    <section className="fleet3d-page" aria-label="VPS 3D 星图">
+    <section className="fleet3d-page" aria-label="VPS 3D 星图" data-demo-mode={demoMode || undefined}>
       <Fleet3DScene
         nodes={visibleNodes}
         orbits={model.orbits}

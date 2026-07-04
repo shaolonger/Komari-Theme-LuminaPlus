@@ -1,7 +1,12 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { NodeInfo, PingOverviewItem } from "@/types/komari";
 import type { ComparisonLoadRecords } from "@/services/api";
-import { getConfigCompleteness } from "@/utils/vpsWorkbench";
+import { getExpireDaysRemaining } from "@/utils/format";
+import {
+  getConfigCompleteness,
+  getTrafficForecast,
+  type TrafficForecastStatus,
+} from "@/utils/vpsWorkbench";
 import { getVpsOperationalRisks, strongestRiskSeverity } from "@/utils/vpsRisk";
 
 export type Fleet3DStatus = "online" | "offline" | "unknown";
@@ -13,6 +18,15 @@ export type Fleet3DLayoutMode = "orbit" | "globe";
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
 export type Fleet3DRiskTone = "none" | "warning" | "critical";
 export type Fleet3DRendererMode = "webgpu" | "webgl2" | "webgl1" | "unavailable";
+export type Fleet3DMetricKey = "cpu" | "memory" | "disk";
+export type Fleet3DVisualTone = "none" | "good" | "active" | "warning" | "critical";
+export type Fleet3DVisualBadge =
+  | "offline"
+  | "risk"
+  | "traffic"
+  | "expiry"
+  | "profile"
+  | "ping";
 
 export interface Fleet3DPingSignal {
   assigned: boolean;
@@ -41,6 +55,32 @@ export interface Fleet3DReplaySignal {
   netRate: number;
 }
 
+export interface Fleet3DMetricArc {
+  key: Fleet3DMetricKey;
+  label: string;
+  ratio: number;
+  color: string;
+  tone: Fleet3DVisualTone;
+}
+
+export interface Fleet3DVisualEncoding {
+  statusColor: string;
+  glowColor: string;
+  riskColor: string;
+  riskRadius: number;
+  resourceArcs: Fleet3DMetricArc[];
+  resourcePeakRatio: number;
+  pingTone: Fleet3DVisualTone;
+  trafficTone: Fleet3DVisualTone;
+  trafficPressure: number;
+  expiryTone: Fleet3DVisualTone;
+  completenessTone: Fleet3DVisualTone;
+  badges: Fleet3DVisualBadge[];
+  coreScale: number;
+  haloOpacity: number;
+  summary: string;
+}
+
 export interface Fleet3DNode {
   uuid: string;
   name: string;
@@ -57,9 +97,18 @@ export interface Fleet3DNode {
   netDown: number;
   netRate: number;
   trafficTotal: number;
+  trafficLimit: number;
+  trafficFraction: number;
+  trafficStatus: TrafficForecastStatus;
+  trafficRemaining: number;
+  cpuPct: number;
+  ramPct: number;
+  diskPct: number;
+  expireDays: number | null;
   updatedAt: number;
   ping: Fleet3DPingSignal;
   risk: Fleet3DRiskSignal;
+  visual: Fleet3DVisualEncoding;
   replay?: Fleet3DReplaySignal;
 }
 
@@ -304,6 +353,109 @@ function replayTone(pressure: number) {
   return { color: "#50d890", glowColor: "#8fffc1" };
 }
 
+type Fleet3DVisualNodeInput = Omit<Fleet3DNode, "visual">;
+
+function percentRatio(value: number) {
+  return clamp((Number.isFinite(value) ? value : 0) / 100, 0, 1);
+}
+
+function resourceTone(ratio: number): Fleet3DVisualTone {
+  if (ratio >= 0.92) return "critical";
+  if (ratio >= 0.72) return "warning";
+  if (ratio > 0.02) return "active";
+  return "none";
+}
+
+function trafficTone(status: TrafficForecastStatus, pressure: number, netRate: number): Fleet3DVisualTone {
+  if (status === "exhausted" || status === "critical") return "critical";
+  if (status === "warning") return "warning";
+  if (pressure > 0.04 || netRate > 0) return "active";
+  return "none";
+}
+
+function expiryTone(expireDays: number | null): Fleet3DVisualTone {
+  if (expireDays == null) return "none";
+  if (expireDays <= 7) return "critical";
+  if (expireDays <= 30) return "warning";
+  return "none";
+}
+
+function completenessTone(ratio: number): Fleet3DVisualTone {
+  if (ratio < 0.65) return "critical";
+  if (ratio < 1) return "warning";
+  return "none";
+}
+
+function pingVisualTone(tone: Fleet3DPingTone): Fleet3DVisualTone {
+  if (tone === "critical") return "critical";
+  if (tone === "warning") return "warning";
+  if (tone === "good") return "good";
+  return "none";
+}
+
+function visualRiskColor(tone: Fleet3DRiskTone) {
+  if (tone === "critical") return "#ff6678";
+  if (tone === "warning") return "#ffc857";
+  return "#8fffc1";
+}
+
+function buildVisualSummary(node: Fleet3DVisualNodeInput) {
+  const pressure = Math.round(Math.max(node.cpuPct, node.ramPct, node.diskPct));
+  const traffic = Math.round(node.trafficFraction * 100);
+  const expiry = node.expireDays == null ? "未设到期" : `${node.expireDays} 天到期`;
+  return `${STATUS_LABELS_FALLBACK[node.status]} · 资源 ${pressure}% · 流量 ${traffic}% · ${expiry}`;
+}
+
+export function encodeFleet3DNodeVisual(node: Fleet3DVisualNodeInput): Fleet3DVisualEncoding {
+  const cpuRatio = percentRatio(node.replay?.active ? node.replay.cpuPct : node.cpuPct);
+  const memoryRatio = percentRatio(node.replay?.active ? node.replay.ramPct : node.ramPct);
+  const diskRatio = percentRatio(node.replay?.active ? node.replay.diskPct : node.diskPct);
+  const resourcePeakRatio = Math.max(cpuRatio, memoryRatio, diskRatio);
+  const bandwidthPressure = clamp(Math.log10(node.netRate + 1) / 7, 0, 1);
+  const trafficPressure = clamp(Math.max(node.trafficFraction, bandwidthPressure * 0.58), 0, 1);
+  const currentTrafficTone = trafficTone(node.trafficStatus, trafficPressure, node.netRate);
+  const currentExpiryTone = expiryTone(node.expireDays);
+  const currentCompletenessTone = completenessTone(node.risk.completenessRatio);
+  const currentPingTone = pingVisualTone(node.ping.tone);
+  const badges: Fleet3DVisualBadge[] = [];
+
+  if (node.status === "offline") badges.push("offline");
+  if (node.risk.tone !== "none") badges.push("risk");
+  if (currentTrafficTone === "warning" || currentTrafficTone === "critical") badges.push("traffic");
+  if (currentExpiryTone === "warning" || currentExpiryTone === "critical") badges.push("expiry");
+  if (currentCompletenessTone === "warning" || currentCompletenessTone === "critical") badges.push("profile");
+  if (currentPingTone === "warning" || currentPingTone === "critical") badges.push("ping");
+
+  const riskRadius = node.risk.tone === "none" ? 0 : 1 + node.risk.score * 0.72;
+  const coreScale = clamp(
+    0.86 + resourcePeakRatio * 0.36 + trafficPressure * 0.18 + node.risk.score * 0.2,
+    0.82,
+    1.72,
+  );
+
+  return {
+    statusColor: node.color,
+    glowColor: node.glowColor,
+    riskColor: visualRiskColor(node.risk.tone),
+    riskRadius,
+    resourceArcs: [
+      { key: "cpu", label: "CPU", ratio: cpuRatio, color: "#6aa7ff", tone: resourceTone(cpuRatio) },
+      { key: "memory", label: "内存", ratio: memoryRatio, color: "#a875ff", tone: resourceTone(memoryRatio) },
+      { key: "disk", label: "磁盘", ratio: diskRatio, color: "#ff8a45", tone: resourceTone(diskRatio) },
+    ],
+    resourcePeakRatio,
+    pingTone: currentPingTone,
+    trafficTone: currentTrafficTone,
+    trafficPressure,
+    expiryTone: currentExpiryTone,
+    completenessTone: currentCompletenessTone,
+    badges: Array.from(new Set(badges)).slice(0, 5),
+    coreScale,
+    haloOpacity: clamp(0.08 + resourcePeakRatio * 0.12 + trafficPressure * 0.16 + node.risk.score * 0.18, 0.08, 0.44),
+    summary: buildVisualSummary(node),
+  };
+}
+
 function riskWeight(node: Fleet3DNode) {
   if (node.risk.tone === "critical") return 2 + node.risk.score;
   if (node.risk.tone === "warning") return 1 + node.risk.score;
@@ -506,11 +658,19 @@ export function buildFleet3DModel(
     const netDown = Math.max(0, summary?.netDown ?? 0);
     const netRate = netUp + netDown;
     const trafficTotal = Math.max(0, (summary?.trafficUp ?? 0) + (summary?.trafficDown ?? 0));
+    const traffic = getTrafficForecast({
+      trafficLimitType: node.traffic_limit_type,
+      trafficUp: summary?.trafficUp ?? 0,
+      trafficDown: summary?.trafficDown ?? 0,
+      netUp,
+      netDown,
+      trafficLimit: node.traffic_limit,
+    });
     const risk = riskSignal(node, summary, ping);
     if (risk.tone === "critical") riskCritical += 1;
     else if (risk.tone === "warning") riskWarning += 1;
 
-    return {
+    const base = {
       uuid: node.uuid,
       name: node.name || node.uuid,
       group,
@@ -530,9 +690,22 @@ export function buildFleet3DModel(
       netDown,
       netRate,
       trafficTotal,
+      trafficLimit: traffic.limit,
+      trafficFraction: traffic.fraction,
+      trafficStatus: traffic.status,
+      trafficRemaining: traffic.remaining,
+      cpuPct: clamp(summary?.cpuPct ?? 0, 0, 100),
+      ramPct: clamp(summary?.ramPct ?? 0, 0, 100),
+      diskPct: clamp(summary?.diskPct ?? 0, 0, 100),
+      expireDays: getExpireDaysRemaining(node.expired_at),
       updatedAt: summary?.updatedAt ?? 0,
       ping: pingSignal(ping),
       risk,
+    } satisfies Fleet3DVisualNodeInput;
+
+    return {
+      ...base,
+      visual: encodeFleet3DNodeVisual(base),
     } satisfies Fleet3DNode;
   });
 
@@ -685,7 +858,7 @@ export function buildFleet3DReplayState(
     const pressure = clamp(resourcePressure * 0.68 + networkPressure * 0.32, 0, 1);
     const tone = replayTone(pressure);
 
-    return {
+    const replayNode = {
       ...node,
       color: tone.color,
       glowColor: tone.glowColor,
@@ -693,6 +866,9 @@ export function buildFleet3DReplayState(
       netUp,
       netDown,
       netRate,
+      cpuPct,
+      ramPct,
+      diskPct,
       replay: {
         active: true,
         timestamp: recordTimestamp,
@@ -702,6 +878,11 @@ export function buildFleet3DReplayState(
         diskPct,
         netRate,
       },
+    } satisfies Fleet3DNode;
+
+    return {
+      ...replayNode,
+      visual: encodeFleet3DNodeVisual(replayNode),
     } satisfies Fleet3DNode;
   });
 
@@ -764,4 +945,170 @@ export function resolveFleet3DFocus(
     uuids: focused.map((node) => node.uuid),
     center,
   };
+}
+
+function demoNode(partial: Partial<NodeInfo> & Pick<NodeInfo, "uuid" | "name" | "group" | "region">): NodeInfo {
+  const { uuid, name, group, region, ...rest } = partial;
+  return {
+    uuid,
+    name,
+    group,
+    region,
+    hidden: false,
+    cpu_name: "",
+    cpu_cores: 1,
+    arch: "",
+    virtualization: "",
+    os: "",
+    kernel_version: "",
+    version: "demo",
+    ipv4: "",
+    ipv6: "",
+    capability_ping: true,
+    capability_private_ping_targets: null,
+    gpu_name: "",
+    mem_total: 0,
+    swap_total: 0,
+    disk_total: 0,
+    weight: 0,
+    price: 3,
+    billing_cycle: "month",
+    auto_renewal: false,
+    currency: "USD",
+    expired_at: "",
+    tags: "",
+    public_remark: "",
+    traffic_limit: 0,
+    traffic_limit_type: "sum",
+    created_at: "",
+    updated_at: "",
+    ...rest,
+  };
+}
+
+function demoSummary(partial: Partial<HomeNodeSummary> & Pick<HomeNodeSummary, "uuid">): HomeNodeSummary {
+  const { uuid, ...rest } = partial;
+  return {
+    uuid,
+    group: "",
+    region: "",
+    hidden: false,
+    weight: 0,
+    online: true,
+    cpuPct: 0,
+    ramPct: 0,
+    diskPct: 0,
+    trafficUp: 0,
+    trafficDown: 0,
+    netUp: 0,
+    netDown: 0,
+    updatedAt: Date.now(),
+    ...rest,
+  };
+}
+
+function demoPing(partial: Partial<PingOverviewItem> & Pick<PingOverviewItem, "client">): PingOverviewItem {
+  const { client, ...rest } = partial;
+  const value = partial.lastValue ?? 40;
+  return {
+    client,
+    isAssigned: true,
+    lastValue: value,
+    values: [value],
+    samples: [{ time: Date.now(), value }],
+    max: value,
+    loss: 0,
+    ...rest,
+  };
+}
+
+function isoDaysFromNow(days: number) {
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
+
+export function buildFleet3DDemoModel(): Fleet3DModel {
+  const nodes = [
+    demoNode({
+      uuid: "demo-us-hot",
+      name: "us-hot-edge",
+      group: "edge",
+      region: "US",
+      traffic_limit: 100,
+      expired_at: isoDaysFromNow(6),
+    }),
+    demoNode({
+      uuid: "demo-hk-loss",
+      name: "hk-loss-node",
+      group: "edge",
+      region: "香港",
+      traffic_limit: 200,
+      expired_at: isoDaysFromNow(45),
+    }),
+    demoNode({
+      uuid: "demo-jp-idle",
+      name: "jp-idle-node",
+      group: "core",
+      region: "日本",
+      traffic_limit: 500,
+      expired_at: isoDaysFromNow(120),
+    }),
+    demoNode({
+      uuid: "demo-de-offline",
+      name: "de-offline",
+      group: "backup",
+      region: "德国",
+      traffic_limit: 100,
+      expired_at: isoDaysFromNow(20),
+    }),
+  ];
+  const summaries = [
+    demoSummary({
+      uuid: "demo-us-hot",
+      cpuPct: 94,
+      ramPct: 78,
+      diskPct: 48,
+      trafficUp: 64,
+      trafficDown: 29,
+      netUp: 512 * 1024,
+      netDown: 1024 * 1024,
+    }),
+    demoSummary({
+      uuid: "demo-hk-loss",
+      cpuPct: 12,
+      ramPct: 38,
+      diskPct: 31,
+      trafficUp: 30,
+      trafficDown: 50,
+      netUp: 64 * 1024,
+      netDown: 48 * 1024,
+    }),
+    demoSummary({
+      uuid: "demo-jp-idle",
+      cpuPct: 4,
+      ramPct: 22,
+      diskPct: 18,
+      trafficUp: 20,
+      trafficDown: 32,
+      netUp: 0,
+      netDown: 0,
+    }),
+    demoSummary({
+      uuid: "demo-de-offline",
+      online: false,
+      cpuPct: 0,
+      ramPct: 0,
+      diskPct: 0,
+      trafficUp: 81,
+      trafficDown: 7,
+      updatedAt: Date.now() - 900_000,
+    }),
+  ];
+  const pingByUuid = new Map([
+    ["demo-us-hot", demoPing({ client: "demo-us-hot", lastValue: 82, loss: 0 })],
+    ["demo-hk-loss", demoPing({ client: "demo-hk-loss", lastValue: 420, loss: 12 })],
+    ["demo-jp-idle", demoPing({ client: "demo-jp-idle", lastValue: 42, loss: 0 })],
+    ["demo-de-offline", demoPing({ client: "demo-de-offline", lastValue: 0, values: [], loss: 0 })],
+  ]);
+
+  return buildFleet3DModel(nodes, summaries, pingByUuid);
 }

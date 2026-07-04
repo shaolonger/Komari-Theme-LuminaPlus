@@ -222,6 +222,97 @@ function createGlobe() {
   return group;
 }
 
+function visualBadgeColor(badge: Fleet3DNode["visual"]["badges"][number]) {
+  switch (badge) {
+    case "offline":
+      return 0xff6678;
+    case "risk":
+      return 0xffc857;
+    case "traffic":
+      return 0x58d7ff;
+    case "expiry":
+      return 0xff9f43;
+    case "profile":
+      return 0xb18cff;
+    case "ping":
+    default:
+      return 0x9cffcf;
+  }
+}
+
+function createResourceArc(
+  node: Fleet3DNode,
+  arc: Fleet3DNode["visual"]["resourceArcs"][number],
+  index: number,
+  visualScale: number,
+  dimmed: boolean,
+) {
+  const group = new THREE.Group();
+  group.userData.uuid = node.uuid;
+  const radius = NODE_GLOW_RADIUS * visualScale * (1.18 + index * 0.22);
+  const background = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.0038, 5, 72),
+    new THREE.MeshBasicMaterial({
+      color: 0x455166,
+      transparent: true,
+      opacity: dimmed ? 0.035 : 0.11,
+      depthWrite: false,
+    }),
+  );
+  background.rotation.x = Math.PI / 2;
+  background.userData.uuid = node.uuid;
+  group.add(background);
+
+  if (arc.ratio > 0.015) {
+    const ratio = clamp(arc.ratio, 0.02, 1);
+    const mesh = new THREE.Mesh(
+      new THREE.TorusGeometry(radius, 0.0075, 7, 72, Math.PI * 2 * ratio),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(arc.color),
+        transparent: true,
+        opacity: dimmed ? 0.12 : arc.tone === "critical" ? 0.9 : arc.tone === "warning" ? 0.78 : 0.58,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    mesh.rotation.x = Math.PI / 2;
+    mesh.rotation.z = -Math.PI / 2 + index * 0.16;
+    mesh.userData.uuid = node.uuid;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
+function addVisualBadges(
+  group: THREE.Group,
+  node: Fleet3DNode,
+  visualScale: number,
+  dimmed: boolean,
+) {
+  node.visual.badges.forEach((badge, index) => {
+    const mesh = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.028 * visualScale, 1),
+      new THREE.MeshBasicMaterial({
+        color: visualBadgeColor(badge),
+        transparent: true,
+        opacity: dimmed ? 0.22 : 0.88,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    );
+    const angle = -0.72 + index * 0.34;
+    const radius = NODE_GLOW_RADIUS * visualScale * 1.78;
+    mesh.position.set(
+      Math.cos(angle) * radius,
+      NODE_CORE_RADIUS * visualScale * (1.45 + index * 0.05),
+      Math.sin(angle) * radius,
+    );
+    mesh.userData.uuid = node.uuid;
+    group.add(mesh);
+  });
+}
+
 function createNodeMesh(
   node: Fleet3DNode,
   selected: boolean,
@@ -233,22 +324,18 @@ function createNodeMesh(
   group.position.set(node.position[0], node.position[1], node.position[2]);
   group.userData.uuid = node.uuid;
 
-  const color = new THREE.Color(node.color);
-  const glow = new THREE.Color(node.glowColor);
+  const visualScale = clamp(node.scale * node.visual.coreScale, 0.8, 2.28);
+  const color = new THREE.Color(node.visual.statusColor);
+  const glow = new THREE.Color(node.visual.glowColor);
   const riskDimmed = riskScan && node.risk.tone === "none" && !selected && !inCompare;
   const dimmed = riskDimmed || focusDimmed;
-  const riskEmphasis = riskScan && node.risk.tone !== "none";
-  const riskColor =
-    node.risk.tone === "critical"
-      ? new THREE.Color(0xff6678)
-      : node.risk.tone === "warning"
-        ? new THREE.Color(0xffc857)
-        : glow;
-  const coreGeometry = new THREE.SphereGeometry(NODE_CORE_RADIUS * node.scale, 24, 16);
+  const riskEmphasis = node.risk.tone !== "none";
+  const riskColor = new THREE.Color(node.visual.riskColor);
+  const coreGeometry = new THREE.SphereGeometry(NODE_CORE_RADIUS * visualScale, 28, 18);
   const coreMaterial = new THREE.MeshStandardMaterial({
-    color: riskEmphasis ? riskColor : color,
-    emissive: riskEmphasis ? riskColor : glow,
-    emissiveIntensity: dimmed ? 0.16 : riskEmphasis ? 1.9 : selected ? 1.8 : inCompare ? 1.25 : 0.82,
+    color,
+    emissive: riskScan && riskEmphasis ? riskColor : glow,
+    emissiveIntensity: dimmed ? 0.16 : riskScan && riskEmphasis ? 1.9 : selected ? 1.8 : inCompare ? 1.25 : 0.82,
     roughness: 0.28,
     metalness: 0.22,
     transparent: dimmed,
@@ -258,20 +345,28 @@ function createNodeMesh(
   core.userData.uuid = node.uuid;
   group.add(core);
 
-  const glowGeometry = new THREE.SphereGeometry(NODE_GLOW_RADIUS * node.scale, 32, 16);
+  const glowGeometry = new THREE.SphereGeometry(
+    NODE_GLOW_RADIUS * visualScale * (1 + node.visual.trafficPressure * 0.22),
+    36,
+    18,
+  );
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: riskEmphasis ? riskColor : glow,
     transparent: true,
-    opacity: dimmed ? 0.02 : riskEmphasis ? 0.24 : selected ? 0.22 : inCompare ? 0.16 : 0.1,
+    opacity: dimmed ? 0.02 : selected ? 0.3 : inCompare ? 0.22 : node.visual.haloOpacity,
     depthWrite: false,
   });
   const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
   glowMesh.userData.uuid = node.uuid;
   group.add(glowMesh);
 
+  node.visual.resourceArcs.forEach((arc, index) => {
+    group.add(createResourceArc(node, arc, index, visualScale, dimmed));
+  });
+
   if (selected || inCompare) {
     const ringGeometry = new THREE.TorusGeometry(
-      NODE_GLOW_RADIUS * node.scale * (selected ? 1.55 : 1.35),
+      NODE_GLOW_RADIUS * visualScale * (selected ? 1.72 : 1.48),
       0.008,
       8,
       64,
@@ -289,7 +384,7 @@ function createNodeMesh(
 
   if (riskEmphasis) {
     const beaconGeometry = new THREE.TorusGeometry(
-      NODE_GLOW_RADIUS * node.scale * (1.85 + node.risk.score * 0.72),
+      NODE_GLOW_RADIUS * visualScale * (1.86 + node.visual.riskRadius * 0.38),
       0.01,
       8,
       72,
@@ -297,7 +392,7 @@ function createNodeMesh(
     const beaconMaterial = new THREE.MeshBasicMaterial({
       color: riskColor,
       transparent: true,
-      opacity: node.risk.tone === "critical" ? 0.58 : 0.42,
+      opacity: dimmed ? 0.16 : node.risk.tone === "critical" ? 0.62 : 0.46,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
@@ -306,6 +401,8 @@ function createNodeMesh(
     beacon.userData.uuid = node.uuid;
     group.add(beacon);
   }
+
+  addVisualBadges(group, node, visualScale, dimmed);
 
   return group;
 }
