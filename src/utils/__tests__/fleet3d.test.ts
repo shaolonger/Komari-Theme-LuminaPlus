@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCompareHref,
+  buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
   buildFleet3DModel,
   buildFleet3DReplayState,
@@ -243,6 +244,29 @@ describe("fleet 3D helpers", () => {
       id: "fleet:all",
       cameraPreset: "wide",
     });
+  });
+
+  it("builds anomaly story steps from the strongest signals", () => {
+    const model = buildFleet3DModel(
+      [
+        node({ uuid: "ok", name: "ok-node", group: "edge", region: "US" }),
+        node({ uuid: "down", name: "down-node", group: "edge", region: "US" }),
+        node({ uuid: "weak", name: "weak-node", group: "core", region: "JP", price: 3 }),
+      ],
+      [
+        summary({ uuid: "ok", online: true }),
+        summary({ uuid: "down", online: false }),
+        summary({ uuid: "weak", online: true }),
+      ],
+    );
+    const story = buildFleet3DAnomalyStory(model.nodes, 2);
+
+    expect(story).toHaveLength(2);
+    expect(story[0]).toMatchObject({
+      uuid: "down",
+      title: "down-node",
+    });
+    expect(story[0]?.issues.length).toBeGreaterThan(0);
   });
 
   it("maps historical records into replay pressure", () => {

@@ -104,6 +104,16 @@ export interface Fleet3DCruiseTarget {
   attentionUuid: string | null;
 }
 
+export interface Fleet3DStoryStep {
+  id: string;
+  uuid: string;
+  title: string;
+  detail: string;
+  issues: string[];
+  tone: Fleet3DRiskTone;
+  center: [number, number, number];
+}
+
 export interface Fleet3DRendererCapability {
   mode: Fleet3DRendererMode;
   label: string;
@@ -545,6 +555,22 @@ export function buildFleet3DCruiseTargets(nodes: Fleet3DNode[]): Fleet3DCruiseTa
       attentionUuid: sortedRiskNodes[0]?.uuid ?? null,
     },
   ];
+}
+
+export function buildFleet3DAnomalyStory(nodes: Fleet3DNode[], limit = 6): Fleet3DStoryStep[] {
+  return [...nodes]
+    .filter((node) => riskWeight(node) > 0 || node.risk.issues.length > 0)
+    .sort((left, right) => riskWeight(right) - riskWeight(left) || left.name.localeCompare(right.name, "zh-CN"))
+    .slice(0, Math.max(0, limit))
+    .map((node, index) => ({
+      id: `story:${node.uuid}:${index}`,
+      uuid: node.uuid,
+      title: node.name,
+      detail: node.risk.issues[0] ?? STATUS_LABELS_FALLBACK[node.status],
+      issues: node.risk.issues.length > 0 ? node.risk.issues : [STATUS_LABELS_FALLBACK[node.status]],
+      tone: node.risk.tone,
+      center: node.position,
+    }));
 }
 
 export function buildFleet3DReplayState(

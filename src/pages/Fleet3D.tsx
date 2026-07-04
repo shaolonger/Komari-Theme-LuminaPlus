@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, ChevronLeft, Download, Network, Radar, X } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Network,
+  Radar,
+  Route,
+  X,
+} from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
 import { getComparisonLoadRecords } from "@/services/api";
 import {
   buildCompareHref,
+  buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
   buildFleet3DModel,
   buildFleet3DReplayState,
@@ -252,6 +263,8 @@ export function Fleet3D() {
   const [cruiseIndex, setCruiseIndex] = useState(0);
   const [snapshotRequestId, setSnapshotRequestId] = useState(0);
   const [snapshotStatus, setSnapshotStatus] = useState<SnapshotStatus>("idle");
+  const [storyMode, setStoryMode] = useState(false);
+  const [storyIndex, setStoryIndex] = useState(0);
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -303,17 +316,26 @@ export function Fleet3D() {
     () => buildFleet3DCruiseTargets(visibleNodes),
     [visibleNodes],
   );
+  const storySteps = useMemo(
+    () => buildFleet3DAnomalyStory(visibleNodes, 6),
+    [visibleNodes],
+  );
   const activeCruiseTarget = cruiseMode && cruiseTargets.length > 0
     ? cruiseTargets[cruiseIndex % cruiseTargets.length]
     : null;
-  const effectiveFocusedUuids = activeCruiseTarget
-    ? activeCruiseTarget.uuids
-    : focusState.kind === "all"
-      ? []
-      : focusState.uuids;
-  const effectiveFocusCenter = activeCruiseTarget?.center ?? focusState.center;
-  const effectiveCameraPreset = activeCruiseTarget?.cameraPreset ?? cameraPreset;
-  const effectiveRiskScan = riskScan || Boolean(activeCruiseTarget?.riskScan);
+  const activeStoryStep = storyMode && storySteps.length > 0
+    ? storySteps[storyIndex % storySteps.length]
+    : null;
+  const effectiveFocusedUuids = activeStoryStep
+    ? [activeStoryStep.uuid]
+    : activeCruiseTarget
+      ? activeCruiseTarget.uuids
+      : focusState.kind === "all"
+        ? []
+        : focusState.uuids;
+  const effectiveFocusCenter = activeStoryStep?.center ?? activeCruiseTarget?.center ?? focusState.center;
+  const effectiveCameraPreset = activeStoryStep ? "close" : activeCruiseTarget?.cameraPreset ?? cameraPreset;
+  const effectiveRiskScan = riskScan || Boolean(activeCruiseTarget?.riskScan) || Boolean(activeStoryStep);
   const selectedNode = useMemo(
     () => renderedNodes.find((node) => node.uuid === selectedUuid) ?? null,
     [renderedNodes, selectedUuid],
@@ -346,6 +368,12 @@ export function Fleet3D() {
   }, [cruiseMode, cruiseTargets.length]);
 
   useEffect(() => {
+    if (!storyMode || storySteps.length > 0) return;
+    setStoryMode(false);
+    setStoryIndex(0);
+  }, [storyMode, storySteps.length]);
+
+  useEffect(() => {
     if (cruiseTargets.length === 0) return;
     setCruiseIndex((value) => value % cruiseTargets.length);
   }, [cruiseTargets.length]);
@@ -362,6 +390,11 @@ export function Fleet3D() {
     if (!activeCruiseTarget) return;
     setSelectedUuid(activeCruiseTarget.attentionUuid ?? activeCruiseTarget.uuids[0] ?? null);
   }, [activeCruiseTarget]);
+
+  useEffect(() => {
+    if (!activeStoryStep) return;
+    setSelectedUuid(activeStoryStep.uuid);
+  }, [activeStoryStep]);
 
   useEffect(() => {
     if (snapshotStatus === "idle" || snapshotStatus === "saving") return;
@@ -384,12 +417,25 @@ export function Fleet3D() {
   const handleSelectNode = useCallback((uuid: string | null) => {
     setSelectedUuid(uuid);
     if (cruiseMode) setCruiseMode(false);
-  }, [cruiseMode]);
+    if (storyMode) setStoryMode(false);
+  }, [cruiseMode, storyMode]);
 
   const toggleCruiseMode = useCallback(() => {
     setCruiseMode((value) => {
       const next = !value;
       if (next) setCruiseIndex(0);
+      if (next) setStoryMode(false);
+      return next;
+    });
+  }, []);
+
+  const toggleStoryMode = useCallback(() => {
+    setStoryMode((value) => {
+      const next = !value;
+      if (next) {
+        setStoryIndex(0);
+        setCruiseMode(false);
+      }
       return next;
     });
   }, []);
@@ -473,6 +519,17 @@ export function Fleet3D() {
             <AlertTriangle size={16} aria-hidden="true" />
             <span>风险</span>
             <strong>{model.riskCritical + model.riskWarning}</strong>
+          </button>
+          <button
+            type="button"
+            className={`fleet3d-story-button ${storyMode ? "is-active" : ""}`}
+            onClick={toggleStoryMode}
+            disabled={storySteps.length === 0}
+            aria-pressed={storyMode}
+          >
+            <Route size={16} aria-hidden="true" />
+            <span>导览</span>
+            <strong>{storySteps.length}</strong>
           </button>
           <button
             type="button"
@@ -573,6 +630,44 @@ export function Fleet3D() {
           </div>
         )}
       </div>
+
+      {activeStoryStep && (
+        <aside className={`fleet3d-story-panel is-${activeStoryStep.tone}`} aria-label="异常导览">
+          <div className="fleet3d-story-head">
+            <div>
+              <p className="fleet3d-eyebrow">
+                异常导览 {storyIndex + 1}/{storySteps.length}
+              </p>
+              <h2>{activeStoryStep.title}</h2>
+            </div>
+            <button type="button" onClick={() => setStoryMode(false)} aria-label="关闭异常导览">
+              <X size={15} aria-hidden="true" />
+            </button>
+          </div>
+          <p className="fleet3d-story-detail">{activeStoryStep.detail}</p>
+          <div className="fleet3d-story-issues">
+            {activeStoryStep.issues.slice(0, 3).map((issue) => (
+              <span key={issue}>{issue}</span>
+            ))}
+          </div>
+          <div className="fleet3d-story-actions">
+            <button
+              type="button"
+              onClick={() => setStoryIndex((value) => (value + storySteps.length - 1) % storySteps.length)}
+            >
+              <ChevronLeft size={15} aria-hidden="true" />
+              <span>上一个</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStoryIndex((value) => (value + 1) % storySteps.length)}
+            >
+              <span>下一个</span>
+              <ChevronRight size={15} aria-hidden="true" />
+            </button>
+          </div>
+        </aside>
+      )}
 
       {model.nodes.length === 0 && (
         <div className="fleet3d-empty-state">
