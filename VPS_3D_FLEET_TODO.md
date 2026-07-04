@@ -29,4 +29,4 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 - [x] Add share/export snapshot support for a 3D fleet state image.
 - [x] Add guided anomaly storytelling that sequences through the top issues in the scene.
 - [x] Add optional globe mode when reliable region/country coordinates are available.
-- [ ] Add deeper browser and visual regression checks for WebGPU/WebGL fallback behavior.
+- [x] Add deeper browser and visual regression checks for WebGPU/WebGL fallback behavior.
