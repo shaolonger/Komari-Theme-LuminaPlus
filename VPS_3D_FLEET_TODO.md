@@ -8,7 +8,7 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 
 - [x] Add the Three.js runtime dependency and deterministic 3D fleet data model utilities for node placement, color, scale, group orbit metadata, and compare deep links. Verify with targeted unit tests plus `npm run typecheck`.
 - [x] Build a full-bleed Three.js star-map renderer with animated starfield, group orbits, glowing VPS nodes, click selection, and drag marquee selection for compare. Verify with `npm run typecheck`.
-- [ ] Add the `/fleet-3d` route and operational overlays: fleet status strip, filters, selected-node inspector, and compare tray linking to `/compare?nodes=...`. Verify with `npm run build`.
+- [x] Add the `/fleet-3d` route and operational overlays: fleet status strip, filters, selected-node inspector, and compare tray linking to `/compare?nodes=...`. Verify with `npm run build`.
 - [ ] Add homepage 3D entry points for normal and empty states so users can switch from daily scanning into the 3D view. Verify with `npm run lint` and browser smoke test.
 - [ ] Run desktop and mobile browser checks for the 3D canvas: nonblank pixels, visible animation between frames, no console errors, and usable overlay layout.
 - [ ] Run full checks, update the theme version, tag, push, and publish a GitHub release.
