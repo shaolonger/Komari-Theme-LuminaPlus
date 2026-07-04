@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDown, BarChart3, ChevronDown, CircleDollarSign, Search } from "lucide-react";
+import { ArrowUpDown, BarChart3, ChevronDown, CircleDollarSign, Network, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
@@ -940,6 +940,10 @@ export function NodeGrid() {
             <BarChart3 size={14} aria-hidden="true" />
             打开对比工作台
           </Link>
+          <Link to="/fleet-3d" className="home-empty-3d">
+            <Network size={14} aria-hidden="true" />
+            打开 3D 星图
+          </Link>
         </div>
       </>
     );
@@ -1003,6 +1007,10 @@ export function NodeGrid() {
             ))}
           </select>
         </label>
+        <Link to="/fleet-3d" className="home-3d-link">
+          <Network size={15} aria-hidden="true" />
+          3D
+        </Link>
         <Link to={compareHref} className="home-compare-link">
           <BarChart3 size={15} aria-hidden="true" />
           对比

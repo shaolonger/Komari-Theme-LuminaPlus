@@ -536,7 +536,7 @@
 
 .home-workbench-controls {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(170px, 210px) auto minmax(0, auto);
+  grid-template-columns: minmax(220px, 1fr) minmax(170px, 210px) auto auto minmax(0, auto);
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
@@ -544,6 +544,7 @@
 
 .home-workbench-search,
 .home-workbench-sort,
+.home-3d-link,
 .home-compare-link {
   display: flex;
   min-width: 0;
@@ -560,6 +561,7 @@
   padding: 0 11px;
 }
 
+.home-3d-link,
 .home-compare-link {
   justify-content: center;
   color: var(--text-secondary);
@@ -573,6 +575,7 @@
     transform 160ms ease;
 }
 
+.home-3d-link:hover,
 .home-compare-link:hover {
   border-color: color-mix(in srgb, var(--accent-500) 42%, var(--border-strong));
   background: color-mix(in srgb, var(--accent-500) 10%, var(--surface-elev-a));
@@ -580,6 +583,7 @@
   transform: translateY(-1px);
 }
 
+.home-empty-3d,
 .home-empty-compare {
   display: inline-flex;
   min-height: 32px;
@@ -1031,6 +1035,7 @@
     grid-template-columns: 1fr;
   }
 
+  .home-3d-link,
   .home-compare-link {
     width: 100%;
   }
