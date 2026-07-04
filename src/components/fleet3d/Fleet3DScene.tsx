@@ -33,6 +33,12 @@ interface TrafficStream {
   sway: number;
 }
 
+interface PingHalo {
+  group: THREE.Group;
+  pulse?: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
+  pulseStrength: number;
+}
+
 function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
   return value - Math.floor(value);
@@ -224,6 +230,104 @@ function updateTrafficStream(stream: TrafficStream, elapsed: number) {
   attribute.needsUpdate = true;
 }
 
+function pingToneColor(node: Fleet3DNode) {
+  switch (node.ping.tone) {
+    case "critical":
+      return 0xff6678;
+    case "warning":
+      return 0xffc857;
+    case "good":
+      return 0x8fffc1;
+    case "none":
+    default:
+      return 0xd7e2f5;
+  }
+}
+
+function nodeSeed(value: string) {
+  let seed = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    seed = (seed + value.charCodeAt(index) * (index + 1)) % 997;
+  }
+  return seed;
+}
+
+function createPingRingGeometry(radius: number, fragmentation: number, seed: number) {
+  const positions: number[] = [];
+  const segments = 112;
+  const gapSize = Math.max(1, Math.round(fragmentation * 5));
+  const gapEvery = Math.max(6, Math.round(16 - fragmentation * 9));
+  for (let index = 0; index < segments; index += 1) {
+    if (fragmentation > 0.04 && ((index + seed) % gapEvery) < gapSize) continue;
+    const start = (index / segments) * Math.PI * 2;
+    const end = ((index + 0.72) / segments) * Math.PI * 2;
+    positions.push(
+      Math.cos(start) * radius,
+      0,
+      Math.sin(start) * radius,
+      Math.cos(end) * radius,
+      0,
+      Math.sin(end) * radius,
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return geometry;
+}
+
+function createPingHalo(node: Fleet3DNode): PingHalo | null {
+  if (node.ping.tone === "none" || node.ping.radius <= 0) return null;
+
+  const group = new THREE.Group();
+  group.position.set(node.position[0], node.position[1], node.position[2]);
+  group.userData.uuid = node.uuid;
+  const radius = node.ping.radius * node.scale;
+  const color = pingToneColor(node);
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: node.ping.tone === "good" ? 0.36 : 0.62,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const ring = new THREE.LineSegments(
+    createPingRingGeometry(radius, node.ping.fragmentation, nodeSeed(node.uuid)),
+    material,
+  );
+  group.add(ring);
+
+  let pulse: PingHalo["pulse"];
+  if (node.ping.pulse > 0.2) {
+    const pulseMaterial = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.24 * node.ping.pulse,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    pulse = new THREE.Mesh(
+      new THREE.TorusGeometry(radius * 1.03, 0.01, 8, 80),
+      pulseMaterial,
+    );
+    pulse.rotation.x = Math.PI / 2;
+    group.add(pulse);
+  }
+
+  return {
+    group,
+    pulse,
+    pulseStrength: node.ping.pulse,
+  };
+}
+
+function updatePingHalo(halo: PingHalo, elapsed: number) {
+  if (!halo.pulse) return;
+  const phase = (elapsed * 0.72) % 1;
+  halo.pulse.scale.setScalar(1 + phase * 0.72);
+  halo.pulse.material.opacity = (1 - phase) * 0.3 * halo.pulseStrength;
+}
+
 function disposeObject(object: THREE.Object3D) {
   object.traverse((child) => {
     const mesh = child as THREE.Mesh;
@@ -305,6 +409,7 @@ export function Fleet3DScene({
     const hitTargets: THREE.Object3D[] = [];
     const nodeGroups = new Map<string, THREE.Group>();
     const trafficStreams: TrafficStream[] = [];
+    const pingHalos: PingHalo[] = [];
     for (const node of nodes) {
       const selected = node.uuid === selectedUuid;
       const inCompare = compareSet.has(node.uuid);
@@ -328,6 +433,12 @@ export function Fleet3DScene({
       if (downStream) {
         trafficStreams.push(downStream);
         root.add(downStream.points);
+      }
+
+      const pingHalo = createPingHalo(node);
+      if (pingHalo) {
+        pingHalos.push(pingHalo);
+        root.add(pingHalo.group);
       }
     }
 
@@ -440,6 +551,7 @@ export function Fleet3DScene({
       starField.rotation.y = elapsed * 0.025;
       starField.rotation.x = Math.sin(elapsed * 0.17) * 0.035;
       trafficStreams.forEach((stream) => updateTrafficStream(stream, elapsed));
+      pingHalos.forEach((halo) => updatePingHalo(halo, elapsed));
       nodeGroups.forEach((group, uuid) => {
         const selected = uuid === selectedUuid;
         const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025);

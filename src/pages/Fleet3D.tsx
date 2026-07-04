@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { BarChart3, ChevronLeft, Network, X } from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
+import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
 import {
   buildCompareHref,
   buildFleet3DModel,
@@ -52,6 +53,18 @@ function formatSyncTime(timestamp: number) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.floor(hours / 24)} 天前`;
+}
+
+function formatPingLatency(node: Fleet3DNode) {
+  if (!node.ping.assigned) return "未绑定";
+  if (node.ping.latency == null) return "等待样本";
+  return `${node.ping.latency.toFixed(0)} ms`;
+}
+
+function formatPingLoss(node: Fleet3DNode) {
+  if (!node.ping.assigned) return "未绑定";
+  if (node.ping.loss == null) return "—";
+  return `${node.ping.loss.toFixed(1)}%`;
 }
 
 function StatPill({
@@ -118,6 +131,14 @@ function Inspector({
           <dt>同步</dt>
           <dd>{formatSyncTime(node.updatedAt)}</dd>
         </div>
+        <div>
+          <dt>Ping 延迟</dt>
+          <dd>{formatPingLatency(node)}</dd>
+        </div>
+        <div>
+          <dt>Ping 丢包</dt>
+          <dd>{formatPingLoss(node)}</dd>
+        </div>
       </dl>
       <div className="fleet3d-inspector-actions">
         <button type="button" onClick={() => onToggleCompare(node.uuid)}>
@@ -136,11 +157,20 @@ function Inspector({
 export function Fleet3D() {
   const allNodes = useAllNodeMeta();
   const summaries = useHomeNodeSummaries();
+  useHomepagePingOverview();
   const [filter, setFilter] = useState<Fleet3DFilter>("all");
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [compareUuids, setCompareUuids] = useState<string[]>([]);
 
-  const model = useMemo(() => buildFleet3DModel(allNodes, summaries), [allNodes, summaries]);
+  const visibleUuids = useMemo(
+    () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
+    [allNodes],
+  );
+  const pingByUuid = usePingMiniMap(visibleUuids);
+  const model = useMemo(
+    () => buildFleet3DModel(allNodes, summaries, pingByUuid),
+    [allNodes, pingByUuid, summaries],
+  );
   const visibleNodes = useMemo(
     () => filterFleet3DNodes(model.nodes, filter),
     [filter, model.nodes],

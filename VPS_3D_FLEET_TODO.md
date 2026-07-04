@@ -16,7 +16,7 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 ## Phase 2 - Signal-Rich Immersion
 
 - [x] Add real-time traffic particles for upload/download direction and density.
-- [ ] Add Ping quality halos: latency radius, loss fragmentation, and warning pulses.
+- [x] Add Ping quality halos: latency radius, loss fragmentation, and warning pulses.
 - [ ] Add risk scan mode that dims healthy VPS and emphasizes expiry, traffic pressure, offline, and data-completeness issues.
 - [ ] Add timeline replay for 1h/4h/1d ranges using existing history APIs, with synchronized node color/scale transitions.
 - [ ] Add group/region focus transitions and camera presets for large fleets.

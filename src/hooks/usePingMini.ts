@@ -514,6 +514,38 @@ function getPingSnapshot(uuid: string) {
   return pingOverviewState.items.get(uuid)?.item ?? EMPTY_PING;
 }
 
+let pingMapSnapshotCacheKey = "";
+let pingMapSnapshotCache = new Map<string, PingOverviewItem>();
+
+function pingItemSignature(item: PingOverviewItem) {
+  const lastSample = item.samples[item.samples.length - 1];
+  return [
+    item.client,
+    item.isAssigned ? "1" : "0",
+    item.lastValue ?? "",
+    item.loss ?? "",
+    item.values.length,
+    lastSample?.time ?? "",
+    lastSample?.value ?? "",
+  ].join(",");
+}
+
+function getPingMapSnapshot(uuids: string[]) {
+  const key = uuids.map((uuid) => `${uuid}:${pingItemSignature(getPingSnapshot(uuid))}`).join("|");
+  if (key === pingMapSnapshotCacheKey) return pingMapSnapshotCache;
+
+  pingMapSnapshotCacheKey = key;
+  pingMapSnapshotCache = new Map(uuids.map((uuid) => [uuid, getPingSnapshot(uuid)]));
+  return pingMapSnapshotCache;
+}
+
+function subscribeToPingItems(uuids: string[], listener: Listener) {
+  const unsubscribes = uuids.map((uuid) => subscribeToPingItem(uuid, listener));
+  return () => {
+    unsubscribes.forEach((unsubscribe) => unsubscribe());
+  };
+}
+
 export function useHomepagePingOverview() {
   const { data: me } = useAuth();
   const visibleUuids = useVisibleNodeUuids(me?.logged_in === true);
@@ -541,6 +573,26 @@ export function usePingMini(uuid: string): PingOverviewItem {
   const getSnapshot = useCallback(
     () => (uuid ? getPingSnapshot(uuid) : EMPTY_PING),
     [uuid],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function usePingMiniMap(uuids: string[]): Map<string, PingOverviewItem> {
+  const uuidsKey = useMemo(
+    () => normalizeVisibleUuids(uuids).join("|"),
+    [uuids],
+  );
+  const normalizedUuids = useMemo(
+    () => (uuidsKey ? uuidsKey.split("|") : []),
+    [uuidsKey],
+  );
+  const subscribe = useCallback(
+    (cb: Listener) => subscribeToPingItems(normalizedUuids, cb),
+    [normalizedUuids],
+  );
+  const getSnapshot = useCallback(
+    () => getPingMapSnapshot(normalizedUuids),
+    [normalizedUuids],
   );
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

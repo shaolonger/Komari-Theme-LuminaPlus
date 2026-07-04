@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildCompareHref, buildFleet3DModel, filterFleet3DNodes } from "@/utils/fleet3d";
 import type { HomeNodeSummary } from "@/services/wsStore";
-import type { NodeInfo } from "@/types/komari";
+import type { NodeInfo, PingOverviewItem } from "@/types/komari";
 
 function node(partial: Partial<NodeInfo>): NodeInfo {
   return {
@@ -58,6 +58,19 @@ function summary(partial: Partial<HomeNodeSummary>): HomeNodeSummary {
   };
 }
 
+function ping(partial: Partial<PingOverviewItem>): PingOverviewItem {
+  return {
+    client: "node-a",
+    isAssigned: true,
+    lastValue: 20,
+    values: [20],
+    samples: [{ time: Date.now(), value: 20 }],
+    max: 20,
+    loss: 0,
+    ...partial,
+  };
+}
+
 describe("buildFleet3DModel", () => {
   it("builds deterministic positions and status counts", () => {
     const nodes = [
@@ -94,6 +107,32 @@ describe("buildFleet3DModel", () => {
     ], []);
 
     expect(model.nodes.map((item) => item.uuid)).toEqual(["visible"]);
+  });
+
+  it("derives ping halo pressure from latency and loss", () => {
+    const model = buildFleet3DModel(
+      [node({ uuid: "laggy" })],
+      [summary({ uuid: "laggy" })],
+      new Map([
+        [
+          "laggy",
+          ping({
+            client: "laggy",
+            lastValue: 1280,
+            loss: 23,
+          }),
+        ],
+      ]),
+    );
+
+    expect(model.nodes[0]?.ping).toMatchObject({
+      assigned: true,
+      latency: 1280,
+      loss: 23,
+      tone: "critical",
+    });
+    expect(model.nodes[0]?.ping.radius).toBeGreaterThan(0.4);
+    expect(model.nodes[0]?.ping.fragmentation).toBeGreaterThan(0.5);
   });
 });
 

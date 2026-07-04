@@ -1,8 +1,19 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
-import type { NodeInfo } from "@/types/komari";
+import type { NodeInfo, PingOverviewItem } from "@/types/komari";
 
 export type Fleet3DStatus = "online" | "offline" | "unknown";
 export type Fleet3DFilter = "all" | Fleet3DStatus;
+export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
+
+export interface Fleet3DPingSignal {
+  assigned: boolean;
+  latency: number | null;
+  loss: number | null;
+  tone: Fleet3DPingTone;
+  radius: number;
+  fragmentation: number;
+  pulse: number;
+}
 
 export interface Fleet3DNode {
   uuid: string;
@@ -21,6 +32,7 @@ export interface Fleet3DNode {
   netRate: number;
   trafficTotal: number;
   updatedAt: number;
+  ping: Fleet3DPingSignal;
 }
 
 export interface Fleet3DOrbit {
@@ -82,6 +94,44 @@ function trafficScale(summary: HomeNodeSummary | undefined) {
   return 1 + clamp(Math.log10(rate + 1) / 6, 0, 1) * 1.2;
 }
 
+function pingSignal(ping: PingOverviewItem | undefined): Fleet3DPingSignal {
+  if (!ping || !ping.isAssigned) {
+    return {
+      assigned: false,
+      latency: null,
+      loss: null,
+      tone: "none",
+      radius: 0,
+      fragmentation: 0,
+      pulse: 0,
+    };
+  }
+
+  const latency = ping.lastValue != null && ping.lastValue > 0 ? ping.lastValue : null;
+  const loss = ping.loss != null && Number.isFinite(ping.loss) ? Math.max(0, ping.loss) : null;
+  const hasSamples = ping.values.length > 0;
+  const tone: Fleet3DPingTone =
+    (loss != null && loss >= 20) || (latency != null && latency >= 1000)
+      ? "critical"
+      : (loss != null && loss >= 5) || (latency != null && latency >= 300)
+        ? "warning"
+        : hasSamples
+          ? "good"
+          : "none";
+  const latencyPressure = latency == null ? 0 : clamp(latency / 1000, 0, 1);
+  const lossPressure = loss == null ? 0 : clamp(loss / 25, 0, 1);
+
+  return {
+    assigned: true,
+    latency,
+    loss,
+    tone,
+    radius: tone === "none" ? 0 : 0.28 + latencyPressure * 0.36 + lossPressure * 0.2,
+    fragmentation: loss == null ? 0 : clamp(loss / 35, 0, 1),
+    pulse: tone === "critical" ? 0.9 : tone === "warning" ? 0.55 : tone === "good" ? 0.16 : 0,
+  };
+}
+
 function sortNodes(nodes: NodeInfo[]) {
   return [...nodes].sort((a, b) => {
     const groupCompare = normalizeGroup(a.group).localeCompare(normalizeGroup(b.group));
@@ -101,6 +151,7 @@ export function buildCompareHref(uuids: string[]) {
 export function buildFleet3DModel(
   nodes: NodeInfo[],
   summaries: HomeNodeSummary[],
+  pingByUuid: Map<string, PingOverviewItem> = new Map(),
 ): Fleet3DModel {
   const summaryByUuid = buildSummaryMap(summaries);
   const visibleNodes = sortNodes(nodes.filter((node) => !node.hidden));
@@ -168,6 +219,7 @@ export function buildFleet3DModel(
       netRate,
       trafficTotal,
       updatedAt: summary?.updatedAt ?? 0,
+      ping: pingSignal(pingByUuid.get(node.uuid)),
     } satisfies Fleet3DNode;
   });
 
