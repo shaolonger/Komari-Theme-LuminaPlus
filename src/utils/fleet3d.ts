@@ -1,5 +1,6 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { NodeInfo, PingOverviewItem } from "@/types/komari";
+import type { ComparisonLoadRecords } from "@/services/api";
 import { getConfigCompleteness } from "@/utils/vpsWorkbench";
 import { getVpsOperationalRisks, strongestRiskSeverity } from "@/utils/vpsRisk";
 
@@ -25,6 +26,16 @@ export interface Fleet3DRiskSignal {
   completenessRatio: number;
 }
 
+export interface Fleet3DReplaySignal {
+  active: boolean;
+  timestamp: number;
+  pressure: number;
+  cpuPct: number;
+  ramPct: number;
+  diskPct: number;
+  netRate: number;
+}
+
 export interface Fleet3DNode {
   uuid: string;
   name: string;
@@ -44,6 +55,7 @@ export interface Fleet3DNode {
   updatedAt: number;
   ping: Fleet3DPingSignal;
   risk: Fleet3DRiskSignal;
+  replay?: Fleet3DReplaySignal;
 }
 
 export interface Fleet3DOrbit {
@@ -61,6 +73,12 @@ export interface Fleet3DModel {
   unknown: number;
   riskCritical: number;
   riskWarning: number;
+}
+
+export interface Fleet3DReplayState {
+  nodes: Fleet3DNode[];
+  timestamp: number;
+  sampleCount: number;
 }
 
 const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }> = {
@@ -198,6 +216,23 @@ function sortNodes(nodes: NodeInfo[]) {
   });
 }
 
+function toRecordTimestamp(value: string | number) {
+  if (typeof value === "number") return value > 1_000_000_000_000 ? value : value * 1000;
+  const parsed = Date.parse(String(value));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function percent(part: number, total: number) {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return 0;
+  return clamp((part / total) * 100, 0, 100);
+}
+
+function replayTone(pressure: number) {
+  if (pressure >= 0.82) return { color: "#ff6678", glowColor: "#ff9aaa" };
+  if (pressure >= 0.6) return { color: "#ffc857", glowColor: "#ffe0a3" };
+  return { color: "#50d890", glowColor: "#8fffc1" };
+}
+
 export function buildCompareHref(uuids: string[]) {
   const selected = Array.from(new Set(uuids.filter(Boolean))).slice(0, 8);
   if (selected.length < 2) return "/compare";
@@ -300,4 +335,62 @@ export function buildFleet3DModel(
 export function filterFleet3DNodes(nodes: Fleet3DNode[], filter: Fleet3DFilter) {
   if (filter === "all") return nodes;
   return nodes.filter((node) => node.status === filter);
+}
+
+export function buildFleet3DReplayState(
+  nodes: Fleet3DNode[],
+  recordsByUuid: ComparisonLoadRecords,
+  progress: number,
+): Fleet3DReplayState {
+  const safeProgress = clamp(progress, 0, 1);
+  let timestamp = 0;
+  let sampleCount = 0;
+  const replayNodes = nodes.map((node) => {
+    const records = recordsByUuid[node.uuid] ?? [];
+    if (records.length === 0) return node;
+    sampleCount += records.length;
+    const sorted = [...records].sort(
+      (left, right) => toRecordTimestamp(left.time) - toRecordTimestamp(right.time),
+    );
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.round(safeProgress * (sorted.length - 1))));
+    const record = sorted[index];
+    const recordTimestamp = toRecordTimestamp(record.time);
+    if (recordTimestamp > timestamp) timestamp = recordTimestamp;
+
+    const cpuPct = clamp(record.cpu, 0, 100);
+    const ramPct = percent(record.ram, record.ram_total);
+    const diskPct = percent(record.disk, record.disk_total);
+    const netUp = Math.max(0, record.net_out);
+    const netDown = Math.max(0, record.net_in);
+    const netRate = netUp + netDown;
+    const networkPressure = clamp(Math.log10(netRate + 1) / 7, 0, 1);
+    const resourcePressure = Math.max(cpuPct, ramPct, diskPct) / 100;
+    const pressure = clamp(resourcePressure * 0.68 + networkPressure * 0.32, 0, 1);
+    const tone = replayTone(pressure);
+
+    return {
+      ...node,
+      color: tone.color,
+      glowColor: tone.glowColor,
+      scale: node.scale * (0.86 + pressure * 0.78),
+      netUp,
+      netDown,
+      netRate,
+      replay: {
+        active: true,
+        timestamp: recordTimestamp,
+        pressure,
+        cpuPct,
+        ramPct,
+        diskPct,
+        netRate,
+      },
+    } satisfies Fleet3DNode;
+  });
+
+  return {
+    nodes: replayNodes,
+    timestamp,
+    sampleCount,
+  };
 }

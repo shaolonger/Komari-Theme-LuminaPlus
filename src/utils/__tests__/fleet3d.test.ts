@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildCompareHref, buildFleet3DModel, filterFleet3DNodes } from "@/utils/fleet3d";
+import {
+  buildCompareHref,
+  buildFleet3DModel,
+  buildFleet3DReplayState,
+  filterFleet3DNodes,
+} from "@/utils/fleet3d";
 import type { HomeNodeSummary } from "@/services/wsStore";
-import type { NodeInfo, PingOverviewItem } from "@/types/komari";
+import type { LoadRecord, NodeInfo, PingOverviewItem } from "@/types/komari";
 
 function node(partial: Partial<NodeInfo>): NodeInfo {
   return {
@@ -67,6 +72,31 @@ function ping(partial: Partial<PingOverviewItem>): PingOverviewItem {
     samples: [{ time: Date.now(), value: 20 }],
     max: 20,
     loss: 0,
+    ...partial,
+  };
+}
+
+function loadRecord(partial: Partial<LoadRecord>): LoadRecord {
+  return {
+    cpu: 0,
+    gpu: 0,
+    ram: 0,
+    ram_total: 100,
+    swap: 0,
+    swap_total: 0,
+    load: 0,
+    temp: 0,
+    disk: 0,
+    disk_total: 100,
+    net_in: 0,
+    net_out: 0,
+    net_total_up: 0,
+    net_total_down: 0,
+    process: 0,
+    connections: 0,
+    connections_udp: 0,
+    time: 0,
+    client: "",
     ...partial,
   };
 }
@@ -172,5 +202,34 @@ describe("fleet 3D helpers", () => {
   it("builds compare deep links from selected nodes", () => {
     expect(buildCompareHref(["a"])).toBe("/compare");
     expect(buildCompareHref(["a", "b", "a"])).toBe("/compare?nodes=a%2Cb");
+  });
+
+  it("maps historical records into replay pressure", () => {
+    const model = buildFleet3DModel([node({ uuid: "a" })], [summary({ uuid: "a" })]);
+    const replay = buildFleet3DReplayState(
+      model.nodes,
+      {
+        a: [
+          loadRecord({ time: 1000, cpu: 5, ram: 10, ram_total: 100 }),
+          loadRecord({
+            time: 2000,
+            cpu: 96,
+            ram: 90,
+            ram_total: 100,
+            disk: 88,
+            disk_total: 100,
+            net_in: 1024 * 1024,
+            net_out: 1024 * 1024,
+          }),
+        ],
+      },
+      1,
+    );
+
+    expect(replay.sampleCount).toBe(2);
+    expect(replay.timestamp).toBe(2000 * 1000);
+    expect(replay.nodes[0]?.replay?.active).toBe(true);
+    expect(replay.nodes[0]?.replay?.pressure).toBeGreaterThan(0.7);
+    expect(replay.nodes[0]?.color).toBe("#ff6678");
   });
 });

@@ -1,12 +1,15 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, BarChart3, ChevronLeft, Network, X } from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
+import { getComparisonLoadRecords } from "@/services/api";
 import {
   buildCompareHref,
   buildFleet3DModel,
+  buildFleet3DReplayState,
   filterFleet3DNodes,
   type Fleet3DFilter,
   type Fleet3DNode,
@@ -15,6 +18,11 @@ import {
 import { formatBytes, formatByteRateLabel } from "@/utils/format";
 
 const MAX_COMPARE_NODES = 8;
+const TIMELINE_RANGES = [
+  { value: 1, label: "1h" },
+  { value: 4, label: "4h" },
+  { value: 24, label: "1d" },
+] as const;
 
 const STATUS_LABELS: Record<Fleet3DStatus, string> = {
   online: "在线",
@@ -59,6 +67,19 @@ function formatSyncTime(timestamp: number) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.floor(hours / 24)} 天前`;
+}
+
+function formatReplayTime(timestamp: number) {
+  if (!timestamp) return "等待数据";
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+function formatReplayPressure(node: Fleet3DNode) {
+  if (!node.replay?.active) return "实时";
+  return `${Math.round(node.replay.pressure * 100)}%`;
 }
 
 function formatPingLatency(node: Fleet3DNode) {
@@ -153,6 +174,10 @@ function Inspector({
           <dt>资料完整度</dt>
           <dd>{Math.round(node.risk.completenessRatio * 100)}%</dd>
         </div>
+        <div>
+          <dt>回放压力</dt>
+          <dd>{formatReplayPressure(node)}</dd>
+        </div>
       </dl>
       {node.risk.issues.length > 0 && (
         <div className="fleet3d-risk-issues">
@@ -183,6 +208,10 @@ export function Fleet3D() {
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [compareUuids, setCompareUuids] = useState<string[]>([]);
   const [riskScan, setRiskScan] = useState(false);
+  const [timelineEnabled, setTimelineEnabled] = useState(false);
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
+  const [timelineHours, setTimelineHours] = useState<(typeof TIMELINE_RANGES)[number]["value"]>(4);
+  const [timelineProgress, setTimelineProgress] = useState(1);
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -193,22 +222,51 @@ export function Fleet3D() {
     () => buildFleet3DModel(allNodes, summaries, pingByUuid),
     [allNodes, pingByUuid, summaries],
   );
+  const visibleKey = useMemo(() => visibleUuids.join(","), [visibleUuids]);
+  const replayQuery = useQuery({
+    queryKey: ["fleet-3d", "timeline", visibleKey, timelineHours],
+    queryFn: () =>
+      getComparisonLoadRecords({
+        uuids: visibleUuids,
+        hours: timelineHours,
+        loadType: "cpu",
+      }),
+    enabled: timelineEnabled && visibleUuids.length > 0,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+  });
+  const replayState = useMemo(
+    () =>
+      timelineEnabled
+        ? buildFleet3DReplayState(model.nodes, replayQuery.data ?? {}, timelineProgress)
+        : null,
+    [model.nodes, replayQuery.data, timelineEnabled, timelineProgress],
+  );
+  const renderedNodes = replayState?.nodes ?? model.nodes;
   const visibleNodes = useMemo(
-    () => filterFleet3DNodes(model.nodes, filter),
-    [filter, model.nodes],
+    () => filterFleet3DNodes(renderedNodes, filter),
+    [filter, renderedNodes],
   );
   const selectedNode = useMemo(
-    () => model.nodes.find((node) => node.uuid === selectedUuid) ?? null,
-    [model.nodes, selectedUuid],
+    () => renderedNodes.find((node) => node.uuid === selectedUuid) ?? null,
+    [renderedNodes, selectedUuid],
   );
   const compareNodes = useMemo(
     () =>
       compareUuids
-        .map((uuid) => model.nodes.find((node) => node.uuid === uuid))
+        .map((uuid) => renderedNodes.find((node) => node.uuid === uuid))
         .filter((node): node is Fleet3DNode => Boolean(node)),
-    [compareUuids, model.nodes],
+    [compareUuids, renderedNodes],
   );
   const compareHref = useMemo(() => buildCompareHref(compareUuids), [compareUuids]);
+
+  useEffect(() => {
+    if (!timelineEnabled || !timelinePlaying) return;
+    const timer = window.setInterval(() => {
+      setTimelineProgress((value) => (value >= 1 ? 0 : Math.min(1, value + 0.025)));
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [timelineEnabled, timelinePlaying]);
 
   const toggleCompare = useCallback((uuid: string) => {
     setCompareUuids((current) => {
@@ -294,6 +352,65 @@ export function Fleet3D() {
           <Link to="/">返回主页</Link>
         </div>
       )}
+
+      <div className="fleet3d-timeline-panel" aria-label="历史回放">
+        <div className="fleet3d-timeline-head">
+          <div>
+            <p className="fleet3d-eyebrow">Timeline</p>
+            <strong>{timelineEnabled ? formatReplayTime(replayState?.timestamp ?? 0) : "实时视图"}</strong>
+          </div>
+          <button
+            type="button"
+            className={timelineEnabled ? "is-active" : ""}
+            onClick={() => {
+              setTimelineEnabled((value) => !value);
+              setTimelineProgress(1);
+              setTimelinePlaying(false);
+            }}
+          >
+            {timelineEnabled ? "关闭" : "回放"}
+          </button>
+        </div>
+        <div className="fleet3d-timeline-ranges">
+          {TIMELINE_RANGES.map((range) => (
+            <button
+              key={range.value}
+              type="button"
+              className={timelineHours === range.value ? "is-active" : ""}
+              onClick={() => {
+                setTimelineHours(range.value);
+                setTimelineProgress(1);
+              }}
+            >
+              {range.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={timelinePlaying ? "is-active" : ""}
+            disabled={!timelineEnabled || replayQuery.isLoading}
+            onClick={() => setTimelinePlaying((value) => !value)}
+          >
+            {timelinePlaying ? "暂停" : "播放"}
+          </button>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={1000}
+          value={Math.round(timelineProgress * 1000)}
+          disabled={!timelineEnabled}
+          onChange={(event) => {
+            setTimelinePlaying(false);
+            setTimelineProgress(Number(event.target.value) / 1000);
+          }}
+          aria-label="历史回放进度"
+        />
+        <div className="fleet3d-timeline-foot">
+          <span>{replayQuery.isFetching ? "同步中" : `${replayState?.sampleCount ?? 0} 样本`}</span>
+          <span>{timelineEnabled ? `${Math.round(timelineProgress * 100)}%` : "Live"}</span>
+        </div>
+      </div>
 
       <Inspector
         node={selectedNode}

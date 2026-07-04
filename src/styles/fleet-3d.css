@@ -53,6 +53,7 @@
 
 .fleet3d-topbar,
 .fleet3d-filterbar,
+.fleet3d-timeline-panel,
 .fleet3d-inspector,
 .fleet3d-compare-tray,
 .fleet3d-empty-state {
@@ -77,6 +78,7 @@
 .fleet3d-filterbar,
 .fleet3d-inspector,
 .fleet3d-action-group,
+.fleet3d-timeline-panel,
 .fleet3d-compare-button,
 .fleet3d-risk-button,
 .fleet3d-compare-tray,
@@ -421,6 +423,81 @@
   font-weight: 760;
 }
 
+.fleet3d-timeline-panel {
+  top: 140px;
+  left: 16px;
+  width: min(430px, calc(100% - 382px));
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.fleet3d-timeline-head,
+.fleet3d-timeline-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fleet3d-timeline-head strong {
+  color: #f7f8fb;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.fleet3d-timeline-head button,
+.fleet3d-timeline-ranges button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 248, 251, 0.7);
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 740;
+}
+
+.fleet3d-timeline-head button:hover,
+.fleet3d-timeline-head button.is-active,
+.fleet3d-timeline-ranges button:hover,
+.fleet3d-timeline-ranges button.is-active {
+  border-color: rgba(143, 255, 193, 0.34);
+  background: rgba(143, 255, 193, 0.12);
+  color: #8fffc1;
+}
+
+.fleet3d-timeline-ranges button:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.fleet3d-timeline-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.fleet3d-timeline-panel input[type="range"] {
+  width: 100%;
+  height: 18px;
+  margin: 8px 0 4px;
+  accent-color: #8fffc1;
+}
+
+.fleet3d-timeline-panel input[type="range"]:disabled {
+  opacity: 0.38;
+}
+
+.fleet3d-timeline-foot {
+  color: rgba(247, 248, 251, 0.54);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .fleet3d-compare-tray {
   right: 16px;
   bottom: 16px;
@@ -506,6 +583,12 @@
     top: 144px;
   }
 
+  .fleet3d-timeline-panel {
+    top: 196px;
+    right: 16px;
+    width: auto;
+  }
+
   .fleet3d-inspector {
     top: auto;
     bottom: 86px;
@@ -571,6 +654,18 @@
     left: 10px;
     max-width: calc(100% - 20px);
     overflow-x: auto;
+  }
+
+  .fleet3d-timeline-panel {
+    top: 374px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    padding: 8px;
+  }
+
+  .fleet3d-timeline-ranges {
+    gap: 5px;
   }
 
   .fleet3d-inspector {
