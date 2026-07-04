@@ -29,6 +29,7 @@ import {
   detectFleet3DRendererCapability,
   filterFleet3DNodes,
   getFleet3DFocusOptions,
+  resolveFleet3DManualInteractionState,
   resolveFleet3DFocus,
   type Fleet3DCameraPreset,
   type Fleet3DFilter,
@@ -430,9 +431,10 @@ export function Fleet3D() {
   }, []);
 
   const stopAutomationForManualControl = useCallback(() => {
-    setCameraControlState("manual");
-    setCruiseMode(false);
-    setStoryMode(false);
+    const next = resolveFleet3DManualInteractionState();
+    setCameraControlState(next.cameraControlState);
+    setCruiseMode(next.cruiseMode);
+    setStoryMode(next.storyMode);
   }, []);
 
   const requestFitAll = useCallback(() => {

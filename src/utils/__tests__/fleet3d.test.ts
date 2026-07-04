@@ -3,13 +3,17 @@ import {
   buildCompareHref,
   buildFleet3DAnomalyStory,
   buildFleet3DCruiseTargets,
+  buildFleet3DDemoModel,
   buildFleet3DGlobeLayout,
   buildFleet3DModel,
   buildFleet3DReplayState,
+  computeFleet3DFitCameraFrame,
   detectFleet3DRendererCapability,
   filterFleet3DNodes,
   getFleet3DFocusOptions,
+  resolveFleet3DCameraControlState,
   resolveFleet3DFocus,
+  resolveFleet3DManualInteractionState,
 } from "@/utils/fleet3d";
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { LoadRecord, NodeInfo, PingOverviewItem } from "@/types/komari";
@@ -374,5 +378,56 @@ describe("fleet 3D helpers", () => {
     expect(focus.uuids).toEqual(["a", "b"]);
     expect(focus.center).not.toBeNull();
     expect(focus.label).toBe("edge");
+  });
+
+  it("computes a deterministic fit camera frame from node positions", () => {
+    const model = buildFleet3DModel(
+      [
+        node({ uuid: "a", group: "edge" }),
+        node({ uuid: "b", group: "edge" }),
+        node({ uuid: "c", group: "core" }),
+      ],
+      [
+        summary({ uuid: "a", cpuPct: 80 }),
+        summary({ uuid: "b", cpuPct: 20 }),
+        summary({ uuid: "c", cpuPct: 10 }),
+      ],
+    );
+    const first = computeFleet3DFitCameraFrame(model.nodes);
+    const second = computeFleet3DFitCameraFrame(model.nodes);
+
+    expect(first).toEqual(second);
+    expect(first.center).toHaveLength(3);
+    expect(first.radius).toBeGreaterThan(3);
+    expect(first.distance).toBeGreaterThan(first.radius);
+    const empty = computeFleet3DFitCameraFrame([]);
+    expect(empty.center).toEqual([0, 0, 0]);
+    expect(empty.distance).toBeCloseTo(10.97);
+  });
+
+  it("keeps camera automation state explicit and manual interaction destructive to auto modes", () => {
+    expect(resolveFleet3DCameraControlState({ cruiseMode: false, storyMode: false })).toBe("manual");
+    expect(resolveFleet3DCameraControlState({ cruiseMode: true, storyMode: false })).toBe("auto");
+    expect(resolveFleet3DCameraControlState({ cruiseMode: false, storyMode: true })).toBe("auto");
+    expect(resolveFleet3DManualInteractionState()).toEqual({
+      cruiseMode: false,
+      storyMode: false,
+      cameraControlState: "manual",
+    });
+  });
+
+  it("builds a demo model with clickable operational states for browser verification", () => {
+    const demo = buildFleet3DDemoModel();
+    const hot = demo.nodes.find((item) => item.uuid === "demo-us-hot");
+    const offline = demo.nodes.find((item) => item.uuid === "demo-de-offline");
+
+    expect(demo.nodes).toHaveLength(4);
+    expect(demo.online).toBe(3);
+    expect(demo.offline).toBe(1);
+    expect(hot?.visual.resourceArcs.find((arc) => arc.key === "cpu")?.tone).toBe("critical");
+    expect(hot?.visual.badges).toEqual(expect.arrayContaining(["risk", "traffic", "expiry"]));
+    expect(offline?.status).toBe("offline");
+    expect(offline?.visual.badges).toContain("offline");
+    expect(buildCompareHref(demo.nodes.map((item) => item.uuid))).toContain("nodes=");
   });
 });

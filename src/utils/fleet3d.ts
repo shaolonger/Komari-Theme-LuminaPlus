@@ -20,6 +20,7 @@ export type Fleet3DRiskTone = "none" | "warning" | "critical";
 export type Fleet3DRendererMode = "webgpu" | "webgl2" | "webgl1" | "unavailable";
 export type Fleet3DMetricKey = "cpu" | "memory" | "disk";
 export type Fleet3DVisualTone = "none" | "good" | "active" | "warning" | "critical";
+export type Fleet3DCameraControlState = "manual" | "auto";
 export type Fleet3DVisualBadge =
   | "offline"
   | "risk"
@@ -179,6 +180,12 @@ export interface Fleet3DRendererCapability {
   webgpu: boolean;
   webgl2: boolean;
   webgl1: boolean;
+}
+
+export interface Fleet3DFitCameraFrame {
+  center: [number, number, number];
+  radius: number;
+  distance: number;
 }
 
 const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }> = {
@@ -477,6 +484,40 @@ function centerOfNodes(nodes: Fleet3DNode[]): [number, number, number] | null {
   center[1] /= nodes.length;
   center[2] /= nodes.length;
   return center;
+}
+
+export function computeFleet3DFitCameraFrame(nodes: Fleet3DNode[]): Fleet3DFitCameraFrame {
+  const center = centerOfNodes(nodes) ?? [0, 0, 0];
+  let radius = 3.8;
+  for (const node of nodes) {
+    const dx = node.position[0] - center[0];
+    const dy = node.position[1] - center[1];
+    const dz = node.position[2] - center[2];
+    radius = Math.max(radius, Math.hypot(dx, dy, dz) + 0.66 * node.scale);
+  }
+  return {
+    center,
+    radius,
+    distance: clamp(radius * 2.15 + 2.8, 7.2, 26),
+  };
+}
+
+export function resolveFleet3DCameraControlState({
+  cruiseMode,
+  storyMode,
+}: {
+  cruiseMode: boolean;
+  storyMode: boolean;
+}): Fleet3DCameraControlState {
+  return cruiseMode || storyMode ? "auto" : "manual";
+}
+
+export function resolveFleet3DManualInteractionState() {
+  return {
+    cruiseMode: false,
+    storyMode: false,
+    cameraControlState: "manual" as const,
+  };
 }
 
 function groupByValue(nodes: Fleet3DNode[], key: "group" | "region") {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { computeFleet3DFitCameraFrame } from "@/utils/fleet3d";
 import type {
   Fleet3DCameraPreset,
   Fleet3DLayoutMode,
@@ -676,27 +677,15 @@ function applyCameraFocus(
 }
 
 function fitCameraToNodes(runtime: SceneRuntime, nodes: Fleet3DNode[]) {
-  const center = new THREE.Vector3();
-  if (nodes.length > 0) {
-    for (const node of nodes) {
-      center.add(new THREE.Vector3(node.position[0], node.position[1], node.position[2]));
-    }
-    center.divideScalar(nodes.length);
-  }
-
-  let radius = 3.8;
-  for (const node of nodes) {
-    const position = new THREE.Vector3(node.position[0], node.position[1], node.position[2]);
-    radius = Math.max(radius, position.distanceTo(center) + NODE_GLOW_RADIUS * node.scale * 3);
-  }
+  const frame = computeFleet3DFitCameraFrame(nodes);
+  const center = new THREE.Vector3(frame.center[0], frame.center[1], frame.center[2]);
 
   const direction = runtime.camera.position.clone().sub(runtime.controls.target).normalize();
   if (direction.lengthSq() === 0) direction.copy(CAMERA_PRESETS.overview).normalize();
-  const distance = clamp(radius * 2.15 + 2.8, 7.2, 26);
   runtime.controls.target.copy(center);
-  runtime.camera.position.copy(center).add(direction.multiplyScalar(distance));
+  runtime.camera.position.copy(center).add(direction.multiplyScalar(frame.distance));
   runtime.controls.update();
-  runtime.focusSignature = `fit:${nodes.map((node) => node.uuid).join(",")}:${distance.toFixed(2)}`;
+  runtime.focusSignature = `fit:${nodes.map((node) => node.uuid).join(",")}:${frame.distance.toFixed(2)}`;
 }
 
 function updateRendererQuality(runtime: SceneRuntime, quality: Fleet3DQuality) {
