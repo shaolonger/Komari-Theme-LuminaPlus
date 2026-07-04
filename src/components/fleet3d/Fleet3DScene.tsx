@@ -24,6 +24,8 @@ interface SceneLabel {
   name: string;
   x: number;
   y: number;
+  centerX: number;
+  centerY: number;
   tone: "online" | "offline" | "unknown" | "warning" | "critical";
   selected: boolean;
   inCompare: boolean;
@@ -402,6 +404,18 @@ function createNodeMesh(
   const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
   glowMesh.userData.uuid = node.uuid;
   group.add(glowMesh);
+
+  const hitMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(NODE_GLOW_RADIUS * visualScale * 2.25, 18, 12),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      depthTest: false,
+    }),
+  );
+  hitMesh.userData.uuid = node.uuid;
+  group.add(hitMesh);
 
   node.visual.resourceArcs.forEach((arc, index) => {
     group.add(createResourceArc(node, arc, index, visualScale, dimmed));
@@ -786,6 +800,8 @@ function buildSceneLabels(runtime: SceneRuntime, latest: LatestSceneState): Scen
       name: item.node.name,
       x: left + width / 2,
       y: top,
+      centerX: item.x,
+      centerY: item.y,
       tone: nodeTone(item.node),
       selected: item.selected,
       inCompare: item.inCompare,
@@ -803,6 +819,8 @@ function sceneLabelsSignature(labels: SceneLabel[]) {
         label.uuid,
         Math.round(label.x),
         Math.round(label.y),
+        Math.round(label.centerX),
+        Math.round(label.centerY),
         label.tone,
         label.selected ? 1 : 0,
         label.inCompare ? 1 : 0,
@@ -1404,6 +1422,8 @@ export function Fleet3DScene({
             ].filter(Boolean).join(" ")}
             style={{ left: label.x, top: label.y }}
             data-node-label={label.uuid}
+            data-node-center-x={(Number.isFinite(label.centerX) ? label.centerX : label.x).toFixed(1)}
+            data-node-center-y={(Number.isFinite(label.centerY) ? label.centerY : label.y + 46).toFixed(1)}
           >
             <span className="fleet3d-node-label-dot" />
             <strong>{label.name}</strong>
