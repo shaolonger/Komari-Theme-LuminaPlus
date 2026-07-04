@@ -24,6 +24,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.17.0",
+    "three": "^0.185.1",
     "uplot": "^1.6.32",
     "uplot-react": "^1.2.4",
     "zod": "^3.24.1"
