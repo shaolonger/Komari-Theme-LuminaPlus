@@ -66,7 +66,7 @@ describe("buildFleet3DModel", () => {
       node({ uuid: "c", name: "gamma", group: "core", region: "DE" }),
     ];
     const summaries = [
-      summary({ uuid: "a", online: true, netDown: 5000 }),
+      summary({ uuid: "a", online: true, netUp: 1200, netDown: 5000 }),
       summary({ uuid: "b", online: false }),
     ];
 
@@ -80,6 +80,11 @@ describe("buildFleet3DModel", () => {
       second.nodes.map((item) => item.position),
     );
     expect(first.orbits.map((item) => item.group)).toEqual(["core", "edge"]);
+    expect(first.nodes.find((item) => item.uuid === "a")).toMatchObject({
+      netUp: 1200,
+      netDown: 5000,
+      netRate: 6200,
+    });
   });
 
   it("filters hidden nodes out of the 3D model", () => {

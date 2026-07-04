@@ -20,10 +20,26 @@ interface Fleet3DSceneProps {
 
 const NODE_CORE_RADIUS = 0.105;
 const NODE_GLOW_RADIUS = 0.22;
+const MAX_TRAFFIC_PARTICLES_PER_DIRECTION = 26;
+
+interface TrafficStream {
+  points: THREE.Points;
+  positions: Float32Array;
+  seeds: Float32Array;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  side: THREE.Vector3;
+  speed: number;
+  sway: number;
+}
 
 function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
   return value - Math.floor(value);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function createStarField() {
@@ -137,6 +153,77 @@ function createNodeMesh(
   return group;
 }
 
+function trafficParticleCount(rate: number) {
+  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  const density = clamp(Math.log10(rate + 1) / 6, 0, 1);
+  return Math.max(3, Math.round(4 + density * MAX_TRAFFIC_PARTICLES_PER_DIRECTION));
+}
+
+function createTrafficStream(
+  node: Fleet3DNode,
+  direction: "up" | "down",
+): TrafficStream | null {
+  const rate = direction === "up" ? node.netUp : node.netDown;
+  const count = trafficParticleCount(rate);
+  if (count === 0) return null;
+
+  const nodePosition = new THREE.Vector3(
+    node.position[0],
+    node.position[1],
+    node.position[2],
+  );
+  const radial = nodePosition.clone().normalize();
+  const tangent = new THREE.Vector3(-radial.z, 0, radial.x).normalize();
+  const side = tangent.multiplyScalar(direction === "up" ? 0.055 : -0.055);
+  const start = nodePosition.clone().multiplyScalar(direction === "up" ? 0.95 : 0.18);
+  const end = nodePosition.clone().multiplyScalar(direction === "up" ? 0.18 : 0.95);
+  const positions = new Float32Array(count * 3);
+  const seeds = new Float32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    seeds[index] = (index / count + seededUnit(index + node.uuid.length * 17)) % 1;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color: direction === "up" ? 0x6aa7ff : 0x62e4b0,
+    size: direction === "up" ? 0.042 : 0.038,
+    transparent: true,
+    opacity: direction === "up" ? 0.72 : 0.64,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  return {
+    points: new THREE.Points(geometry, material),
+    positions,
+    seeds,
+    start,
+    end,
+    side,
+    speed: direction === "up" ? 0.56 : 0.44,
+    sway: direction === "up" ? 0.028 : 0.02,
+  };
+}
+
+function updateTrafficStream(stream: TrafficStream, elapsed: number) {
+  const path = new THREE.Vector3();
+  for (let index = 0; index < stream.seeds.length; index += 1) {
+    const seed = stream.seeds[index];
+    const t = (seed + elapsed * stream.speed) % 1;
+    path.copy(stream.start).lerp(stream.end, t);
+    const fade = Math.sin(t * Math.PI);
+    const wobble = Math.sin((elapsed * 2.4 + seed * 18.849) * Math.PI) * stream.sway;
+    const offset = stream.side.clone().multiplyScalar(0.7 + fade * 0.65);
+    const base = index * 3;
+    stream.positions[base] = path.x + offset.x;
+    stream.positions[base + 1] = path.y + offset.y + wobble;
+    stream.positions[base + 2] = path.z + offset.z;
+  }
+  const attribute = stream.points.geometry.getAttribute("position");
+  attribute.needsUpdate = true;
+}
+
 function disposeObject(object: THREE.Object3D) {
   object.traverse((child) => {
     const mesh = child as THREE.Mesh;
@@ -217,6 +304,7 @@ export function Fleet3DScene({
     });
     const hitTargets: THREE.Object3D[] = [];
     const nodeGroups = new Map<string, THREE.Group>();
+    const trafficStreams: TrafficStream[] = [];
     for (const node of nodes) {
       const selected = node.uuid === selectedUuid;
       const inCompare = compareSet.has(node.uuid);
@@ -230,6 +318,17 @@ export function Fleet3DScene({
         new THREE.Vector3(node.position[0], node.position[1], node.position[2]),
       ]);
       root.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
+
+      const upStream = createTrafficStream(node, "up");
+      if (upStream) {
+        trafficStreams.push(upStream);
+        root.add(upStream.points);
+      }
+      const downStream = createTrafficStream(node, "down");
+      if (downStream) {
+        trafficStreams.push(downStream);
+        root.add(downStream.points);
+      }
     }
 
     scene.add(new THREE.AmbientLight(0x9fb7ff, 1.5));
@@ -340,6 +439,7 @@ export function Fleet3DScene({
       root.rotation.x = Math.sin(elapsed * 0.32) * 0.04;
       starField.rotation.y = elapsed * 0.025;
       starField.rotation.x = Math.sin(elapsed * 0.17) * 0.035;
+      trafficStreams.forEach((stream) => updateTrafficStream(stream, elapsed));
       nodeGroups.forEach((group, uuid) => {
         const selected = uuid === selectedUuid;
         const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025);

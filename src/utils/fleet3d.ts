@@ -16,6 +16,8 @@ export interface Fleet3DNode {
   orbitIndex: number;
   orbitRadius: number;
   position: [number, number, number];
+  netUp: number;
+  netDown: number;
   netRate: number;
   trafficTotal: number;
   updatedAt: number;
@@ -140,7 +142,9 @@ export function buildFleet3DModel(
     else unknown += 1;
 
     const tone = STATUS_COLORS[status];
-    const netRate = Math.max(0, (summary?.netUp ?? 0) + (summary?.netDown ?? 0));
+    const netUp = Math.max(0, summary?.netUp ?? 0);
+    const netDown = Math.max(0, summary?.netDown ?? 0);
+    const netRate = netUp + netDown;
     const trafficTotal = Math.max(0, (summary?.trafficUp ?? 0) + (summary?.trafficDown ?? 0));
 
     return {
@@ -159,6 +163,8 @@ export function buildFleet3DModel(
         orbit.y + (((seed >>> 16) % 1000) / 1000 - 0.5) * 0.7,
         Math.sin(angle) * radius,
       ],
+      netUp,
+      netDown,
       netRate,
       trafficTotal,
       updatedAt: summary?.updatedAt ?? 0,
