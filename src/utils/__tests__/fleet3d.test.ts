@@ -134,6 +134,28 @@ describe("buildFleet3DModel", () => {
     expect(model.nodes[0]?.ping.radius).toBeGreaterThan(0.4);
     expect(model.nodes[0]?.ping.fragmentation).toBeGreaterThan(0.5);
   });
+
+  it("derives risk scan signals from operational risks and completeness", () => {
+    const model = buildFleet3DModel(
+      [
+        node({
+          uuid: "offline",
+          region: "US",
+          group: "edge",
+          price: 5,
+          billing_cycle: "month",
+          expired_at: "2000-01-01T00:00:00Z",
+          traffic_limit: 1024,
+        }),
+      ],
+      [summary({ uuid: "offline", online: false })],
+    );
+
+    expect(model.riskCritical).toBe(1);
+    expect(model.nodes[0]?.risk.tone).toBe("critical");
+    expect(model.nodes[0]?.risk.issues).toContain("节点离线");
+    expect(model.nodes[0]?.risk.score).toBeGreaterThan(0.5);
+  });
 });
 
 describe("fleet 3D helpers", () => {

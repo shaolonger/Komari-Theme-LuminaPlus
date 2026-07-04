@@ -14,6 +14,7 @@ interface Fleet3DSceneProps {
   orbits: Fleet3DOrbit[];
   selectedUuid: string | null;
   compareUuids: string[];
+  riskScan: boolean;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
 }
@@ -108,6 +109,7 @@ function createNodeMesh(
   node: Fleet3DNode,
   selected: boolean,
   inCompare: boolean,
+  riskScan: boolean,
 ) {
   const group = new THREE.Group();
   group.position.set(node.position[0], node.position[1], node.position[2]);
@@ -115,13 +117,23 @@ function createNodeMesh(
 
   const color = new THREE.Color(node.color);
   const glow = new THREE.Color(node.glowColor);
+  const riskDimmed = riskScan && node.risk.tone === "none" && !selected && !inCompare;
+  const riskEmphasis = riskScan && node.risk.tone !== "none";
+  const riskColor =
+    node.risk.tone === "critical"
+      ? new THREE.Color(0xff6678)
+      : node.risk.tone === "warning"
+        ? new THREE.Color(0xffc857)
+        : glow;
   const coreGeometry = new THREE.SphereGeometry(NODE_CORE_RADIUS * node.scale, 24, 16);
   const coreMaterial = new THREE.MeshStandardMaterial({
-    color,
-    emissive: glow,
-    emissiveIntensity: selected ? 1.8 : inCompare ? 1.25 : 0.82,
+    color: riskEmphasis ? riskColor : color,
+    emissive: riskEmphasis ? riskColor : glow,
+    emissiveIntensity: riskDimmed ? 0.18 : riskEmphasis ? 1.9 : selected ? 1.8 : inCompare ? 1.25 : 0.82,
     roughness: 0.28,
     metalness: 0.22,
+    transparent: riskDimmed,
+    opacity: riskDimmed ? 0.34 : 1,
   });
   const core = new THREE.Mesh(coreGeometry, coreMaterial);
   core.userData.uuid = node.uuid;
@@ -129,9 +141,9 @@ function createNodeMesh(
 
   const glowGeometry = new THREE.SphereGeometry(NODE_GLOW_RADIUS * node.scale, 32, 16);
   const glowMaterial = new THREE.MeshBasicMaterial({
-    color: glow,
+    color: riskEmphasis ? riskColor : glow,
     transparent: true,
-    opacity: selected ? 0.22 : inCompare ? 0.16 : 0.1,
+    opacity: riskDimmed ? 0.025 : riskEmphasis ? 0.24 : selected ? 0.22 : inCompare ? 0.16 : 0.1,
     depthWrite: false,
   });
   const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
@@ -154,6 +166,26 @@ function createNodeMesh(
     ring.rotation.x = Math.PI / 2;
     ring.userData.uuid = node.uuid;
     group.add(ring);
+  }
+
+  if (riskEmphasis) {
+    const beaconGeometry = new THREE.TorusGeometry(
+      NODE_GLOW_RADIUS * node.scale * (1.85 + node.risk.score * 0.72),
+      0.01,
+      8,
+      72,
+    );
+    const beaconMaterial = new THREE.MeshBasicMaterial({
+      color: riskColor,
+      transparent: true,
+      opacity: node.risk.tone === "critical" ? 0.58 : 0.42,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const beacon = new THREE.Mesh(beaconGeometry, beaconMaterial);
+    beacon.rotation.x = Math.PI / 2;
+    beacon.userData.uuid = node.uuid;
+    group.add(beacon);
   }
 
   return group;
@@ -364,6 +396,7 @@ export function Fleet3DScene({
   orbits,
   selectedUuid,
   compareUuids,
+  riskScan,
   onSelectNode,
   onMarqueeSelect,
 }: Fleet3DSceneProps) {
@@ -413,7 +446,7 @@ export function Fleet3DScene({
     for (const node of nodes) {
       const selected = node.uuid === selectedUuid;
       const inCompare = compareSet.has(node.uuid);
-      const mesh = createNodeMesh(node, selected, inCompare);
+      const mesh = createNodeMesh(node, selected, inCompare, riskScan);
       nodeGroups.set(node.uuid, mesh);
       hitTargets.push(mesh);
       root.add(mesh);
@@ -424,12 +457,12 @@ export function Fleet3DScene({
       ]);
       root.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
 
-      const upStream = createTrafficStream(node, "up");
+      const upStream = riskScan && node.risk.tone === "none" ? null : createTrafficStream(node, "up");
       if (upStream) {
         trafficStreams.push(upStream);
         root.add(upStream.points);
       }
-      const downStream = createTrafficStream(node, "down");
+      const downStream = riskScan && node.risk.tone === "none" ? null : createTrafficStream(node, "down");
       if (downStream) {
         trafficStreams.push(downStream);
         root.add(downStream.points);
@@ -554,7 +587,9 @@ export function Fleet3DScene({
       pingHalos.forEach((halo) => updatePingHalo(halo, elapsed));
       nodeGroups.forEach((group, uuid) => {
         const selected = uuid === selectedUuid;
-        const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025);
+        const riskNode = nodes.find((node) => node.uuid === uuid);
+        const riskBoost = riskScan && riskNode?.risk.tone === "critical" ? 0.08 : 0;
+        const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025 + riskBoost);
         group.scale.setScalar(pulse);
       });
       renderer.render(scene, camera);
@@ -573,7 +608,7 @@ export function Fleet3DScene({
       renderer.dispose();
       setMarquee(null);
     };
-  }, [compareUuids, nodes, onMarqueeSelect, onSelectNode, orbits, selectedUuid]);
+  }, [compareUuids, nodes, onMarqueeSelect, onSelectNode, orbits, riskScan, selectedUuid]);
 
   return (
     <div ref={containerRef} className="fleet3d-scene" data-fleet3d-scene>

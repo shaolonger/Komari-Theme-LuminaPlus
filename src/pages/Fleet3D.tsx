@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { BarChart3, ChevronLeft, Network, X } from "lucide-react";
+import { AlertTriangle, BarChart3, ChevronLeft, Network, X } from "lucide-react";
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
@@ -21,6 +21,12 @@ const STATUS_LABELS: Record<Fleet3DStatus, string> = {
   offline: "离线",
   unknown: "未知",
 };
+
+const RISK_LABELS = {
+  none: "正常",
+  warning: "需关注",
+  critical: "高风险",
+} as const;
 
 const FILTERS: Array<{ value: Fleet3DFilter; label: string }> = [
   { value: "all", label: "全部" },
@@ -139,7 +145,22 @@ function Inspector({
           <dt>Ping 丢包</dt>
           <dd>{formatPingLoss(node)}</dd>
         </div>
+        <div>
+          <dt>风险</dt>
+          <dd>{RISK_LABELS[node.risk.tone]}</dd>
+        </div>
+        <div>
+          <dt>资料完整度</dt>
+          <dd>{Math.round(node.risk.completenessRatio * 100)}%</dd>
+        </div>
       </dl>
+      {node.risk.issues.length > 0 && (
+        <div className="fleet3d-risk-issues">
+          {node.risk.issues.map((issue) => (
+            <span key={issue}>{issue}</span>
+          ))}
+        </div>
+      )}
       <div className="fleet3d-inspector-actions">
         <button type="button" onClick={() => onToggleCompare(node.uuid)}>
           <BarChart3 size={15} aria-hidden="true" />
@@ -161,6 +182,7 @@ export function Fleet3D() {
   const [filter, setFilter] = useState<Fleet3DFilter>("all");
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [compareUuids, setCompareUuids] = useState<string[]>([]);
+  const [riskScan, setRiskScan] = useState(false);
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -211,6 +233,7 @@ export function Fleet3D() {
         orbits={model.orbits}
         selectedUuid={selectedUuid}
         compareUuids={compareUuids}
+        riskScan={riskScan}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
       />
@@ -231,11 +254,23 @@ export function Fleet3D() {
           <StatPill label="离线" value={model.offline} tone="offline" />
           <StatPill label="未知" value={model.unknown} tone="unknown" />
         </div>
-        <Link to={compareHref} className="fleet3d-compare-button">
-          <BarChart3 size={16} aria-hidden="true" />
-          <span>对比</span>
-          <strong>{compareUuids.length}</strong>
-        </Link>
+        <div className="fleet3d-action-group">
+          <button
+            type="button"
+            className={`fleet3d-risk-button ${riskScan ? "is-active" : ""}`}
+            onClick={() => setRiskScan((value) => !value)}
+            aria-pressed={riskScan}
+          >
+            <AlertTriangle size={16} aria-hidden="true" />
+            <span>风险</span>
+            <strong>{model.riskCritical + model.riskWarning}</strong>
+          </button>
+          <Link to={compareHref} className="fleet3d-compare-button">
+            <BarChart3 size={16} aria-hidden="true" />
+            <span>对比</span>
+            <strong>{compareUuids.length}</strong>
+          </Link>
+        </div>
       </header>
 
       <nav className="fleet3d-filterbar" aria-label="星图筛选">

@@ -1,9 +1,12 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { NodeInfo, PingOverviewItem } from "@/types/komari";
+import { getConfigCompleteness } from "@/utils/vpsWorkbench";
+import { getVpsOperationalRisks, strongestRiskSeverity } from "@/utils/vpsRisk";
 
 export type Fleet3DStatus = "online" | "offline" | "unknown";
 export type Fleet3DFilter = "all" | Fleet3DStatus;
 export type Fleet3DPingTone = "none" | "good" | "warning" | "critical";
+export type Fleet3DRiskTone = "none" | "warning" | "critical";
 
 export interface Fleet3DPingSignal {
   assigned: boolean;
@@ -13,6 +16,13 @@ export interface Fleet3DPingSignal {
   radius: number;
   fragmentation: number;
   pulse: number;
+}
+
+export interface Fleet3DRiskSignal {
+  tone: Fleet3DRiskTone;
+  score: number;
+  issues: string[];
+  completenessRatio: number;
 }
 
 export interface Fleet3DNode {
@@ -33,6 +43,7 @@ export interface Fleet3DNode {
   trafficTotal: number;
   updatedAt: number;
   ping: Fleet3DPingSignal;
+  risk: Fleet3DRiskSignal;
 }
 
 export interface Fleet3DOrbit {
@@ -48,6 +59,8 @@ export interface Fleet3DModel {
   online: number;
   offline: number;
   unknown: number;
+  riskCritical: number;
+  riskWarning: number;
 }
 
 const STATUS_COLORS: Record<Fleet3DStatus, { color: string; glowColor: string }> = {
@@ -132,6 +145,49 @@ function pingSignal(ping: PingOverviewItem | undefined): Fleet3DPingSignal {
   };
 }
 
+function riskSignal(
+  node: NodeInfo,
+  summary: HomeNodeSummary | undefined,
+  ping: PingOverviewItem | undefined,
+): Fleet3DRiskSignal {
+  const hasPingBinding = Boolean(ping?.isAssigned);
+  const risks = getVpsOperationalRisks({
+    uuid: node.uuid,
+    online: summary?.online ?? null,
+    updatedAt: summary?.updatedAt ?? 0,
+    trafficUp: summary?.trafficUp ?? 0,
+    trafficDown: summary?.trafficDown ?? 0,
+    trafficLimit: node.traffic_limit,
+    trafficLimitType: node.traffic_limit_type,
+    expiredAt: node.expired_at,
+    capabilityPing: node.capability_ping,
+    hasPingBinding,
+  });
+  const completeness = getConfigCompleteness(node, hasPingBinding);
+  const issues = risks.map((risk) => risk.title);
+  if (completeness.ratio < 1) {
+    const missing = completeness.missing.slice(0, 2).map((item) => item.label).join("、");
+    issues.push(missing ? `资料待补：${missing}` : "资料待补");
+  }
+
+  const riskTone =
+    risks.length > 0
+      ? strongestRiskSeverity(risks)
+      : completeness.ratio < 1
+        ? "warning"
+        : "none";
+  const criticalWeight = risks.filter((risk) => risk.severity === "critical").length * 0.42;
+  const warningWeight = risks.filter((risk) => risk.severity === "warning").length * 0.24;
+  const completenessWeight = (1 - completeness.ratio) * 0.34;
+
+  return {
+    tone: riskTone,
+    score: riskTone === "none" ? 0 : clamp(0.28 + criticalWeight + warningWeight + completenessWeight, 0, 1),
+    issues: Array.from(new Set(issues)).slice(0, 4),
+    completenessRatio: completeness.ratio,
+  };
+}
+
 function sortNodes(nodes: NodeInfo[]) {
   return [...nodes].sort((a, b) => {
     const groupCompare = normalizeGroup(a.group).localeCompare(normalizeGroup(b.group));
@@ -174,6 +230,8 @@ export function buildFleet3DModel(
   let online = 0;
   let offline = 0;
   let unknown = 0;
+  let riskCritical = 0;
+  let riskWarning = 0;
   const fleetNodes = visibleNodes.map((node) => {
     const group = normalizeGroup(node.group);
     const orbitIndex = groupIndex.get(group) ?? 0;
@@ -187,6 +245,7 @@ export function buildFleet3DModel(
     const angle = ((seen + 0.5) / count) * Math.PI * 2 + jitter;
     const radius = orbit.radius + (((seed >>> 8) % 1000) / 1000 - 0.5) * 0.62;
     const summary = summaryByUuid.get(node.uuid);
+    const ping = pingByUuid.get(node.uuid);
     const status = resolveStatus(summary);
     if (status === "online") online += 1;
     else if (status === "offline") offline += 1;
@@ -197,6 +256,9 @@ export function buildFleet3DModel(
     const netDown = Math.max(0, summary?.netDown ?? 0);
     const netRate = netUp + netDown;
     const trafficTotal = Math.max(0, (summary?.trafficUp ?? 0) + (summary?.trafficDown ?? 0));
+    const risk = riskSignal(node, summary, ping);
+    if (risk.tone === "critical") riskCritical += 1;
+    else if (risk.tone === "warning") riskWarning += 1;
 
     return {
       uuid: node.uuid,
@@ -219,7 +281,8 @@ export function buildFleet3DModel(
       netRate,
       trafficTotal,
       updatedAt: summary?.updatedAt ?? 0,
-      ping: pingSignal(pingByUuid.get(node.uuid)),
+      ping: pingSignal(ping),
+      risk,
     } satisfies Fleet3DNode;
   });
 
@@ -229,6 +292,8 @@ export function buildFleet3DModel(
     online,
     offline,
     unknown,
+    riskCritical,
+    riskWarning,
   };
 }
 
