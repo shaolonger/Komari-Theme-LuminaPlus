@@ -18,7 +18,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Refactor `Fleet3DScene` into a stable Three.js runtime: initialize renderer/camera/controls once, update scene objects through refs, prevent camera resets, and add OrbitControls drag/zoom/pan support.
 - [x] Redesign VPS node visual encoding so each node is glanceable: status core, risk ring, CPU/memory/disk mini arcs, ping halo, traffic plume, expiry/traffic/completeness badges, and consistent scale rules.
 - [x] Add scene labels and hover affordances: viewport-aware node labels, hover tooltip with key metrics, click selection, double-click focus, Shift-drag compare marquee, and visible selected/focused state.
-- [ ] Update 3D page controls around the new interaction model: fit-all button, manual/auto state, cruise/story pause on user interaction, clearer legends, and reduced overlay obstruction.
+- [x] Update 3D page controls around the new interaction model: fit-all button, manual/auto state, cruise/story pause on user interaction, clearer legends, and reduced overlay obstruction.
 - [ ] Add deterministic unit tests for visual encoding, camera/automation state helpers, and interaction-facing data contracts.
 - [ ] Run browser visual and interaction verification on desktop and mobile: canvas nonblank, drag changes camera and persists, wheel zoom changes distance, click selects a VPS, no automatic reset after 8 seconds, overlays do not collide, and console has no errors.
 - [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.

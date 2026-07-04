@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   Globe2,
+  Maximize2,
   Network,
   Radar,
   Route,
@@ -271,6 +272,8 @@ export function Fleet3D() {
   const [storyMode, setStoryMode] = useState(false);
   const [storyIndex, setStoryIndex] = useState(0);
   const [layoutMode, setLayoutMode] = useState<Fleet3DLayoutMode>("orbit");
+  const [fitRequestId, setFitRequestId] = useState(0);
+  const [cameraControlState, setCameraControlState] = useState<"manual" | "auto">("manual");
 
   const visibleUuids = useMemo(
     () => allNodes.filter((node) => !node.hidden).map((node) => node.uuid),
@@ -426,6 +429,26 @@ export function Fleet3D() {
     });
   }, []);
 
+  const stopAutomationForManualControl = useCallback(() => {
+    setCameraControlState("manual");
+    setCruiseMode(false);
+    setStoryMode(false);
+  }, []);
+
+  const requestFitAll = useCallback(() => {
+    stopAutomationForManualControl();
+    setFitRequestId((value) => value + 1);
+  }, [stopAutomationForManualControl]);
+
+  const selectCameraPreset = useCallback((preset: Fleet3DCameraPreset) => {
+    stopAutomationForManualControl();
+    setCameraPreset(preset);
+  }, [stopAutomationForManualControl]);
+
+  const handleUserCameraControl = useCallback(() => {
+    stopAutomationForManualControl();
+  }, [stopAutomationForManualControl]);
+
   const handleMarqueeSelect = useCallback((uuids: string[]) => {
     setCompareUuids(uniqueLimited(uuids));
     if (uuids[0]) setSelectedUuid(uuids[0]);
@@ -433,15 +456,19 @@ export function Fleet3D() {
 
   const handleSelectNode = useCallback((uuid: string | null) => {
     setSelectedUuid(uuid);
-    if (cruiseMode) setCruiseMode(false);
-    if (storyMode) setStoryMode(false);
-  }, [cruiseMode, storyMode]);
+    stopAutomationForManualControl();
+  }, [stopAutomationForManualControl]);
 
   const toggleCruiseMode = useCallback(() => {
     setCruiseMode((value) => {
       const next = !value;
-      if (next) setCruiseIndex(0);
-      if (next) setStoryMode(false);
+      if (next) {
+        setCruiseIndex(0);
+        setStoryMode(false);
+        setCameraControlState("auto");
+      } else {
+        setCameraControlState("manual");
+      }
       return next;
     });
   }, []);
@@ -452,6 +479,9 @@ export function Fleet3D() {
       if (next) {
         setStoryIndex(0);
         setCruiseMode(false);
+        setCameraControlState("auto");
+      } else {
+        setCameraControlState("manual");
       }
       return next;
     });
@@ -489,9 +519,11 @@ export function Fleet3D() {
         quality={quality}
         rendererMode={rendererCapability?.mode ?? "unavailable"}
         snapshotRequestId={snapshotRequestId}
+        fitRequestId={fitRequestId}
         onSelectNode={handleSelectNode}
         onMarqueeSelect={handleMarqueeSelect}
         onSnapshotReady={handleSnapshotReady}
+        onUserCameraControl={handleUserCameraControl}
       />
 
       <header className="fleet3d-topbar">
@@ -517,6 +549,18 @@ export function Fleet3D() {
           <StatPill label="未知" value={model.unknown} tone="unknown" />
         </div>
         <div className="fleet3d-action-group">
+          <span className={`fleet3d-camera-state is-${cameraControlState}`} data-camera-control-state>
+            {cameraControlState === "auto" ? "自动" : "手动"}
+          </span>
+          <button
+            type="button"
+            className="fleet3d-fit-button"
+            onClick={requestFitAll}
+            title="适配全部可见节点"
+          >
+            <Maximize2 size={16} aria-hidden="true" />
+            <span>适配</span>
+          </button>
           <button
             type="button"
             className={`fleet3d-cruise-button ${cruiseMode ? "is-active" : ""}`}
@@ -589,6 +633,7 @@ export function Fleet3D() {
               value={focusKind}
               onChange={(event) => {
                 const next = event.target.value as Fleet3DFocusKind;
+                stopAutomationForManualControl();
                 setFocusKind(next);
                 setFocusValue("");
               }}
@@ -605,7 +650,10 @@ export function Fleet3D() {
               <span>{focusKind === "group" ? "分组" : "地区"}</span>
               <select
                 value={activeFocusValue}
-                onChange={(event) => setFocusValue(event.target.value)}
+                onChange={(event) => {
+                  stopAutomationForManualControl();
+                  setFocusValue(event.target.value);
+                }}
               >
                 {focusOptions.map((option) => (
                   <option key={option} value={option}>
@@ -622,7 +670,7 @@ export function Fleet3D() {
               key={preset.value}
               type="button"
               className={cameraPreset === preset.value ? "is-active" : ""}
-              onClick={() => setCameraPreset(preset.value)}
+              onClick={() => selectCameraPreset(preset.value)}
             >
               {preset.label}
             </button>
@@ -644,14 +692,20 @@ export function Fleet3D() {
           <button
             type="button"
             className={activeLayoutMode === "orbit" ? "is-active" : ""}
-            onClick={() => setLayoutMode("orbit")}
+            onClick={() => {
+              stopAutomationForManualControl();
+              setLayoutMode("orbit");
+            }}
           >
             星图
           </button>
           <button
             type="button"
             className={activeLayoutMode === "globe" ? "is-active" : ""}
-            onClick={() => setLayoutMode("globe")}
+            onClick={() => {
+              stopAutomationForManualControl();
+              setLayoutMode("globe");
+            }}
             disabled={!globeLayout.available}
             title={globeLayout.available ? "按可靠地区坐标显示地球模式" : "可定位地区不足，暂不可用"}
           >
@@ -659,6 +713,12 @@ export function Fleet3D() {
             <span>地球</span>
             <small>{globeLayout.matched}/{globeLayout.total}</small>
           </button>
+        </div>
+        <div className="fleet3d-visual-legend" aria-label="视觉图例">
+          <span><i className="is-status" />状态</span>
+          <span><i className="is-risk" />风险</span>
+          <span><i className="is-resource" />资源</span>
+          <span><i className="is-traffic" />流量</span>
         </div>
         {activeCruiseTarget && (
           <div className="fleet3d-cruise-status" aria-live="polite">

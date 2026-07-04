@@ -58,9 +58,11 @@ interface Fleet3DSceneProps {
   quality: Fleet3DQuality;
   rendererMode: Fleet3DRendererMode;
   snapshotRequestId: number;
+  fitRequestId: number;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
   onSnapshotReady: (dataUrl: string | null) => void;
+  onUserCameraControl: () => void;
 }
 
 const NODE_CORE_RADIUS = 0.105;
@@ -147,6 +149,7 @@ interface LatestSceneState {
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
   onSnapshotReady: (dataUrl: string | null) => void;
+  onUserCameraControl: () => void;
 }
 
 function seededUnit(index: number) {
@@ -672,6 +675,30 @@ function applyCameraFocus(
   runtime.focusSignature = nextSignature;
 }
 
+function fitCameraToNodes(runtime: SceneRuntime, nodes: Fleet3DNode[]) {
+  const center = new THREE.Vector3();
+  if (nodes.length > 0) {
+    for (const node of nodes) {
+      center.add(new THREE.Vector3(node.position[0], node.position[1], node.position[2]));
+    }
+    center.divideScalar(nodes.length);
+  }
+
+  let radius = 3.8;
+  for (const node of nodes) {
+    const position = new THREE.Vector3(node.position[0], node.position[1], node.position[2]);
+    radius = Math.max(radius, position.distanceTo(center) + NODE_GLOW_RADIUS * node.scale * 3);
+  }
+
+  const direction = runtime.camera.position.clone().sub(runtime.controls.target).normalize();
+  if (direction.lengthSq() === 0) direction.copy(CAMERA_PRESETS.overview).normalize();
+  const distance = clamp(radius * 2.15 + 2.8, 7.2, 26);
+  runtime.controls.target.copy(center);
+  runtime.camera.position.copy(center).add(direction.multiplyScalar(distance));
+  runtime.controls.update();
+  runtime.focusSignature = `fit:${nodes.map((node) => node.uuid).join(",")}:${distance.toFixed(2)}`;
+}
+
 function updateRendererQuality(runtime: SceneRuntime, quality: Fleet3DQuality) {
   runtime.renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[quality].pixelRatio, window.devicePixelRatio || 1));
 }
@@ -914,9 +941,11 @@ export function Fleet3DScene({
   quality,
   rendererMode,
   snapshotRequestId,
+  fitRequestId,
   onSelectNode,
   onMarqueeSelect,
   onSnapshotReady,
+  onUserCameraControl,
 }: Fleet3DSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
@@ -936,6 +965,7 @@ export function Fleet3DScene({
     onSelectNode,
     onMarqueeSelect,
     onSnapshotReady,
+    onUserCameraControl,
   });
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
   const [labels, setLabels] = useState<SceneLabel[]>([]);
@@ -957,6 +987,7 @@ export function Fleet3DScene({
       onSelectNode,
       onMarqueeSelect,
       onSnapshotReady,
+      onUserCameraControl,
     };
   }, [
     cameraPreset,
@@ -968,6 +999,7 @@ export function Fleet3DScene({
     onMarqueeSelect,
     onSelectNode,
     onSnapshotReady,
+    onUserCameraControl,
     orbits,
     quality,
     rendererMode,
@@ -1062,6 +1094,10 @@ export function Fleet3DScene({
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     controls.update();
+    const handleControlsStart = () => {
+      latestRef.current.onUserCameraControl();
+    };
+    controls.addEventListener("start", handleControlsStart);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -1290,6 +1326,7 @@ export function Fleet3DScene({
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("contextmenu", preventContextMenu);
+      controls.removeEventListener("start", handleControlsStart);
       controls.dispose();
       snapshotRef.current = null;
       runtimeRef.current = null;
@@ -1323,6 +1360,13 @@ export function Fleet3DScene({
     if (!runtime) return;
     applyCameraFocus(runtime, focusCenter, cameraPreset);
   }, [cameraPreset, focusCenter]);
+
+  useEffect(() => {
+    if (fitRequestId <= 0) return;
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    fitCameraToNodes(runtime, nodes);
+  }, [fitRequestId, nodes]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

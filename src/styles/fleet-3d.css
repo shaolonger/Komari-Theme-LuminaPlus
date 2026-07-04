@@ -326,6 +326,7 @@
 .fleet3d-icon-button,
 .fleet3d-compare-button,
 .fleet3d-cruise-button,
+.fleet3d-fit-button,
 .fleet3d-risk-button,
 .fleet3d-story-button,
 .fleet3d-snapshot-button,
@@ -357,6 +358,7 @@
 .fleet3d-icon-button:hover,
 .fleet3d-compare-button:hover,
 .fleet3d-cruise-button:hover,
+.fleet3d-fit-button:hover,
 .fleet3d-risk-button:hover,
 .fleet3d-story-button:hover,
 .fleet3d-snapshot-button:hover,
@@ -370,6 +372,7 @@
 .fleet3d-icon-button:active,
 .fleet3d-compare-button:active,
 .fleet3d-cruise-button:active,
+.fleet3d-fit-button:active,
 .fleet3d-risk-button:active,
 .fleet3d-story-button:active,
 .fleet3d-snapshot-button:active,
@@ -435,12 +438,38 @@
 
 .fleet3d-compare-button,
 .fleet3d-cruise-button,
+.fleet3d-fit-button,
 .fleet3d-risk-button,
 .fleet3d-story-button,
 .fleet3d-snapshot-button {
-  min-width: 88px;
+  min-width: 78px;
   border-radius: 8px;
-  padding: 0 13px;
+  padding: 0 11px;
+}
+
+.fleet3d-camera-state {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 248, 251, 0.68);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.fleet3d-camera-state.is-auto {
+  border-color: rgba(106, 167, 255, 0.34);
+  background: rgba(106, 167, 255, 0.13);
+  color: #bcd6ff;
+}
+
+.fleet3d-fit-button {
+  border-color: rgba(126, 231, 255, 0.22);
+  color: #c9f7ff;
 }
 
 .fleet3d-cruise-button.is-active {
@@ -692,7 +721,7 @@
 .fleet3d-timeline-panel {
   top: 170px;
   left: 16px;
-  width: min(430px, calc(100% - 382px));
+  width: min(390px, calc(100% - 382px));
   border-radius: 8px;
   padding: 10px;
 }
@@ -768,7 +797,7 @@
   top: 334px;
   left: 16px;
   display: grid;
-  width: min(430px, calc(100% - 382px));
+  width: min(390px, calc(100% - 382px));
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 10px;
@@ -866,6 +895,50 @@
   font-weight: 760;
 }
 
+.fleet3d-visual-legend {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.fleet3d-visual-legend span {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(247, 248, 251, 0.66);
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.fleet3d-visual-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #8fffc1;
+  box-shadow: 0 0 12px rgba(143, 255, 193, 0.68);
+}
+
+.fleet3d-visual-legend i.is-risk {
+  background: #ffc857;
+  box-shadow: 0 0 12px rgba(255, 200, 87, 0.68);
+}
+
+.fleet3d-visual-legend i.is-resource {
+  background: #a875ff;
+  box-shadow: 0 0 12px rgba(168, 117, 255, 0.64);
+}
+
+.fleet3d-visual-legend i.is-traffic {
+  background: #58d7ff;
+  box-shadow: 0 0 12px rgba(88, 215, 255, 0.64);
+}
+
 .fleet3d-quality-controls button:hover,
 .fleet3d-quality-controls button.is-active,
 .fleet3d-layout-controls button:hover,
@@ -909,7 +982,7 @@
 .fleet3d-story-panel {
   top: 484px;
   left: 16px;
-  width: min(430px, calc(100% - 382px));
+  width: min(390px, calc(100% - 382px));
   border-radius: 8px;
   padding: 12px;
 }
@@ -1144,11 +1217,14 @@
 
   .fleet3d-action-group {
     gap: 6px;
+    max-width: calc(100vw - 128px);
+    overflow-x: auto;
     padding: 6px;
   }
 
   .fleet3d-compare-button,
   .fleet3d-cruise-button,
+  .fleet3d-fit-button,
   .fleet3d-risk-button,
   .fleet3d-story-button,
   .fleet3d-snapshot-button {
@@ -1156,8 +1232,14 @@
     padding: 0 9px;
   }
 
+  .fleet3d-camera-state {
+    min-width: 42px;
+    padding: 0 8px;
+  }
+
   .fleet3d-compare-button span,
   .fleet3d-cruise-button span,
+  .fleet3d-fit-button span,
   .fleet3d-risk-button span,
   .fleet3d-story-button span,
   .fleet3d-snapshot-button span {
