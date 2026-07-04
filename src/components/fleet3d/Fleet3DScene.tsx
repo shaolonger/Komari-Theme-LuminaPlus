@@ -333,9 +333,9 @@ export function Fleet3DScene({
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
 
-    const clock = new THREE.Clock();
+    const startMs = performance.now();
     const animate = () => {
-      const elapsed = clock.getElapsedTime();
+      const elapsed = (performance.now() - startMs) / 1000;
       root.rotation.y = elapsed * 0.085;
       root.rotation.x = Math.sin(elapsed * 0.32) * 0.04;
       starField.rotation.y = elapsed * 0.025;
