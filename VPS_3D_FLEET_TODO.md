@@ -11,7 +11,7 @@ Context recovery note: if an LLM context compaction happens, continue from this 
 - [x] Add the `/fleet-3d` route and operational overlays: fleet status strip, filters, selected-node inspector, and compare tray linking to `/compare?nodes=...`. Verify with `npm run build`.
 - [x] Add homepage 3D entry points for normal and empty states so users can switch from daily scanning into the 3D view. Verify with `npm run lint` and browser smoke test.
 - [x] Run desktop and mobile browser checks for the 3D canvas: nonblank pixels, visible animation between frames, no console errors, and usable overlay layout.
-- [ ] Run full checks, update the theme version, tag, push, and publish a GitHub release.
+- [x] Run full checks, update the theme version, tag, push, and publish a GitHub release.
 
 ## Phase 2 - Signal-Rich Immersion
 
