@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type {
   Fleet3DCameraPreset,
   Fleet3DLayoutMode,
@@ -67,6 +68,46 @@ interface PingHalo {
   group: THREE.Group;
   pulse?: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
   pulseStrength: number;
+}
+
+interface SceneRuntime {
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  renderer: THREE.WebGLRenderer;
+  controls: OrbitControls;
+  root: THREE.Group;
+  nodeRoot: THREE.Group;
+  orbitRoot: THREE.Group;
+  lineRoot: THREE.Group;
+  trafficRoot: THREE.Group;
+  pingRoot: THREE.Group;
+  starField: THREE.Points;
+  raycaster: THREE.Raycaster;
+  pointer: THREE.Vector2;
+  hitTargets: THREE.Object3D[];
+  nodeGroups: Map<string, THREE.Group>;
+  trafficStreams: TrafficStream[];
+  pingHalos: PingHalo[];
+  startMs: number;
+  frame: number;
+  focusSignature: string;
+}
+
+interface LatestSceneState {
+  nodes: Fleet3DNode[];
+  orbits: Fleet3DOrbit[];
+  selectedUuid: string | null;
+  compareUuids: string[];
+  riskScan: boolean;
+  cameraPreset: Fleet3DCameraPreset;
+  layoutMode: Fleet3DLayoutMode;
+  focusCenter: [number, number, number] | null;
+  focusedUuids: string[];
+  quality: Fleet3DQuality;
+  rendererMode: Fleet3DRendererMode;
+  onSelectNode: (uuid: string | null) => void;
+  onMarqueeSelect: (uuids: string[]) => void;
+  onSnapshotReady: (dataUrl: string | null) => void;
 }
 
 function seededUnit(index: number) {
@@ -450,6 +491,55 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
+function clearGroup(group: THREE.Group) {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    disposeObject(child);
+  }
+}
+
+function cameraPresetDistance(preset: Fleet3DCameraPreset) {
+  return CAMERA_PRESETS[preset].length();
+}
+
+function focusSignature(
+  focusCenter: [number, number, number] | null,
+  cameraPreset: Fleet3DCameraPreset,
+) {
+  const center = focusCenter ? focusCenter.map((value) => value.toFixed(3)).join(",") : "origin";
+  return `${cameraPreset}:${center}`;
+}
+
+function applyCameraFocus(
+  runtime: SceneRuntime,
+  focusCenter: [number, number, number] | null,
+  cameraPreset: Fleet3DCameraPreset,
+) {
+  const nextSignature = focusSignature(focusCenter, cameraPreset);
+  if (runtime.focusSignature === nextSignature) return;
+
+  const previousTarget = runtime.controls.target.clone();
+  const nextTarget = focusCenter
+    ? new THREE.Vector3(focusCenter[0], focusCenter[1], focusCenter[2])
+    : new THREE.Vector3(0, 0, 0);
+  const direction = runtime.camera.position.clone().sub(previousTarget).normalize();
+  if (direction.lengthSq() === 0) direction.copy(CAMERA_PRESETS[cameraPreset]).normalize();
+
+  const currentDistance = runtime.camera.position.distanceTo(previousTarget);
+  const presetDistance = cameraPresetDistance(cameraPreset);
+  const distance = Number.isFinite(currentDistance) && currentDistance > 0
+    ? clamp(currentDistance, 4.8, 24)
+    : presetDistance;
+  runtime.controls.target.copy(nextTarget);
+  runtime.camera.position.copy(nextTarget).add(direction.multiplyScalar(distance));
+  runtime.controls.update();
+  runtime.focusSignature = nextSignature;
+}
+
+function updateRendererQuality(runtime: SceneRuntime, quality: Fleet3DQuality) {
+  runtime.renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[quality].pixelRatio, window.devicePixelRatio || 1));
+}
+
 function toCanvasPoint(event: PointerEvent, rect: DOMRect) {
   return {
     x: event.clientX - rect.left,
@@ -471,6 +561,91 @@ function buildMarqueeRect(
   };
 }
 
+function rebuildSceneObjects(
+  runtime: SceneRuntime,
+  {
+    nodes,
+    orbits,
+    selectedUuid,
+    compareUuids,
+    riskScan,
+    layoutMode,
+    focusedUuids,
+    quality,
+  }: Pick<
+    Fleet3DSceneProps,
+    | "nodes"
+    | "orbits"
+    | "selectedUuid"
+    | "compareUuids"
+    | "riskScan"
+    | "layoutMode"
+    | "focusedUuids"
+    | "quality"
+  >,
+) {
+  clearGroup(runtime.orbitRoot);
+  clearGroup(runtime.lineRoot);
+  clearGroup(runtime.nodeRoot);
+  clearGroup(runtime.trafficRoot);
+  clearGroup(runtime.pingRoot);
+
+  runtime.hitTargets = [];
+  runtime.nodeGroups = new Map();
+  runtime.trafficStreams = [];
+  runtime.pingHalos = [];
+
+  const compareSet = new Set(compareUuids);
+  const focusedSet = new Set(focusedUuids);
+  const hasFocus = focusedSet.size > 0 && focusedSet.size < nodes.length;
+
+  if (layoutMode === "globe") {
+    runtime.orbitRoot.add(createGlobe());
+  } else {
+    orbits.forEach((orbit) => runtime.orbitRoot.add(createOrbit(orbit)));
+  }
+
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: 0x6a8fff,
+    transparent: true,
+    opacity: 0.12,
+  });
+
+  for (const node of nodes) {
+    const selected = node.uuid === selectedUuid;
+    const inCompare = compareSet.has(node.uuid);
+    const focusDimmed = hasFocus && !focusedSet.has(node.uuid) && !selected && !inCompare;
+    const mesh = createNodeMesh(node, selected, inCompare, riskScan, focusDimmed);
+    runtime.nodeGroups.set(node.uuid, mesh);
+    runtime.hitTargets.push(mesh);
+    runtime.nodeRoot.add(mesh);
+
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, node.position[1] * 0.25, 0),
+      new THREE.Vector3(node.position[0], node.position[1], node.position[2]),
+    ]);
+    runtime.lineRoot.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
+
+    const suppressAuxiliary = focusDimmed || (riskScan && node.risk.tone === "none");
+    const upStream = suppressAuxiliary ? null : createTrafficStream(node, "up", quality);
+    if (upStream) {
+      runtime.trafficStreams.push(upStream);
+      runtime.trafficRoot.add(upStream.points);
+    }
+    const downStream = suppressAuxiliary ? null : createTrafficStream(node, "down", quality);
+    if (downStream) {
+      runtime.trafficStreams.push(downStream);
+      runtime.trafficRoot.add(downStream.points);
+    }
+
+    const pingHalo = focusDimmed ? null : createPingHalo(node, quality);
+    if (pingHalo) {
+      runtime.pingHalos.push(pingHalo);
+      runtime.pingRoot.add(pingHalo.group);
+    }
+  }
+}
+
 export function Fleet3DScene({
   nodes,
   orbits,
@@ -489,23 +664,69 @@ export function Fleet3DScene({
   onSnapshotReady,
 }: Fleet3DSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const runtimeRef = useRef<SceneRuntime | null>(null);
   const snapshotRef = useRef<(() => string | null) | null>(null);
+  const latestRef = useRef<LatestSceneState>({
+    nodes,
+    orbits,
+    selectedUuid,
+    compareUuids,
+    riskScan,
+    cameraPreset,
+    layoutMode,
+    focusCenter,
+    focusedUuids,
+    quality,
+    rendererMode,
+    onSelectNode,
+    onMarqueeSelect,
+    onSnapshotReady,
+  });
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
+
+  useEffect(() => {
+    latestRef.current = {
+      nodes,
+      orbits,
+      selectedUuid,
+      compareUuids,
+      riskScan,
+      cameraPreset,
+      layoutMode,
+      focusCenter,
+      focusedUuids,
+      quality,
+      rendererMode,
+      onSelectNode,
+      onMarqueeSelect,
+      onSnapshotReady,
+    };
+  }, [
+    cameraPreset,
+    compareUuids,
+    focusCenter,
+    focusedUuids,
+    layoutMode,
+    nodes,
+    onMarqueeSelect,
+    onSelectNode,
+    onSnapshotReady,
+    orbits,
+    quality,
+    rendererMode,
+    riskScan,
+    selectedUuid,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const initial = latestRef.current;
     snapshotRef.current = null;
-    const compareSet = new Set(compareUuids);
-    const focusedSet = new Set(focusedUuids);
-    const hasFocus = focusedSet.size > 0 && focusedSet.size < nodes.length;
-    const focusVector = focusCenter
-      ? new THREE.Vector3(focusCenter[0], focusCenter[1], focusCenter[2])
-      : null;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 80);
-    camera.position.copy(CAMERA_PRESETS[cameraPreset]);
+    camera.position.copy(CAMERA_PRESETS[initial.cameraPreset]);
     camera.lookAt(0, 0, 0);
 
     let renderer: THREE.WebGLRenderer;
@@ -528,13 +749,16 @@ export function Fleet3DScene({
         ? "webgl2"
         : "webgl1";
     const runtimeLabel =
-      rendererMode === "webgpu" ? `webgpu-detected-${runtimeMode}-fallback` : runtimeMode;
-    container.dataset.rendererMode = rendererMode;
+      initial.rendererMode === "webgpu" ? `webgpu-detected-${runtimeMode}-fallback` : runtimeMode;
+    container.dataset.rendererMode = initial.rendererMode;
     container.dataset.rendererRuntime = runtimeLabel;
     renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[quality].pixelRatio, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(Math.min(QUALITY_SETTINGS[initial.quality].pixelRatio, window.devicePixelRatio || 1));
     renderer.domElement.className = "fleet3d-canvas";
     renderer.domElement.dataset.renderer = runtimeLabel;
+    renderer.domElement.dataset.controls = "orbit";
+    const preventContextMenu = (event: MouseEvent) => event.preventDefault();
+    renderer.domElement.addEventListener("contextmenu", preventContextMenu);
     container.appendChild(renderer.domElement);
     snapshotRef.current = () => {
       try {
@@ -545,71 +769,82 @@ export function Fleet3DScene({
     };
 
     const root = new THREE.Group();
+    const orbitRoot = new THREE.Group();
+    const lineRoot = new THREE.Group();
+    const nodeRoot = new THREE.Group();
+    const trafficRoot = new THREE.Group();
+    const pingRoot = new THREE.Group();
+    root.add(orbitRoot, lineRoot, trafficRoot, pingRoot, nodeRoot);
     scene.add(root);
 
-    const starField = createStarField(QUALITY_SETTINGS[quality].stars);
+    const starField = createStarField(QUALITY_SETTINGS[initial.quality].stars);
     scene.add(starField);
-
-    if (layoutMode === "globe") {
-      root.add(createGlobe());
-    } else {
-      const orbitGroup = new THREE.Group();
-      orbits.forEach((orbit) => orbitGroup.add(createOrbit(orbit)));
-      root.add(orbitGroup);
-    }
-
-    const lineMaterial = new THREE.LineBasicMaterial({
-      color: 0x6a8fff,
-      transparent: true,
-      opacity: 0.12,
-    });
-    const hitTargets: THREE.Object3D[] = [];
-    const nodeGroups = new Map<string, THREE.Group>();
-    const trafficStreams: TrafficStream[] = [];
-    const pingHalos: PingHalo[] = [];
-    for (const node of nodes) {
-      const selected = node.uuid === selectedUuid;
-      const inCompare = compareSet.has(node.uuid);
-      const focusDimmed = hasFocus && !focusedSet.has(node.uuid) && !selected && !inCompare;
-      const mesh = createNodeMesh(node, selected, inCompare, riskScan, focusDimmed);
-      nodeGroups.set(node.uuid, mesh);
-      hitTargets.push(mesh);
-      root.add(mesh);
-
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, node.position[1] * 0.25, 0),
-        new THREE.Vector3(node.position[0], node.position[1], node.position[2]),
-      ]);
-      root.add(new THREE.Line(lineGeometry, lineMaterial.clone()));
-
-      const suppressAuxiliary = focusDimmed || (riskScan && node.risk.tone === "none");
-      const upStream = suppressAuxiliary ? null : createTrafficStream(node, "up", quality);
-      if (upStream) {
-        trafficStreams.push(upStream);
-        root.add(upStream.points);
-      }
-      const downStream = suppressAuxiliary ? null : createTrafficStream(node, "down", quality);
-      if (downStream) {
-        trafficStreams.push(downStream);
-        root.add(downStream.points);
-      }
-
-      const pingHalo = focusDimmed ? null : createPingHalo(node, quality);
-      if (pingHalo) {
-        pingHalos.push(pingHalo);
-        root.add(pingHalo.group);
-      }
-    }
 
     scene.add(new THREE.AmbientLight(0x9fb7ff, 1.5));
     const keyLight = new THREE.PointLight(0x8db7ff, 90, 40);
     keyLight.position.set(3, 5, 6);
     scene.add(keyLight);
 
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.enableRotate = true;
+    controls.screenSpacePanning = true;
+    controls.minDistance = 3.8;
+    controls.maxDistance = 28;
+    controls.target.set(0, 0, 0);
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
+    controls.update();
+
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    let frame = 0;
+    const runtime: SceneRuntime = {
+      scene,
+      camera,
+      renderer,
+      controls,
+      root,
+      nodeRoot,
+      orbitRoot,
+      lineRoot,
+      trafficRoot,
+      pingRoot,
+      starField,
+      raycaster,
+      pointer,
+      hitTargets: [],
+      nodeGroups: new Map(),
+      trafficStreams: [],
+      pingHalos: [],
+      startMs: performance.now(),
+      frame: 0,
+      focusSignature: focusSignature(null, initial.cameraPreset),
+    };
+    runtimeRef.current = runtime;
+    rebuildSceneObjects(runtime, {
+      nodes: initial.nodes,
+      orbits: initial.orbits,
+      selectedUuid: initial.selectedUuid,
+      compareUuids: initial.compareUuids,
+      riskScan: initial.riskScan,
+      layoutMode: initial.layoutMode,
+      focusedUuids: initial.focusedUuids,
+      quality: initial.quality,
+    });
+    applyCameraFocus(runtime, initial.focusCenter, initial.cameraPreset);
+
     let pointerDown: { x: number; y: number } | null = null;
+    let pointerShiftSelect = false;
     let didDrag = false;
     let hoveredUuid: string | null = null;
 
@@ -634,15 +869,15 @@ export function Fleet3DScene({
     const pickNode = (event: PointerEvent) => {
       setPointerFromEvent(event);
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(hitTargets, true)[0];
+      const hit = raycaster.intersectObjects(runtime.hitTargets, true)[0];
       return hit?.object.userData.uuid as string | undefined;
     };
 
     const selectMarqueeNodes = (rect: MarqueeRect) => {
       const canvasRect = renderer.domElement.getBoundingClientRect();
       const selected: string[] = [];
-      for (const node of nodes) {
-        const group = nodeGroups.get(node.uuid);
+      for (const node of latestRef.current.nodes) {
+        const group = runtime.nodeGroups.get(node.uuid);
         if (!group) continue;
         const projected = group.position.clone().applyMatrix4(root.matrixWorld).project(camera);
         const x = ((projected.x + 1) / 2) * canvasRect.width;
@@ -656,109 +891,176 @@ export function Fleet3DScene({
           selected.push(node.uuid);
         }
       }
-      if (selected.length > 0) onMarqueeSelect(selected);
+      if (selected.length > 0) latestRef.current.onMarqueeSelect(selected);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       const point = toCanvasPoint(event, rect);
       if (pointerDown) {
-        const next = buildMarqueeRect(pointerDown, point);
-        didDrag = next.width > 8 || next.height > 8;
-        if (didDrag) setMarquee(next);
+        const distance = Math.hypot(point.x - pointerDown.x, point.y - pointerDown.y);
+        didDrag = distance > 6;
+        if (pointerShiftSelect) {
+          const next = buildMarqueeRect(pointerDown, point);
+          if (didDrag) setMarquee(next);
+        }
         return;
       }
 
       const uuid = pickNode(event);
       if (uuid !== hoveredUuid) {
         hoveredUuid = uuid ?? null;
-        renderer.domElement.style.cursor = uuid ? "pointer" : "crosshair";
+        renderer.domElement.style.cursor = uuid ? "pointer" : "grab";
+      }
+    };
+
+    const updateCameraDataset = () => {
+      const distance = camera.position.distanceTo(controls.target);
+      const cameraValue = [
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+      ].map((value) => value.toFixed(3)).join(",");
+      const targetValue = [
+        controls.target.x,
+        controls.target.y,
+        controls.target.z,
+      ].map((value) => value.toFixed(3)).join(",");
+
+      renderer.domElement.dataset.camera = cameraValue;
+      renderer.domElement.dataset.target = targetValue;
+      renderer.domElement.dataset.distance = distance.toFixed(3);
+      if (container.dataset.fleet3dScene != null) {
+        container.dataset.camera = cameraValue;
+        container.dataset.target = targetValue;
+        container.dataset.distance = distance.toFixed(3);
       }
     };
 
     const handlePointerDown = (event: PointerEvent) => {
       pointerDown = toCanvasPoint(event, renderer.domElement.getBoundingClientRect());
+      pointerShiftSelect = event.shiftKey;
       didDrag = false;
+      if (pointerShiftSelect) controls.enabled = false;
       renderer.domElement.setPointerCapture(event.pointerId);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      renderer.domElement.releasePointerCapture(event.pointerId);
-      if (pointerDown && didDrag) {
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+      if (pointerDown && pointerShiftSelect && didDrag) {
         const next = buildMarqueeRect(
           pointerDown,
           toCanvasPoint(event, renderer.domElement.getBoundingClientRect()),
         );
         selectMarqueeNodes(next);
         setMarquee(null);
-      } else {
-        onSelectNode(pickNode(event) ?? null);
+      } else if (pointerDown && !didDrag && event.button === 0) {
+        latestRef.current.onSelectNode(pickNode(event) ?? null);
       }
       pointerDown = null;
+      pointerShiftSelect = false;
       didDrag = false;
+      controls.enabled = true;
+    };
+
+    const handleDoubleClick = (event: MouseEvent) => {
+      const uuid = pickNode(event as unknown as PointerEvent);
+      if (!uuid) return;
+      latestRef.current.onSelectNode(uuid);
+      const group = runtime.nodeGroups.get(uuid);
+      if (!group) return;
+      const target = group.position.clone();
+      const direction = camera.position.clone().sub(controls.target).normalize();
+      controls.target.copy(target);
+      camera.position.copy(target).add(direction.multiplyScalar(cameraPresetDistance("close")));
+      controls.update();
     };
 
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
+    renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
-    const startMs = performance.now();
     const animate = () => {
-      const elapsed = (performance.now() - startMs) / 1000;
-      const targetRotationY = focusVector ? 0 : elapsed * 0.085;
-      root.rotation.y += (targetRotationY - root.rotation.y) * 0.055;
-      root.rotation.x = Math.sin(elapsed * 0.32) * 0.04;
-      const targetRootPosition = new THREE.Vector3(0, 0, 0);
-      if (focusVector) {
-        targetRootPosition.copy(focusVector).applyEuler(root.rotation).multiplyScalar(-1);
-      }
-      root.position.lerp(targetRootPosition, 0.075);
-      camera.position.lerp(CAMERA_PRESETS[cameraPreset], 0.045);
-      camera.lookAt(0, 0, 0);
+      const elapsed = (performance.now() - runtime.startMs) / 1000;
+      controls.update();
       starField.rotation.y = elapsed * 0.025;
       starField.rotation.x = Math.sin(elapsed * 0.17) * 0.035;
-      trafficStreams.forEach((stream) => updateTrafficStream(stream, elapsed));
-      pingHalos.forEach((halo) => updatePingHalo(halo, elapsed));
-      nodeGroups.forEach((group, uuid) => {
-        const selected = uuid === selectedUuid;
-        const riskNode = nodes.find((node) => node.uuid === uuid);
-        const riskBoost = riskScan && riskNode?.risk.tone === "critical" ? 0.08 : 0;
+      runtime.trafficStreams.forEach((stream) => updateTrafficStream(stream, elapsed));
+      runtime.pingHalos.forEach((halo) => updatePingHalo(halo, elapsed));
+      runtime.nodeGroups.forEach((group, uuid) => {
+        const selected = uuid === latestRef.current.selectedUuid;
+        const riskNode = latestRef.current.nodes.find((node) => node.uuid === uuid);
+        const riskBoost = latestRef.current.riskScan && riskNode?.risk.tone === "critical" ? 0.08 : 0;
         const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025 + riskBoost);
         group.scale.setScalar(pulse);
       });
+      updateCameraDataset();
       renderer.render(scene, camera);
-      frame = window.requestAnimationFrame(animate);
+      runtime.frame = window.requestAnimationFrame(animate);
     };
     animate();
 
     return () => {
-      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(runtime.frame);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
+      renderer.domElement.removeEventListener("contextmenu", preventContextMenu);
+      controls.dispose();
       snapshotRef.current = null;
+      runtimeRef.current = null;
       renderer.domElement.remove();
       disposeObject(scene);
       renderer.dispose();
       setMarquee(null);
     };
-  }, [
-    cameraPreset,
-    compareUuids,
-    focusCenter,
-    focusedUuids,
-    layoutMode,
-    nodes,
-    onMarqueeSelect,
-    onSelectNode,
-    onSnapshotReady,
-    orbits,
-    quality,
-    rendererMode,
-    riskScan,
-    selectedUuid,
-  ]);
+  }, []);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    updateRendererQuality(runtime, quality);
+    rebuildSceneObjects(runtime, {
+      nodes,
+      orbits,
+      selectedUuid,
+      compareUuids,
+      riskScan,
+      layoutMode,
+      focusedUuids,
+      quality,
+    });
+  }, [compareUuids, focusedUuids, layoutMode, nodes, orbits, quality, riskScan, selectedUuid]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    applyCameraFocus(runtime, focusCenter, cameraPreset);
+  }, [cameraPreset, focusCenter]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const renderingContext = runtime.renderer.getContext();
+    const runtimeMode =
+      typeof WebGL2RenderingContext !== "undefined" &&
+      renderingContext instanceof WebGL2RenderingContext
+        ? "webgl2"
+        : "webgl1";
+    const runtimeLabel =
+      rendererMode === "webgpu" ? `webgpu-detected-${runtimeMode}-fallback` : runtimeMode;
+    runtime.renderer.domElement.dataset.renderer = runtimeLabel;
+    const container = containerRef.current;
+    if (container) {
+      container.dataset.rendererMode = rendererMode;
+      container.dataset.rendererRuntime = runtimeLabel;
+    }
+  }, [rendererMode]);
 
   useEffect(() => {
     if (snapshotRequestId <= 0) return;
