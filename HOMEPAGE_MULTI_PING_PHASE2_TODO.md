@@ -18,7 +18,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Rewrite this Phase 2 TODO with the requested advanced scope, acceptance criteria, and recovery instructions.
 - [x] Add normalized theme settings for homepage Ping aggregation strategy, per-VPS primary task, and Ping task groups.
 - [x] Apply aggregation strategy and primary-task priority to homepage Ping aggregation while preserving worst-first defaults.
-- [ ] Upgrade theme settings with strategy controls, Ping task group editing, and a VPS-first primary-task overview.
+- [x] Upgrade theme settings with strategy controls, Ping task group editing, and a VPS-first primary-task overview.
 - [ ] Add expandable homepage card Ping source details with per-task status and compare-page jump links.
 - [ ] Extend `/compare` deep links so one VPS can show separate trend lines for its bound Ping tasks.
 - [ ] Add targeted tests for strategy normalization, aggregation behavior, settings overview helpers, card source labels, and compare task-series data.

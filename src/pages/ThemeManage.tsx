@@ -48,6 +48,14 @@ import {
   normalizeHomeGroupOrder,
   sortHomeGroupOptions,
 } from "@/utils/homeNodes";
+import { buildHomepagePingClientBindingRows } from "@/utils/homepagePingBindingRows";
+import {
+  normalizeHomepagePingPrimaryTasks,
+  normalizeHomepagePingTaskGroups,
+  type HomepagePingAggregationStrategy,
+  type HomepagePingPrimaryTasks,
+  type HomepagePingTaskGroups,
+} from "@/utils/homepagePingSettings";
 import {
   countHomepagePingBindingPairs,
   countHomepagePingBoundClients,
@@ -79,6 +87,15 @@ const NODE_VIEW_MODE_OPTIONS = [
   { value: "large", label: "大卡片", icon: LayoutGrid },
   { value: "compact", label: "小卡片", icon: Rows3 },
 ] as const;
+const PING_AGGREGATION_OPTIONS: Array<{
+  value: HomepagePingAggregationStrategy;
+  label: string;
+  description: string;
+}> = [
+  { value: "worst", label: "风险优先", description: "显示最高延迟与最高丢包，适合巡检" },
+  { value: "primary", label: "主任务优先", description: "优先显示每台 VPS 指定的主任务" },
+  { value: "average", label: "平均视图", description: "显示可用任务的平均延迟与丢包" },
+];
 const BACKGROUND_SIZE_OPTIONS: Array<{ value: BackgroundSize; label: string }> = [
   { value: "cover", label: "填满" },
   { value: "contain", label: "完整" },
@@ -187,6 +204,9 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSetting
     desktopNodeViewMode: settings.desktopNodeViewMode,
     mobileNodeViewMode: settings.mobileNodeViewMode,
     homepagePingBindings: settings.homepagePingBindings,
+    homepagePingAggregationStrategy: settings.homepagePingAggregationStrategy,
+    homepagePingPrimaryTasks: settings.homepagePingPrimaryTasks,
+    homepagePingTaskGroups: settings.homepagePingTaskGroups,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
     homeGroupOrder: settings.homeGroupOrder,
@@ -226,6 +246,12 @@ export function ThemeManage() {
   const [draftMobileNodeViewMode, setDraftMobileNodeViewMode] =
     useState<NodeViewMode>("compact");
   const [draftBindings, setDraftBindings] = useState<HomepagePingTaskBindings>({});
+  const [draftPingAggregationStrategy, setDraftPingAggregationStrategy] =
+    useState<HomepagePingAggregationStrategy>("worst");
+  const [draftPingPrimaryTasks, setDraftPingPrimaryTasks] =
+    useState<HomepagePingPrimaryTasks>({});
+  const [draftPingTaskGroups, setDraftPingTaskGroups] =
+    useState<HomepagePingTaskGroups>({});
   const [draftShowHomeOverview, setDraftShowHomeOverview] = useState(true);
   const [draftShowGroupTabs, setDraftShowGroupTabs] = useState(true);
   const [draftHomeGroupOrder, setDraftHomeGroupOrder] = useState<string[]>([]);
@@ -309,6 +335,9 @@ export function ThemeManage() {
     setDraftDesktopNodeViewMode(next.desktopNodeViewMode);
     setDraftMobileNodeViewMode(next.mobileNodeViewMode);
     setDraftBindings(next.homepagePingBindings);
+    setDraftPingAggregationStrategy(next.homepagePingAggregationStrategy);
+    setDraftPingPrimaryTasks(next.homepagePingPrimaryTasks);
+    setDraftPingTaskGroups(next.homepagePingTaskGroups);
     setDraftShowHomeOverview(next.showHomeOverview);
     setDraftShowGroupTabs(next.showGroupTabs);
     setDraftHomeGroupOrder(next.homeGroupOrder);
@@ -404,6 +433,15 @@ export function ThemeManage() {
   const normalizedDraftCostRateApiUrl = normalizeCostRateApiUrl(draftCostRateApiUrl);
   const draftCostRateApiUrlInvalid =
     draftCostRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draftCostRateApiUrl.trim());
+  const prunedDraftBindings = useMemo(() => pruneBindings(draftBindings), [draftBindings]);
+  const normalizedDraftPingPrimaryTasks = useMemo(
+    () => normalizeHomepagePingPrimaryTasks(draftPingPrimaryTasks, prunedDraftBindings),
+    [draftPingPrimaryTasks, prunedDraftBindings],
+  );
+  const normalizedDraftPingTaskGroups = useMemo(
+    () => normalizeHomepagePingTaskGroups(draftPingTaskGroups),
+    [draftPingTaskGroups],
+  );
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。新增一项设置只需改这个对象
   // (和 seedDrafts),不必同时改六处。
@@ -412,7 +450,10 @@ export function ThemeManage() {
       defaultAppearance: draftAppearance,
       desktopNodeViewMode: draftDesktopNodeViewMode,
       mobileNodeViewMode: draftMobileNodeViewMode,
-      homepagePingBindings: pruneBindings(draftBindings),
+      homepagePingBindings: prunedDraftBindings,
+      homepagePingAggregationStrategy: draftPingAggregationStrategy,
+      homepagePingPrimaryTasks: normalizedDraftPingPrimaryTasks,
+      homepagePingTaskGroups: normalizedDraftPingTaskGroups,
       showHomeOverview: draftShowHomeOverview,
       showGroupTabs: draftShowGroupTabs,
       homeGroupOrder: normalizeHomeGroupOrder(draftHomeGroupOrder),
@@ -442,7 +483,10 @@ export function ThemeManage() {
       draftAppearance,
       draftDesktopNodeViewMode,
       draftMobileNodeViewMode,
-      draftBindings,
+      prunedDraftBindings,
+      draftPingAggregationStrategy,
+      normalizedDraftPingPrimaryTasks,
+      normalizedDraftPingTaskGroups,
       draftShowHomeOverview,
       draftShowGroupTabs,
       draftHomeGroupOrder,
@@ -508,6 +552,42 @@ export function ThemeManage() {
     () => getHomepagePingTaskIdsByClient(draftBindings),
     [draftBindings],
   );
+  const pingClientBindingRows = useMemo(
+    () =>
+      buildHomepagePingClientBindingRows({
+        clients: sortedClients,
+        tasks: sortedTasks,
+        bindings: prunedDraftBindings,
+        primaryTasks: normalizedDraftPingPrimaryTasks,
+        taskGroups: normalizedDraftPingTaskGroups,
+      }),
+    [
+      normalizedDraftPingPrimaryTasks,
+      normalizedDraftPingTaskGroups,
+      prunedDraftBindings,
+      sortedClients,
+      sortedTasks,
+    ],
+  );
+  const activeAggregationOption =
+    PING_AGGREGATION_OPTIONS.find((option) => option.value === draftPingAggregationStrategy) ??
+    PING_AGGREGATION_OPTIONS[0];
+  const setPrimaryPingTask = (clientUuid: string, taskId: number | null) => {
+    setDraftPingPrimaryTasks((prev) => {
+      const next = { ...prev };
+      if (taskId == null) delete next[clientUuid];
+      else next[clientUuid] = taskId;
+      return next;
+    });
+  };
+  const setPingTaskGroup = (taskId: number, label: string) => {
+    setDraftPingTaskGroups((prev) => {
+      const next = { ...prev };
+      if (label.trim()) next[String(taskId)] = label;
+      else delete next[String(taskId)];
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     if (!config?.theme) return;
@@ -1204,7 +1284,7 @@ export function ThemeManage() {
         title="主页延迟检测"
         description={
           <>
-            为首页延迟卡片指定对应的 Ping 任务与展示节点。每个节点可以绑定多个任务，首页会按最差优先聚合延迟与丢包；未分配的节点不会显示延迟。
+            为首页延迟卡片指定对应的 Ping 任务与展示节点。每个节点可以绑定多个任务，首页按所选策略聚合延迟与丢包；未分配的节点不会显示延迟。
             {" "}
             如果当前还没有可用任务，请先前往
             {" "}
@@ -1238,6 +1318,105 @@ export function ThemeManage() {
               <strong className="text-[var(--text-primary)]">
                 {boundClientCount} 节点 · {bindingPairCount} 关系
               </strong>
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+            <div className="surface-inset px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                    聚合策略
+                  </div>
+                  <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                    {activeAggregationOption.description}
+                  </div>
+                </div>
+                <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
+                  {activeAggregationOption.label}
+                </span>
+              </div>
+              <div className="instance-segmented is-scrollable mt-3">
+                {PING_AGGREGATION_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    data-active={draftPingAggregationStrategy === option.value ? "true" : "false"}
+                    aria-pressed={draftPingAggregationStrategy === option.value}
+                    onClick={() => setDraftPingAggregationStrategy(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="surface-inset px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                    VPS 主任务
+                  </div>
+                  <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                    选择“主任务优先”时优先显示这里指定的任务；没有主任务或主任务无样本时回退风险优先。
+                  </div>
+                </div>
+                <span className="text-[11px] text-[var(--text-tertiary)]">
+                  {pingClientBindingRows.length} 台已配置
+                </span>
+              </div>
+              {pingClientBindingRows.length === 0 ? (
+                <div className="mt-3 rounded-[10px] border border-[var(--hairline)] px-3 py-2 text-[12px] text-[var(--text-tertiary)]">
+                  暂无已绑定首页 Ping 的 VPS。
+                </div>
+              ) : (
+                <div className="mt-3 grid max-h-[260px] gap-2 overflow-auto pr-1">
+                  {pingClientBindingRows.map((row) => (
+                    <div
+                      key={row.uuid}
+                      className="rounded-[12px] border border-[var(--hairline)] px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block truncate text-[12px] font-semibold text-[var(--text-primary)]">
+                            {row.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[10px] text-[var(--text-tertiary)]">
+                            {row.group || row.region || row.uuid}
+                          </span>
+                        </span>
+                        <select
+                          value={row.primaryTaskId ?? ""}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setPrimaryPingTask(row.uuid, Number.isInteger(value) && value > 0 ? value : null);
+                          }}
+                          className="surface-inset max-w-[180px] px-2 py-1.5 text-[12px] outline-none"
+                          aria-label={`设置 ${row.name} 的首页 Ping 主任务`}
+                        >
+                          <option value="">自动</option>
+                          {row.tasks.map((task) => (
+                            <option key={task.taskId} value={task.taskId}>
+                              {task.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {row.tasks.map((task) => (
+                          <span
+                            key={task.taskId}
+                            className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] text-[var(--text-tertiary)]"
+                          >
+                            {task.group ? `${task.group} / ` : ""}
+                            {task.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1293,6 +1472,7 @@ export function ThemeManage() {
             !noTasksYet &&
             filteredTasks.map((task) => {
               const assigned = draftBindings[String(task.id)] ?? [];
+              const taskGroup = draftPingTaskGroups[String(task.id)] ?? "";
               const isExpanded = expandedTaskId === task.id;
               const unselectedVisibleClients = visibleClients.filter(
                 (client) => !assigned.includes(client.uuid),
@@ -1316,6 +1496,11 @@ export function ThemeManage() {
                         <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
                           ID {task.id}
                         </span>
+                        {taskGroup.trim() && (
+                          <span className="rounded-full border border-[color-mix(in_srgb,var(--accent-500)_35%,var(--hairline))] bg-[color-mix(in_srgb,var(--accent-500)_9%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-600)]">
+                            {taskGroup.trim()}
+                          </span>
+                        )}
                       </div>
                       <div className="mt-2 text-[12px] text-[var(--text-secondary)]">
                         <span className="font-medium text-[var(--text-primary)]">
@@ -1330,6 +1515,18 @@ export function ThemeManage() {
                       >
                         {summarizeNodes(assigned, clientsById)}
                       </p>
+                      <label className="mt-3 flex max-w-[320px] items-center gap-2 rounded-[10px] border border-[var(--hairline)] px-3 py-2">
+                        <span className="shrink-0 text-[11px] font-medium text-[var(--text-tertiary)]">
+                          分组
+                        </span>
+                        <input
+                          value={taskGroup}
+                          onChange={(event) => setPingTaskGroup(task.id, event.target.value)}
+                          placeholder="如 海外监测"
+                          className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--text-tertiary)]"
+                          aria-label={`设置 ${task.name || `任务 #${task.id}`} 的展示分组`}
+                        />
+                      </label>
                     </div>
 
                     <div className="flex items-center gap-2">
