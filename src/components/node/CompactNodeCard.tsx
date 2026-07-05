@@ -4,7 +4,9 @@ import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
+  BarChart3,
   Calendar,
+  ChevronDown,
   CircleDollarSign,
   Clock3,
   Cpu,
@@ -32,6 +34,10 @@ import {
   speedRateColor,
   speedRateColorFromBytes,
 } from "@/utils/metricTone";
+import {
+  buildHomepagePingCompareUrl,
+  buildHomepagePingSourceRows,
+} from "@/utils/homepagePingSources";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import {
   joinTagTitle,
@@ -619,46 +625,87 @@ function CompactTrafficBar({
 // ~60s 才刷新一次),所以在 ping 数据真正变化前,跳过重渲染 latency/loss HealthBars
 // 这棵子树 —— 它是每 tick DOM 开销的大头。
 const CompactNodeHealth = memo(function CompactNodeHealth({
+  uuid,
   ping,
   pingBuckets,
   latencyColor,
   lossColor,
   hasHomepagePingBinding,
+  taskGroups,
 }: {
+  uuid: string;
   ping: PingOverviewItem;
   pingBuckets: PingOverviewBucket[];
   latencyColor: string;
   lossColor: string;
   hasHomepagePingBinding: boolean;
+  taskGroups: Record<string, string>;
 }) {
   // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
   const { text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
   const pingAggregate = pingTaskAggregateLabels(ping);
+  const [showSources, setShowSources] = useState(false);
+  const sourceRows = buildHomepagePingSourceRows(ping, taskGroups);
+  const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
+  const canShowSources = hasHomepagePingBinding && sourceRows.length > 0;
   return (
-    <div className="compact-node-bottom">
-      <CompactHealthItem
-        icon={<Clock3 size={12} />}
-        label="延迟"
-        sourceBadge={pingAggregate.badge}
-        sourceTitle={pingAggregate.title}
-        value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
-        unit={ping.lastValue != null ? "ms" : undefined}
-        color={latencyColor}
-      >
-        <HealthBars buckets={pingBuckets} max={ping.max} kind="latency" />
-      </CompactHealthItem>
-      <CompactHealthItem
-        icon={<Unplug size={12} />}
-        label="丢包"
-        sourceBadge={pingAggregate.badge}
-        sourceTitle={pingAggregate.title}
-        value={ping.loss != null ? ping.loss.toFixed(1) : emptyText}
-        unit={ping.loss != null ? "%" : undefined}
-        color={lossColor}
-      >
-        <HealthBars buckets={pingBuckets} max={1} kind="loss" />
-      </CompactHealthItem>
-    </div>
+    <>
+      <div className="compact-node-bottom">
+        <CompactHealthItem
+          icon={<Clock3 size={12} />}
+          label="延迟"
+          sourceBadge={pingAggregate.badge}
+          sourceTitle={pingAggregate.title}
+          value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
+          unit={ping.lastValue != null ? "ms" : undefined}
+          color={latencyColor}
+        >
+          <HealthBars buckets={pingBuckets} max={ping.max} kind="latency" />
+        </CompactHealthItem>
+        <CompactHealthItem
+          icon={<Unplug size={12} />}
+          label="丢包"
+          sourceBadge={pingAggregate.badge}
+          sourceTitle={pingAggregate.title}
+          value={ping.loss != null ? ping.loss.toFixed(1) : emptyText}
+          unit={ping.loss != null ? "%" : undefined}
+          color={lossColor}
+        >
+          <HealthBars buckets={pingBuckets} max={1} kind="loss" />
+        </CompactHealthItem>
+      </div>
+      {canShowSources && (
+        <div className="compact-node-source-actions">
+          <button
+            type="button"
+            aria-expanded={showSources}
+            onClick={() => setShowSources((current) => !current)}
+          >
+            <ChevronDown size={11} />
+            <span>{showSources ? "收起" : `${sourceRows.length} 来源`}</span>
+          </button>
+          <Link to={compareUrl}>
+            <BarChart3 size={11} />
+            <span>对比</span>
+          </Link>
+        </div>
+      )}
+      {canShowSources && showSources && (
+        <div className="compact-node-source-panel">
+          {sourceRows.map((source) => (
+            <div key={source.taskId} data-status={source.status}>
+              <span>
+                <strong>{source.name}</strong>
+                <small>{source.group || source.target || `ID ${source.taskId}`}</small>
+              </span>
+              <em>
+                {source.latencyLabel} · {source.lossLabel}
+              </em>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 });
 
@@ -720,11 +767,13 @@ export const CompactNodeCard = memo(function CompactNodeCard({
       />
       <CompactTrafficBar traffic={traffic} uptimeLabel={uptimeLabel} />
       <CompactNodeHealth
+        uuid={uuid}
         ping={ping}
         pingBuckets={pingBuckets}
         latencyColor={latencyColor}
         lossColor={lossColor}
         hasHomepagePingBinding={hasHomepagePingBinding}
+        taskGroups={themeSettings.homepagePingTaskGroups}
       />
     </article>
   );

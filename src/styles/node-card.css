@@ -260,6 +260,95 @@
   line-height: 1;
 }
 
+.server-health-source-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.server-health-source-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.server-health-source-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.server-health-source-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.server-health-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.server-health-source-row[data-status="warning"] {
+  border-color: color-mix(in srgb, var(--status-warning) 34%, var(--hairline));
+}
+
+.server-health-source-row[data-status="critical"] {
+  border-color: color-mix(in srgb, var(--status-offline) 38%, var(--hairline));
+}
+
+.server-health-source-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.server-health-source-main strong,
+.server-health-source-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.server-health-source-main strong {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.server-health-source-main small,
+.server-health-source-metrics {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.server-health-source-metrics {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
 .traffic-stat-value {
   flex: 0 0 auto;
   font-size: 18px;

@@ -1,6 +1,8 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
+  BarChart3,
+  ChevronDown,
   Cpu,
   Gauge,
   MemoryStick,
@@ -20,6 +22,10 @@ import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { formatBytes } from "@/utils/format";
+import {
+  buildHomepagePingCompareUrl,
+  buildHomepagePingSourceRows,
+} from "@/utils/homepagePingSources";
 import {
   latencyHeatColor,
   lossHeatColor,
@@ -62,6 +68,7 @@ export const NodeCard = memo(function NodeCard({
   const model = useNodeCardModel(uuid);
   const [hoveredLatencyIndex, setHoveredLatencyIndex] = useState<number | null>(null);
   const [hoveredLossIndex, setHoveredLossIndex] = useState<number | null>(null);
+  const [showPingSources, setShowPingSources] = useState(false);
 
   if (!model.node) {
     return (
@@ -151,10 +158,13 @@ export const NodeCard = memo(function NodeCard({
           )}
 
           <NodeHealthSection
+            uuid={uuid}
             ping={ping}
             pingBuckets={pingBuckets}
             redrawKey={resolvedAppearance}
             hasHomepagePingBinding={hasHomepagePingBinding}
+            taskGroups={themeSettings.homepagePingTaskGroups}
+            showSources={showPingSources}
             latencyColor={latencyColor}
             lossColor={lossColor}
             latencyHoverTime={latencyHoverTime}
@@ -165,6 +175,7 @@ export const NodeCard = memo(function NodeCard({
             lossHoverColor={lossHoverColor}
             onLatencyHover={setHoveredLatencyIndex}
             onLossHover={setHoveredLossIndex}
+            onToggleSources={() => setShowPingSources((current) => !current)}
           />
         </div>
 
@@ -364,10 +375,13 @@ function NodeTrafficQuota({ traffic }: { traffic: TrafficDisplay }) {
 // ~60s 才刷新一次,hover 状态只在指针交互时变,onHover 是稳定的 setState 引用 ——
 // 所以 latency/loss 柱子这棵子树能跳过每个 tick 的工作。
 const NodeHealthSection = memo(function NodeHealthSection({
+  uuid,
   ping,
   pingBuckets,
   redrawKey,
   hasHomepagePingBinding,
+  taskGroups,
+  showSources,
   latencyColor,
   lossColor,
   latencyHoverTime,
@@ -378,11 +392,15 @@ const NodeHealthSection = memo(function NodeHealthSection({
   lossHoverColor,
   onLatencyHover,
   onLossHover,
+  onToggleSources,
 }: {
+  uuid: string;
   ping: PingOverviewItem;
   pingBuckets: PingOverviewBucket[];
   redrawKey: string;
   hasHomepagePingBinding: boolean;
+  taskGroups: Record<string, string>;
+  showSources: boolean;
   latencyColor: string;
   lossColor: string;
   latencyHoverTime: string | null;
@@ -393,9 +411,13 @@ const NodeHealthSection = memo(function NodeHealthSection({
   lossHoverColor: string | null;
   onLatencyHover: (index: number | null) => void;
   onLossHover: (index: number | null) => void;
+  onToggleSources: () => void;
 }) {
   const { title: emptyTitle, text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
   const pingAggregate = pingTaskAggregateLabels(ping);
+  const sourceRows = buildHomepagePingSourceRows(ping, taskGroups);
+  const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
+  const canShowSources = hasHomepagePingBinding && sourceRows.length > 0;
 
   return (
     <div className="card-metric-section card-metric-divided server-health-grid">
@@ -488,6 +510,42 @@ const NodeHealthSection = memo(function NodeHealthSection({
           )}
         </div>
       </div>
+      {canShowSources && (
+        <div className="server-health-source-actions">
+          <button
+            type="button"
+            className="server-health-source-button"
+            aria-expanded={showSources}
+            onClick={onToggleSources}
+          >
+            <ChevronDown size={12} />
+            <span>{showSources ? "收起来源" : `${sourceRows.length} 个来源`}</span>
+          </button>
+          <Link to={compareUrl} className="server-health-source-button">
+            <BarChart3 size={12} />
+            <span>对比趋势</span>
+          </Link>
+        </div>
+      )}
+      {canShowSources && showSources && (
+        <div className="server-health-source-panel">
+          {sourceRows.map((source) => (
+            <div
+              key={source.taskId}
+              className="server-health-source-row"
+              data-status={source.status}
+            >
+              <span className="server-health-source-main">
+                <strong>{source.name}</strong>
+                <small>{source.group || source.target || `ID ${source.taskId}`}</small>
+              </span>
+              <span className="server-health-source-metrics tabular">
+                {source.latencyLabel} · 丢包 {source.lossLabel}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 });
