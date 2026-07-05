@@ -14,4 +14,19 @@ describe("normalizeThemeSettings", () => {
     expect(normalizeThemeSettings({}).showOverviewRatings).toBe(true);
     expect(normalizeThemeSettings({ showOverviewRatings: false }).showOverviewRatings).toBe(false);
   });
+
+  it("keeps a node bound to multiple homepage Ping tasks", () => {
+    expect(
+      normalizeThemeSettings({
+        homepagePingBindings: {
+          7: ["node-a", "node-b"],
+          3: ["node-a"],
+          bad: ["ignored"],
+        },
+      }).homepagePingBindings,
+    ).toEqual({
+      3: ["node-a"],
+      7: ["node-a", "node-b"],
+    });
+  });
 });

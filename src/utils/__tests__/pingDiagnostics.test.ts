@@ -89,4 +89,19 @@ describe("buildPingDiagnostics", () => {
       }),
     ]);
   });
+
+  it("checks every bound Ping task for the same node", () => {
+    const diagnostics = buildPingDiagnostics({
+      tasks: [task({ id: 1, name: "Google" }), task({ id: 2, name: "Cloudflare" })],
+      clients: [client({ uuid: "a", capability_ping: false })],
+      bindings: { 1: ["a"], 2: ["a"] },
+    });
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics.map((diagnostic) => diagnostic.taskId)).toEqual([1, 2]);
+    expect(diagnostics.map((diagnostic) => diagnostic.taskName)).toEqual([
+      "Google",
+      "Cloudflare",
+    ]);
+  });
 });
