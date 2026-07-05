@@ -11,6 +11,11 @@ import {
   buildPingOverviewItemsForTask,
 } from "@/utils/homepagePingOverview";
 import {
+  DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+  type HomepagePingAggregationStrategy,
+  type HomepagePingPrimaryTasks,
+} from "@/utils/homepagePingSettings";
+import {
   getHomepagePingTaskIdsByClient,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
@@ -33,6 +38,8 @@ const EMPTY_PING: PingOverviewItem = {
   taskIds: [],
   taskCount: 0,
   taskSummaries: [],
+  aggregationStrategy: DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+  primaryTaskId: null,
 };
 
 interface PingOverviewMapResult {
@@ -71,6 +78,14 @@ function stringifyBindings(bindings: HomepagePingTaskBindings) {
     Object.entries(bindings)
       .map(([taskId, clients]) => [taskId, [...clients].sort((left, right) => left.localeCompare(right))])
       .sort(([left], [right]) => Number(left) - Number(right)),
+  );
+}
+
+function stringifyPrimaryTasks(primaryTasks: HomepagePingPrimaryTasks) {
+  return JSON.stringify(
+    Object.entries(primaryTasks)
+      .filter(([, taskId]) => Number.isInteger(taskId) && taskId > 0)
+      .sort(([left], [right]) => left.localeCompare(right)),
   );
 }
 
@@ -135,6 +150,9 @@ function equalPingItem(a: PingOverviewItem | undefined, b: PingOverviewItem | un
     a.max === b.max &&
     a.loss === b.loss &&
     (a.taskCount ?? 0) === (b.taskCount ?? 0) &&
+    (a.aggregationStrategy ?? DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY) ===
+      (b.aggregationStrategy ?? DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY) &&
+    (a.primaryTaskId ?? null) === (b.primaryTaskId ?? null) &&
     equalTaskIds(a.taskIds, b.taskIds) &&
     equalTaskSummaries(a.taskSummaries, b.taskSummaries) &&
     equalNumberArray(a.values, b.values) &&
@@ -168,6 +186,8 @@ async function buildOverviewMap(
   hours: number,
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
+  aggregationStrategy: HomepagePingAggregationStrategy,
+  primaryTasks: HomepagePingPrimaryTasks,
   signal?: AbortSignal,
 ): Promise<PingOverviewMapResult> {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
@@ -231,6 +251,8 @@ async function buildOverviewMap(
       taskIds,
       itemsByTask,
       tasksById,
+      aggregationStrategy,
+      primaryTaskId: primaryTasks[uuid] ?? null,
     });
     items.set(uuid, item);
   }
@@ -260,6 +282,10 @@ let scheduledVisibleUuids: string[] = [];
 let scheduledVisibleKey = "";
 let scheduledBindings: HomepagePingTaskBindings = {};
 let scheduledBindingsKey = stringifyBindings({});
+let scheduledAggregationStrategy: HomepagePingAggregationStrategy =
+  DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY;
+let scheduledPrimaryTasks: HomepagePingPrimaryTasks = {};
+let scheduledPrimaryTasksKey = stringifyPrimaryTasks({});
 let pingRefreshInFlight = false;
 let pingRefreshTimer: number | null = null;
 let pingAbortController: AbortController | null = null;
@@ -374,6 +400,9 @@ async function refreshPingOverview() {
   pingRefreshInFlight = true;
   const visibleKey = scheduledVisibleKey;
   const bindingsKey = scheduledBindingsKey;
+  const aggregationStrategy = scheduledAggregationStrategy;
+  const primaryTasks = scheduledPrimaryTasks;
+  const primaryTasksKey = scheduledPrimaryTasksKey;
   const controller = new AbortController();
   pingAbortController = controller;
   const { signal } = controller;
@@ -382,7 +411,9 @@ async function refreshPingOverview() {
   const isCurrent = () =>
     !signal.aborted &&
     visibleKey === scheduledVisibleKey &&
-    bindingsKey === scheduledBindingsKey;
+    bindingsKey === scheduledBindingsKey &&
+    aggregationStrategy === scheduledAggregationStrategy &&
+    primaryTasksKey === scheduledPrimaryTasksKey;
 
   try {
     if (scheduledVisibleUuids.length === 0) {
@@ -394,6 +425,8 @@ async function refreshPingOverview() {
       1,
       scheduledVisibleUuids,
       scheduledBindings,
+      aggregationStrategy,
+      primaryTasks,
       signal,
     );
     if (isCurrent()) {
@@ -424,19 +457,27 @@ async function refreshPingOverview() {
 function ensurePingOverviewStarted(
   visibleUuids: string[],
   bindings: HomepagePingTaskBindings,
+  aggregationStrategy: HomepagePingAggregationStrategy,
+  primaryTasks: HomepagePingPrimaryTasks,
 ) {
   const normalizedVisibleUuids = normalizeVisibleUuids(visibleUuids);
   const visibleKey = normalizedVisibleUuids.join("|");
   const bindingsKey = stringifyBindings(bindings);
+  const primaryTasksKey = stringifyPrimaryTasks(primaryTasks);
 
   if (
     scheduledVisibleKey !== visibleKey ||
-    scheduledBindingsKey !== bindingsKey
+    scheduledBindingsKey !== bindingsKey ||
+    scheduledAggregationStrategy !== aggregationStrategy ||
+    scheduledPrimaryTasksKey !== primaryTasksKey
   ) {
     scheduledVisibleUuids = normalizedVisibleUuids;
     scheduledVisibleKey = visibleKey;
     scheduledBindings = bindings;
     scheduledBindingsKey = bindingsKey;
+    scheduledAggregationStrategy = aggregationStrategy;
+    scheduledPrimaryTasks = primaryTasks;
+    scheduledPrimaryTasksKey = primaryTasksKey;
 
     if (pingRefreshTimer != null) {
       window.clearTimeout(pingRefreshTimer);
@@ -489,6 +530,8 @@ function pingItemSignature(item: PingOverviewItem) {
     item.isAssigned ? "1" : "0",
     item.lastValue ?? "",
     item.loss ?? "",
+    item.aggregationStrategy ?? DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+    item.primaryTaskId ?? "",
     item.taskCount ?? 0,
     taskIds.join("/"),
     taskSummaries
@@ -534,7 +577,12 @@ export function useHomepagePingOverview() {
   useEffect(() => {
     if (!themeSettings.isReady) return;
     activeConsumers += 1;
-    ensurePingOverviewStarted(visibleUuids, themeSettings.homepagePingBindings);
+    ensurePingOverviewStarted(
+      visibleUuids,
+      themeSettings.homepagePingBindings,
+      themeSettings.homepagePingAggregationStrategy,
+      themeSettings.homepagePingPrimaryTasks,
+    );
     return () => {
       activeConsumers -= 1;
       if (activeConsumers <= 0) {
@@ -542,7 +590,13 @@ export function useHomepagePingOverview() {
         stopPingPolling();
       }
     };
-  }, [themeSettings.homepagePingBindings, themeSettings.isReady, visibleUuids]);
+  }, [
+    themeSettings.homepagePingAggregationStrategy,
+    themeSettings.homepagePingBindings,
+    themeSettings.homepagePingPrimaryTasks,
+    themeSettings.isReady,
+    visibleUuids,
+  ]);
 }
 
 export function usePingMini(uuid: string): PingOverviewItem {

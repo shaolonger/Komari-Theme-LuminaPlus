@@ -1,4 +1,8 @@
 import type { PingOverviewItem, PingOverviewTaskSummary, PingTask } from "@/types/komari";
+import {
+  DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+  type HomepagePingAggregationStrategy,
+} from "@/utils/homepagePingSettings";
 
 interface TaskRecord {
   task_id: number;
@@ -37,6 +41,31 @@ function summarizeTask(
     sampleCount: item?.samples.length ?? 0,
     hasSamples: Boolean(item && (item.samples.length > 0 || item.values.length > 0)),
   };
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function aggregateCurrentValues({
+  values,
+  strategy,
+  primaryTaskId,
+}: {
+  values: Array<{ taskId: number; value: number }>;
+  strategy: HomepagePingAggregationStrategy;
+  primaryTaskId?: number | null;
+}) {
+  if (values.length === 0) return null;
+  if (strategy === "average") {
+    return average(values.map((item) => item.value));
+  }
+  if (strategy === "primary" && primaryTaskId != null) {
+    const primary = values.find((item) => item.taskId === primaryTaskId);
+    if (primary) return primary.value;
+  }
+  return Math.max(...values.map((item) => item.value));
 }
 
 export function buildHomepagePingAssignmentKey(
@@ -122,11 +151,19 @@ export function aggregateHomepagePingOverviewItem(options: {
   taskIds: number[];
   itemsByTask: Map<number, Map<string, PingOverviewItem>>;
   tasksById?: Map<number, PingTask>;
+  aggregationStrategy?: HomepagePingAggregationStrategy;
+  primaryTaskId?: number | null;
 }): PingOverviewItem {
   const { client, itemsByTask, tasksById } = options;
+  const aggregationStrategy =
+    options.aggregationStrategy ?? DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY;
   const taskIds = Array.from(new Set(options.taskIds))
     .filter((taskId) => Number.isInteger(taskId) && taskId > 0)
     .sort((left, right) => left - right);
+  const primaryTaskId =
+    options.primaryTaskId != null && taskIds.includes(options.primaryTaskId)
+      ? options.primaryTaskId
+      : null;
   const taskItems = taskIds.map((taskId) => ({
     taskId,
     item: itemsByTask.get(taskId)?.get(client),
@@ -140,25 +177,40 @@ export function aggregateHomepagePingOverviewItem(options: {
     .map(({ time, value }) => ({ time, value }));
   const values = taskItems.flatMap(({ item }) => item?.values ?? []);
   const currentLatencies = taskItems
-    .map(({ item }) => item?.lastValue)
-    .filter((value): value is number => value != null && value > 0);
+    .map(({ taskId, item }) => ({ taskId, value: item?.lastValue }))
+    .filter(
+      (item): item is { taskId: number; value: number } =>
+        item.value != null && item.value > 0,
+    );
   const losses = taskItems
-    .map(({ item }) => item?.loss)
-    .filter((value): value is number => value != null);
+    .map(({ taskId, item }) => ({ taskId, value: item?.loss }))
+    .filter(
+      (item): item is { taskId: number; value: number } => item.value != null,
+    );
   const max = Math.max(1, ...taskItems.map(({ item }) => item?.max ?? 1), ...values);
 
   return {
     client,
     isAssigned: taskIds.length > 0,
-    lastValue: currentLatencies.length > 0 ? Math.max(...currentLatencies) : null,
+    lastValue: aggregateCurrentValues({
+      values: currentLatencies,
+      strategy: aggregationStrategy,
+      primaryTaskId,
+    }),
     values,
     samples,
     max,
-    loss: losses.length > 0 ? Math.max(...losses) : null,
+    loss: aggregateCurrentValues({
+      values: losses,
+      strategy: aggregationStrategy,
+      primaryTaskId,
+    }),
     taskIds,
     taskCount: taskIds.length,
     taskSummaries: taskItems.map(({ taskId, item }) =>
       summarizeTask(taskId, tasksById?.get(taskId), item),
     ),
+    aggregationStrategy,
+    primaryTaskId,
   };
 }

@@ -395,6 +395,8 @@ export interface PingOverviewItem {
   taskIds?: number[];
   taskCount?: number;
   taskSummaries?: PingOverviewTaskSummary[];
+  aggregationStrategy?: "worst" | "primary" | "average";
+  primaryTaskId?: number | null;
 }
 
 export interface TrafficTrendSample {
