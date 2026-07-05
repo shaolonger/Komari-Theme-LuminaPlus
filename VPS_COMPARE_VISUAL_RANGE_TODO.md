@@ -30,4 +30,4 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Add custom time range state, URL params, datetime-local controls, compatible history fetch window calculation, and client-side series trimming.
 - [x] Polish `/compare` chart copy, summary cards, export filenames, and responsive styles around the new single-node/custom-range flows.
 - [x] Run desktop and mobile browser verification for the compare page and fix any visual or console issues.
-- [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
+- [x] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
