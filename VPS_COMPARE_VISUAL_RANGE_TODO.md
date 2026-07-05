@@ -25,7 +25,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 ## Tasks
 
 - [x] Create this TODO with root-cause analysis, acceptance criteria, and recovery instructions.
-- [ ] Remove compare-page selection friction: no default first-three selection, allow one selected VPS to query/render, remove the eight-node cap, and update labels/disabled states.
+- [x] Remove compare-page selection friction: no default first-three selection, allow one selected VPS to query/render, remove the eight-node cap, and update labels/disabled states.
 - [ ] Add a tested trend-preparation layer for ping comparison charts: fixed time buckets, per-bucket aggregation, off-phase gap bridging, long-gap breaks, light smoothing, and chart metadata.
 - [ ] Add custom time range state, URL params, datetime-local controls, compatible history fetch window calculation, and client-side series trimming.
 - [ ] Polish `/compare` chart copy, summary cards, export filenames, and responsive styles around the new single-node/custom-range flows.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import UplotReact from "uplot-react";
@@ -51,8 +51,6 @@ import {
 } from "@/utils/vpsCompare";
 import type { NodeInfo } from "@/types/komari";
 
-const MAX_SELECTED_NODES = 8;
-const DEFAULT_SELECTED_NODES = 3;
 const DEFAULT_METRIC: ComparisonMetricKey = "cpu";
 const DEFAULT_HOURS = 4;
 type CompareView = "trend" | "ranking";
@@ -67,10 +65,7 @@ function isCompareView(value: string | null): value is CompareView {
 
 function parseSelectedNodes(value: string | null) {
   return value
-    ? Array.from(new Set(value.split(",").map((item) => item.trim()).filter(Boolean))).slice(
-        0,
-        MAX_SELECTED_NODES,
-      )
+    ? Array.from(new Set(value.split(",").map((item) => item.trim()).filter(Boolean)))
     : [];
 }
 
@@ -164,11 +159,13 @@ function ComparisonTrendChart({
   hours,
   series,
   loading,
+  selectedCount,
 }: {
   metricKey: ComparisonMetricKey;
   hours: number;
   series: ComparisonSeries[];
   loading: boolean;
+  selectedCount: number;
 }) {
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref } = useResponsiveChartSize("wide");
@@ -268,8 +265,12 @@ function ComparisonTrendChart({
     );
   }
 
+  if (selectedCount === 0) {
+    return <div className="compare-chart-empty">请选择 VPS 查看历史数据</div>;
+  }
+
   if (!visualSeries.some((item) => item.points.length > 0)) {
-    return <div className="compare-chart-empty">当前选择下暂无可对比的历史数据</div>;
+    return <div className="compare-chart-empty">当前选择下暂无历史数据</div>;
   }
 
   return (
@@ -372,7 +373,6 @@ export function Compare() {
   const [view, setView] = useState<CompareView>(initialView);
   const [nodeSearch, setNodeSearch] = useState("");
   const [exportStatus, setExportStatus] = useState("");
-  const autoSelectedRef = useRef(searchParams.has("nodes"));
 
   const nodeOptions = useMemo(() => {
     const nodeByUuid = new Map(allNodes.map((node) => [node.uuid, node]));
@@ -380,14 +380,6 @@ export function Compare() {
       .map((uuid) => nodeByUuid.get(uuid))
       .filter((node): node is NodeInfo => Boolean(node));
   }, [allNodes, visibleNodeUuids]);
-
-  useEffect(() => {
-    if (autoSelectedRef.current || selectedUuids.length > 0 || nodeOptions.length === 0) return;
-    autoSelectedRef.current = true;
-    const seeded = nodeOptions.slice(0, DEFAULT_SELECTED_NODES).map((node) => node.uuid);
-    setSelectedUuids(seeded);
-    setSearchParams(updateParams(searchParams, { nodes: seeded }), { replace: true });
-  }, [nodeOptions, searchParams, selectedUuids.length, setSearchParams]);
 
   const selectedUuidSet = useMemo(() => new Set(selectedUuids), [selectedUuids]);
   const selectedNodes = useMemo(
@@ -415,7 +407,7 @@ export function Compare() {
     return nodeOptions.filter((node) => compareSearchText(node).includes(query));
   }, [nodeOptions, nodeSearch]);
 
-  const canQuery = selectedNodes.length >= 2;
+  const canQuery = selectedNodes.length > 0;
   const loadQuery = useQuery({
     queryKey: ["compare", "load", selectedKey, activeHours, metricKey],
     queryFn: () =>
@@ -457,7 +449,7 @@ export function Compare() {
   const strongest = rankingRows[0];
 
   const commitSelected = (next: string[]) => {
-    const unique = Array.from(new Set(next)).slice(0, MAX_SELECTED_NODES);
+    const unique = Array.from(new Set(next));
     setSelectedUuids(unique);
     setSearchParams(updateParams(searchParams, { nodes: unique }), { replace: true });
   };
@@ -540,21 +532,19 @@ export function Compare() {
                 </button>
               ))
             ) : (
-              <span>至少选择 2 台 VPS 开始对比</span>
+              <span>选择 1 台查看趋势，选择多台进行对比</span>
             )}
           </div>
         </div>
         <div className="compare-node-picker" aria-label="选择 VPS">
           {filteredNodes.map((node) => {
             const selected = selectedUuidSet.has(node.uuid);
-            const disabled = !selected && selectedUuids.length >= MAX_SELECTED_NODES;
             return (
               <button
                 key={node.uuid}
                 type="button"
                 className="compare-node-option"
                 data-selected={selected ? "true" : "false"}
-                disabled={disabled}
                 onClick={() => {
                   if (selected) {
                     commitSelected(selectedUuids.filter((uuid) => uuid !== node.uuid));
@@ -623,7 +613,7 @@ export function Compare() {
         <div className="compare-summary-card">
           <span>已选 VPS</span>
           <strong>{selectedNodes.length}</strong>
-          <small>最多 {MAX_SELECTED_NODES} 台</small>
+          <small>不限数量</small>
         </div>
         <div className="compare-summary-card">
           <span>当前指标</span>
@@ -647,9 +637,11 @@ export function Compare() {
           <div>
             <h2>{metric.label}</h2>
             <p>
-              {selectedNodes.length < 2
-                ? "选择至少 2 台 VPS 后开始对比。"
-                : `正在比较 ${selectedNodes.length} 台 VPS 的 ${metric.label}。`}
+              {selectedNodes.length === 0
+                ? "选择 VPS 后查看历史趋势。"
+                : selectedNodes.length === 1
+                  ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${metric.label}。`
+                  : `正在比较 ${selectedNodes.length} 台 VPS 的 ${metric.label}。`}
             </p>
           </div>
           <div className="compare-stage-actions">
@@ -689,6 +681,7 @@ export function Compare() {
             hours={activeHours}
             series={series}
             loading={canQuery && isLoading}
+            selectedCount={selectedNodes.length}
           />
         ) : (
           <RankingTable metricKey={metricKey} rows={rankingRows} />
