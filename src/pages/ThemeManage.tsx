@@ -49,6 +49,9 @@ import {
   sortHomeGroupOptions,
 } from "@/utils/homeNodes";
 import {
+  countHomepagePingBindingPairs,
+  countHomepagePingBoundClients,
+  getHomepagePingTaskIdsByClient,
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
@@ -142,37 +145,18 @@ function applyClientAssignment(
 ) {
   const taskKey = String(taskId);
   const next = pruneBindings(bindings);
+  const selected = new Set(next[taskKey] ?? []);
 
-  for (const [currentTaskId, clients] of Object.entries(next)) {
-    const filtered = clients.filter((uuid) => uuid !== clientUuid);
-    if (filtered.length > 0) {
-      next[currentTaskId] = filtered;
-    } else {
-      delete next[currentTaskId];
-    }
-  }
+  if (checked) selected.add(clientUuid);
+  else selected.delete(clientUuid);
 
-  if (checked) {
-    const selected = next[taskKey] ?? [];
-    next[taskKey] = Array.from(new Set([...selected, clientUuid])).sort((left, right) =>
-      left.localeCompare(right),
-    );
+  if (selected.size > 0) {
+    next[taskKey] = [...selected].sort((left, right) => left.localeCompare(right));
+  } else {
+    delete next[taskKey];
   }
 
   return next;
-}
-
-// 反查:client uuid → 所属 task id(字符串 key)。UI 保证每个 client 最多归属一个
-// task,所以简单的后写覆盖 map 就是精确的。下面的「全选可用」reducer 和每次渲染的
-// 可选节点过滤共用它,把「某 client 归属哪个 task」的推导收在一处。
-function invertBindings(bindings: HomepagePingTaskBindings): Map<string, string> {
-  const assignedTaskByClient = new Map<string, string>();
-  for (const [taskId, clients] of Object.entries(bindings)) {
-    for (const clientUuid of clients) {
-      assignedTaskByClient.set(clientUuid, taskId);
-    }
-  }
-  return assignedTaskByClient;
 }
 
 function applyAvailableClientAssignments(
@@ -182,12 +166,9 @@ function applyAvailableClientAssignments(
 ) {
   const taskKey = String(taskId);
   const next = pruneBindings(bindings);
-  const assignedTaskByClient = invertBindings(next);
   const selected = new Set(next[taskKey] ?? []);
 
   for (const clientUuid of clientUuids) {
-    const assignedTaskId = assignedTaskByClient.get(clientUuid);
-    if (assignedTaskId && assignedTaskId !== taskKey) continue;
     selected.add(clientUuid);
   }
 
@@ -505,8 +486,12 @@ export function ThemeManage() {
     if (isDirty) setMessage(null);
   }, [isDirty]);
 
-  const assignedNodeCount = useMemo(
-    () => Object.values(draftBindings).reduce((total, clients) => total + clients.length, 0),
+  const boundClientCount = useMemo(
+    () => countHomepagePingBoundClients(draftBindings),
+    [draftBindings],
+  );
+  const bindingPairCount = useMemo(
+    () => countHomepagePingBindingPairs(draftBindings),
     [draftBindings],
   );
   const pingDiagnostics = useMemo(
@@ -519,11 +504,8 @@ export function ThemeManage() {
     [draftBindings, sortedClients, sortedTasks],
   );
 
-  // 每个 client 归属哪个 task 的反查,只在 draftBindings 变化时重建。与「全选可用」reducer
-  // 共用 invertBindings() 避免推导漂移,并把可选节点过滤保持在 O(tasks × clients),
-  // 而不是每个 client 都重扫一遍 bindings。
-  const assignedTaskByClientUuid = useMemo(
-    () => invertBindings(draftBindings),
+  const assignedTaskIdsByClientUuid = useMemo(
+    () => getHomepagePingTaskIdsByClient(draftBindings),
     [draftBindings],
   );
 
@@ -639,7 +621,10 @@ export function ThemeManage() {
         aside={
           <div className="text-right text-[11px] text-[var(--text-tertiary)]">
             <div>主题: {config?.theme || "Komari-Theme-LuminaPlus"}</div>
-            <div>已绑定首页 Ping 节点 {assignedNodeCount} / {sortedClients.length}</div>
+            <div>
+              已绑定首页 Ping 节点 {boundClientCount} / {sortedClients.length}
+              {bindingPairCount > boundClientCount ? ` · ${bindingPairCount} 关系` : ""}
+            </div>
           </div>
         }
       >
@@ -1219,7 +1204,7 @@ export function ThemeManage() {
         title="主页延迟检测"
         description={
           <>
-            为首页延迟卡片指定对应的 Ping 任务与展示节点。每个节点只能归属一个任务；未分配的节点不会显示延迟。
+            为首页延迟卡片指定对应的 Ping 任务与展示节点。每个节点可以绑定多个任务，首页会按最差优先聚合延迟与丢包；未分配的节点不会显示延迟。
             {" "}
             如果当前还没有可用任务，请先前往
             {" "}
@@ -1249,9 +1234,9 @@ export function ThemeManage() {
               />
             </label>
             <div className="surface-inset flex items-center justify-between gap-3 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-              <span>首页绑定总数</span>
+              <span>首页绑定</span>
               <strong className="text-[var(--text-primary)]">
-                {assignedNodeCount} / {sortedClients.length}
+                {boundClientCount} 节点 · {bindingPairCount} 关系
               </strong>
             </div>
           </div>
@@ -1309,15 +1294,11 @@ export function ThemeManage() {
             filteredTasks.map((task) => {
               const assigned = draftBindings[String(task.id)] ?? [];
               const isExpanded = expandedTaskId === task.id;
-              const selectableVisibleClients = visibleClients.filter((client) => {
-                const assignedTaskId = assignedTaskByClientUuid.get(client.uuid);
-                return !assignedTaskId || assignedTaskId === String(task.id);
-              });
-              const unselectedVisibleClients = selectableVisibleClients.filter(
+              const unselectedVisibleClients = visibleClients.filter(
                 (client) => !assigned.includes(client.uuid),
               );
-              const allVisibleSelectableAssigned =
-                selectableVisibleClients.length > 0 && unselectedVisibleClients.length === 0;
+              const allVisibleClientsAssigned =
+                visibleClients.length > 0 && unselectedVisibleClients.length === 0;
               return (
                 <section key={task.id} className="surface-inset px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1355,21 +1336,19 @@ export function ThemeManage() {
                       {isExpanded && (
                         <button
                           type="button"
-                          disabled={
-                            selectableVisibleClients.length === 0 || allVisibleSelectableAssigned
-                          }
+                          disabled={visibleClients.length === 0 || allVisibleClientsAssigned}
                           onClick={() => {
                             setDraftBindings((prev) =>
                               applyAvailableClientAssignments(
                                 prev,
                                 task.id,
-                                selectableVisibleClients.map((client) => client.uuid),
+                                visibleClients.map((client) => client.uuid),
                               ),
                             );
                           }}
                           className="theme-manage-button is-compact"
                         >
-                          {allVisibleSelectableAssigned ? "已全选可用" : "全选可用"}
+                          {allVisibleClientsAssigned ? "已全选当前结果" : "全选当前结果"}
                         </button>
                       )}
                       {assigned.length > 0 && (
@@ -1417,6 +1396,8 @@ export function ThemeManage() {
                       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                         {visibleClients.map((client) => {
                           const checked = assigned.includes(client.uuid);
+                          const boundTaskCount =
+                            assignedTaskIdsByClientUuid.get(client.uuid)?.length ?? 0;
                           const subtitle = [client.group, client.uuid].filter(Boolean).join(" · ");
                           return (
                             <label
@@ -1448,6 +1429,11 @@ export function ThemeManage() {
                                 </div>
                                 <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
                                   {subtitle || client.region || "未设置分组"}
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                                  {boundTaskCount > 0
+                                    ? `已绑定 ${boundTaskCount} 个任务`
+                                    : "未绑定首页 Ping"}
                                 </div>
                               </div>
                             </label>
