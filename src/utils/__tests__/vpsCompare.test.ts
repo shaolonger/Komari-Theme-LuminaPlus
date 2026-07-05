@@ -4,6 +4,7 @@ import {
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
+  buildPingTaskComparisonSeries,
   formatComparisonValue,
   getComparisonRequestHours,
   isValidComparisonCustomRange,
@@ -13,7 +14,7 @@ import {
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
 import type { ComparisonLoadRecords } from "@/services/api";
-import type { LoadRecord, PingRecord } from "@/types/komari";
+import type { LoadRecord, PingRecord, PingTask } from "@/types/komari";
 
 const nodes: ComparisonNode[] = [
   { uuid: "a", name: "alpha", group: "edge", region: "US" },
@@ -42,6 +43,21 @@ function loadRecord(partial: Partial<LoadRecord>): LoadRecord {
     time: 0,
     client: "",
     ...partial,
+  };
+}
+
+function task(partial: Partial<PingTask> & Pick<PingTask, "id">): PingTask {
+  const { id, ...rest } = partial;
+  return {
+    id,
+    interval: 60,
+    name: "",
+    loss: 0,
+    clients: [],
+    type: "icmp",
+    target: "",
+    weight: 0,
+    ...rest,
   };
 }
 
@@ -91,6 +107,24 @@ describe("buildComparisonSeries", () => {
     expect(latency[0].points.map((point) => point.value)).toEqual([30]);
     expect(loss[0].points.map((point) => point.value)).toEqual([0, 100]);
     expect(loss[1].points.map((point) => point.value)).toEqual([50]);
+  });
+
+  it("splits one VPS ping records into task-level comparison series", () => {
+    const series = buildPingTaskComparisonSeries({
+      metricKey: "ping_latency",
+      node: nodes[0],
+      tasks: [task({ id: 1, name: "Google" }), task({ id: 2, name: "Cloudflare" })],
+      taskIds: [2, 1],
+      records: [
+        { client: "a", task_id: 1, time: 1000, value: 20 },
+        { client: "a", task_id: 2, time: 1000, value: 80 },
+        { client: "b", task_id: 1, time: 1000, value: 500 },
+      ],
+    });
+
+    expect(series.map((item) => item.name)).toEqual(["Google", "Cloudflare"]);
+    expect(series.map((item) => item.uuid)).toEqual(["a:ping:1", "a:ping:2"]);
+    expect(series.map((item) => item.points[0]?.value)).toEqual([20, 80]);
   });
 });
 

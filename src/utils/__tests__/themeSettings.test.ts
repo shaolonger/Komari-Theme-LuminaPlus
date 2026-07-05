@@ -29,4 +29,35 @@ describe("normalizeThemeSettings", () => {
       7: ["node-a", "node-b"],
     });
   });
+
+  it("normalizes advanced homepage Ping settings safely", () => {
+    const settings = normalizeThemeSettings({
+      homepagePingBindings: {
+        7: ["node-a", "node-b"],
+        3: ["node-a"],
+      },
+      homepagePingAggregationStrategy: "primary",
+      homepagePingPrimaryTasks: {
+        "node-a": 3,
+        "node-b": 3,
+        "node-c": 7,
+      },
+      homepagePingTaskGroups: {
+        3: " 全球 ",
+        7: "美国",
+        bad: "ignored",
+      },
+    });
+
+    expect(settings.homepagePingAggregationStrategy).toBe("primary");
+    expect(settings.homepagePingPrimaryTasks).toEqual({ "node-a": 3 });
+    expect(settings.homepagePingTaskGroups).toEqual({ 3: "全球", 7: "美国" });
+  });
+
+  it("defaults invalid homepage Ping strategy back to worst-first", () => {
+    expect(
+      normalizeThemeSettings({ homepagePingAggregationStrategy: "fastest" as never })
+        .homepagePingAggregationStrategy,
+    ).toBe("worst");
+  });
 });

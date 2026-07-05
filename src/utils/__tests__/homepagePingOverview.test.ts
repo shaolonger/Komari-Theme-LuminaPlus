@@ -144,4 +144,51 @@ describe("aggregateHomepagePingOverviewItem", () => {
       expect.objectContaining({ taskId: 7, name: "任务 #7", hasSamples: false }),
     ]);
   });
+
+  it("can prioritize a configured primary task", () => {
+    const task2Items = buildPingOverviewItemsForTask(2, [
+      { task_id: 2, client: "node-a", time: 1_000, value: 20 },
+    ]);
+    const task5Items = buildPingOverviewItemsForTask(5, [
+      { task_id: 5, client: "node-a", time: 1_000, value: 180 },
+    ]);
+
+    const item = aggregateHomepagePingOverviewItem({
+      client: "node-a",
+      taskIds: [2, 5],
+      itemsByTask: new Map([
+        [2, task2Items],
+        [5, task5Items],
+      ]),
+      aggregationStrategy: "primary",
+      primaryTaskId: 2,
+    });
+
+    expect(item.lastValue).toBe(20);
+    expect(item.aggregationStrategy).toBe("primary");
+    expect(item.primaryTaskId).toBe(2);
+  });
+
+  it("can average current latency and loss across available tasks", () => {
+    const task2Items = buildPingOverviewItemsForTask(2, [
+      { task_id: 2, client: "node-a", time: 1_000, value: 20 },
+    ]);
+    const task5Items = buildPingOverviewItemsForTask(5, [
+      { task_id: 5, client: "node-a", time: 1_000, value: 0 },
+      { task_id: 5, client: "node-a", time: 2_000, value: 80 },
+    ]);
+
+    const item = aggregateHomepagePingOverviewItem({
+      client: "node-a",
+      taskIds: [2, 5],
+      itemsByTask: new Map([
+        [2, task2Items],
+        [5, task5Items],
+      ]),
+      aggregationStrategy: "average",
+    });
+
+    expect(item.lastValue).toBe(50);
+    expect(item.loss).toBe(25);
+  });
 });
