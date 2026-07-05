@@ -23,7 +23,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Extend `/compare` deep links so one VPS can show separate trend lines for its bound Ping tasks.
 - [x] Add targeted tests for strategy normalization, aggregation behavior, settings overview helpers, card source labels, and compare task-series data.
 - [x] Run browser smoke verification for Phase 2 routes and record local limitations.
-- [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
+- [x] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
 
 ## Acceptance Criteria
 
