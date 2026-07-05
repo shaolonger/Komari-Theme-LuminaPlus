@@ -3,10 +3,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useVisibleNodeUuids } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { getPingOverview } from "@/services/api";
-import type { PingOverviewBucket, PingOverviewItem } from "@/types/komari";
+import type { PingOverviewBucket, PingOverviewItem, PingTask } from "@/types/komari";
 import { signalWithTimeout } from "@/utils/abort";
 import {
-  invertHomepagePingTaskBindings,
+  aggregateHomepagePingOverviewItem,
+  buildHomepagePingAssignmentKey,
+  buildPingOverviewItemsForTask,
+} from "@/utils/homepagePingOverview";
+import {
+  getHomepagePingTaskIdsByClient,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 
@@ -25,6 +30,9 @@ const EMPTY_PING: PingOverviewItem = {
   samples: [],
   max: 1,
   loss: null,
+  taskIds: [],
+  taskCount: 0,
+  taskSummaries: [],
 };
 
 interface PingOverviewMapResult {
@@ -40,14 +48,6 @@ interface PingOverviewStoreEntry {
 }
 
 const PING_OVERVIEW_MISSING_GRACE_ROUNDS = 1;
-
-function toTimestamp(value: string | number) {
-  if (typeof value === "number") {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
 
 function normalizeRefreshInterval(seconds: number | null | undefined) {
   if (!Number.isFinite(seconds) || !seconds || seconds <= 0) {
@@ -95,6 +95,36 @@ function equalSamples(
   return true;
 }
 
+function equalTaskIds(a: number[] | undefined, b: number[] | undefined) {
+  return equalNumberArray(a ?? [], b ?? []);
+}
+
+function equalTaskSummaries(
+  a: PingOverviewItem["taskSummaries"],
+  b: PingOverviewItem["taskSummaries"],
+) {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i++) {
+    const leftSummary = left[i];
+    const rightSummary = right[i];
+    if (
+      leftSummary.taskId !== rightSummary.taskId ||
+      leftSummary.name !== rightSummary.name ||
+      leftSummary.target !== rightSummary.target ||
+      leftSummary.lastValue !== rightSummary.lastValue ||
+      leftSummary.loss !== rightSummary.loss ||
+      leftSummary.sampleCount !== rightSummary.sampleCount ||
+      leftSummary.hasSamples !== rightSummary.hasSamples
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function equalPingItem(a: PingOverviewItem | undefined, b: PingOverviewItem | undefined) {
   if (a === b) return true;
   if (!a || !b) return false;
@@ -104,93 +134,29 @@ function equalPingItem(a: PingOverviewItem | undefined, b: PingOverviewItem | un
     a.lastValue === b.lastValue &&
     a.max === b.max &&
     a.loss === b.loss &&
+    (a.taskCount ?? 0) === (b.taskCount ?? 0) &&
+    equalTaskIds(a.taskIds, b.taskIds) &&
+    equalTaskSummaries(a.taskSummaries, b.taskSummaries) &&
     equalNumberArray(a.values, b.values) &&
     equalSamples(a.samples, b.samples)
   );
-}
-
-function buildPingOverviewItems(
-  taskId: number,
-  records: Array<{ task_id: number; time: string | number; value: number; client: string }>,
-) {
-  const selectedRecords = records.filter((record) => record.task_id === taskId);
-  const grouped = new Map<string, Array<(typeof selectedRecords)[number]>>();
-  const lossStatsByClient = new Map<string, { total: number; lost: number }>();
-
-  for (const record of selectedRecords) {
-    if (!record.client) continue;
-    const current = grouped.get(record.client);
-    if (current) current.push(record);
-    else grouped.set(record.client, [record]);
-
-    const stats = lossStatsByClient.get(record.client) ?? { total: 0, lost: 0 };
-    stats.total += 1;
-    if (record.value <= 0) {
-      stats.lost += 1;
-    }
-    lossStatsByClient.set(record.client, stats);
-  }
-
-  const result = new Map<string, PingOverviewItem>();
-  for (const [client, clientRecords] of grouped) {
-    const sorted = [...clientRecords].sort(
-      (left, right) => toTimestamp(left.time) - toTimestamp(right.time),
-    );
-    const latestRecord = sorted[sorted.length - 1];
-    const values: number[] = new Array(sorted.length);
-    const samples: Array<{ time: number; value: number }> = [];
-    let max = 1;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const record = sorted[i];
-      const value = record.value;
-      const time = toTimestamp(record.time);
-      values[i] = value;
-      if (time > 0) {
-        samples.push({ time, value });
-      }
-      if (value > max) {
-        max = value;
-      }
-    }
-
-    const lossStats = lossStatsByClient.get(client);
-    result.set(client, {
-      client,
-      isAssigned: true,
-      lastValue: latestRecord && latestRecord.value > 0 ? latestRecord.value : null,
-      values,
-      samples,
-      max,
-      loss: lossStats?.total ? (lossStats.lost / lossStats.total) * 100 : null,
-    });
-  }
-
-  return result;
 }
 
 function resolveSelectedTasks(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
 ) {
-  const selectedTaskByClient = new Map<string, number>();
-  const bindingSelection = invertHomepagePingTaskBindings(bindings);
+  const selectedTaskIdsByClient = new Map<string, number[]>();
+  const bindingSelection = getHomepagePingTaskIdsByClient(bindings);
 
   for (const uuid of clientUuids) {
-    const taskId = bindingSelection.get(uuid);
-    if (taskId != null) {
-      selectedTaskByClient.set(uuid, taskId);
+    const taskIds = bindingSelection.get(uuid);
+    if (taskIds && taskIds.length > 0) {
+      selectedTaskIdsByClient.set(uuid, taskIds);
     }
   }
 
-  return selectedTaskByClient;
-}
-
-function buildAssignmentKey(selectedTaskByClient: Map<string, number>) {
-  return Array.from(selectedTaskByClient.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([uuid, taskId]) => `${uuid}:${taskId}`)
-    .join("|");
+  return selectedTaskIdsByClient;
 }
 
 // 单次 overview 请求的硬上限。RPC 传输自带 ~30s 限制，但 HTTP fallback（`apiGet`）
@@ -213,10 +179,10 @@ async function buildOverviewMap(
     };
   }
 
-  const selectedTaskByClient = resolveSelectedTasks(normalizedUuids, bindings);
-  const selectedTaskIds = Array.from(new Set(selectedTaskByClient.values())).sort(
-    (left, right) => left - right,
-  );
+  const selectedTaskIdsByClient = resolveSelectedTasks(normalizedUuids, bindings);
+  const selectedTaskIds = Array.from(
+    new Set(Array.from(selectedTaskIdsByClient.values()).flat()),
+  ).sort((left, right) => left - right);
 
   if (selectedTaskIds.length === 0) {
     return {
@@ -237,6 +203,7 @@ async function buildOverviewMap(
   );
 
   const itemsByTask = new Map<number, Map<string, PingOverviewItem>>();
+  const tasksById = new Map<number, PingTask>();
   const refreshIntervals: number[] = [];
 
   for (const result of overviewResults) {
@@ -248,32 +215,28 @@ async function buildOverviewMap(
       taskId,
       overview: { records, tasks },
     } = result.value;
-    itemsByTask.set(taskId, buildPingOverviewItems(taskId, records));
+    for (const task of tasks) {
+      tasksById.set(task.id, task);
+    }
+    itemsByTask.set(taskId, buildPingOverviewItemsForTask(taskId, records, tasksById.get(taskId)));
 
     const taskInterval = tasks.find((task) => task.id === taskId)?.interval;
     refreshIntervals.push(normalizeRefreshInterval(taskInterval));
   }
 
   const items = new Map<string, PingOverviewItem>();
-  for (const [uuid, taskId] of selectedTaskByClient) {
-    const item = itemsByTask.get(taskId)?.get(uuid);
-    if (item) {
-      items.set(uuid, item);
-      continue;
-    }
-    items.set(uuid, {
+  for (const [uuid, taskIds] of selectedTaskIdsByClient) {
+    const item = aggregateHomepagePingOverviewItem({
       client: uuid,
-      isAssigned: true,
-      lastValue: null,
-      values: [],
-      samples: [],
-      max: 1,
-      loss: null,
+      taskIds,
+      itemsByTask,
+      tasksById,
     });
+    items.set(uuid, item);
   }
 
   return {
-    assignmentKey: buildAssignmentKey(selectedTaskByClient),
+    assignmentKey: buildHomepagePingAssignmentKey(selectedTaskIdsByClient),
     intervalMs:
       refreshIntervals.length > 0
         ? Math.min(...refreshIntervals)
@@ -519,11 +482,28 @@ let pingMapSnapshotCache = new Map<string, PingOverviewItem>();
 
 function pingItemSignature(item: PingOverviewItem) {
   const lastSample = item.samples[item.samples.length - 1];
+  const taskIds = item.taskIds ?? [];
+  const taskSummaries = item.taskSummaries ?? [];
   return [
     item.client,
     item.isAssigned ? "1" : "0",
     item.lastValue ?? "",
     item.loss ?? "",
+    item.taskCount ?? 0,
+    taskIds.join("/"),
+    taskSummaries
+      .map((summary) =>
+        [
+          summary.taskId,
+          summary.name,
+          summary.target,
+          summary.lastValue ?? "",
+          summary.loss ?? "",
+          summary.sampleCount,
+          summary.hasSamples ? "1" : "0",
+        ].join(":"),
+      )
+      .join(";"),
     item.values.length,
     lastSample?.time ?? "",
     lastSample?.value ?? "",

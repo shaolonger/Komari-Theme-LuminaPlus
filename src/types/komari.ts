@@ -371,6 +371,16 @@ export interface PingBasicInfo {
   max: number;
 }
 
+export interface PingOverviewTaskSummary {
+  taskId: number;
+  name: string;
+  target: string;
+  lastValue: number | null;
+  loss: number | null;
+  sampleCount: number;
+  hasSamples: boolean;
+}
+
 export interface PingOverviewItem {
   client: string;
   isAssigned: boolean;
@@ -379,6 +389,9 @@ export interface PingOverviewItem {
   samples: Array<{ time: number; value: number }>;
   max: number;
   loss: number | null;
+  taskIds?: number[];
+  taskCount?: number;
+  taskSummaries?: PingOverviewTaskSummary[];
 }
 
 export interface TrafficTrendSample {
