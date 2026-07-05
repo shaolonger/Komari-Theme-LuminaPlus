@@ -29,5 +29,5 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Add a tested trend-preparation layer for ping comparison charts: fixed time buckets, per-bucket aggregation, off-phase gap bridging, long-gap breaks, light smoothing, and chart metadata.
 - [x] Add custom time range state, URL params, datetime-local controls, compatible history fetch window calculation, and client-side series trimming.
 - [x] Polish `/compare` chart copy, summary cards, export filenames, and responsive styles around the new single-node/custom-range flows.
-- [ ] Run desktop and mobile browser verification for the compare page and fix any visual or console issues.
+- [x] Run desktop and mobile browser verification for the compare page and fix any visual or console issues.
 - [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
