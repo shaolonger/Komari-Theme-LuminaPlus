@@ -101,6 +101,14 @@ function formatRangeDuration(hours: number) {
   return `${Math.max(1, Math.round(hours * 10) / 10)} 小时`;
 }
 
+function formatDurationSeconds(seconds: number | null) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "原始采样";
+  if (seconds >= 86_400 && seconds % 86_400 === 0) return `${seconds / 86_400} 天`;
+  if (seconds >= 3_600 && seconds % 3_600 === 0) return `${seconds / 3_600} 小时`;
+  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60} 分钟`;
+  return `${seconds} 秒`;
+}
+
 function formatExportRangeToken(mode: CompareRangeMode, hours: number, start: number | null, end: number | null) {
   if (mode !== "custom" || start == null || end == null) return `${hours}h`;
   return `${new Date(start * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}-${new Date(end * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
@@ -306,8 +314,22 @@ function ComparisonTrendChart({
     return <div className="compare-chart-empty">当前选择下暂无历史数据</div>;
   }
 
+  const trendMeta =
+    metric.source === "ping"
+      ? [
+          `按 ${formatDurationSeconds(trend.bucketSeconds)} 对齐`,
+          trend.smoothWindow > 1 ? "轻度平滑" : "原始走势",
+          `${trend.rawSamples} 原始样本`,
+        ]
+      : [`${trend.rawSamples} 原始样本`];
+
   return (
     <div ref={ref} className="compare-chart-wrap">
+      <div className="compare-chart-meta" aria-label="图表数据处理摘要">
+        {trendMeta.map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
       <UplotReact
         key={`${metricKey}-${hours}-${trend.bucketSeconds ?? "raw"}-${visualSeries.map((item) => item.uuid).join("-")}`}
         options={options}
@@ -333,9 +355,11 @@ function ComparisonTrendChart({
 function RankingTable({
   metricKey,
   rows,
+  selectedCount,
 }: {
   metricKey: ComparisonMetricKey;
   rows: ComparisonRankingRow[];
+  selectedCount: number;
 }) {
   return (
     <div className="compare-ranking-table-wrap">
@@ -371,7 +395,11 @@ function RankingTable({
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && <div className="compare-chart-empty">暂无排行数据</div>}
+      {rows.length === 0 && (
+        <div className="compare-chart-empty">
+          {selectedCount === 0 ? "请选择 VPS 查看排行" : "当前范围暂无排行数据"}
+        </div>
+      )}
     </div>
   );
 }
@@ -768,17 +796,17 @@ export function Compare() {
         <div className="compare-summary-card">
           <span>已选 VPS</span>
           <strong>{selectedNodes.length}</strong>
-          <small>不限数量</small>
+          <small>{selectedNodes.length <= 1 ? "单台可查看" : "多台对比中"}</small>
         </div>
         <div className="compare-summary-card">
-          <span>当前指标</span>
-          <strong>{metric.shortLabel}</strong>
-          <small>{metric.label}</small>
+          <span>时间范围</span>
+          <strong>{activeRangeMode === "custom" ? "自定义" : activeRangeLabel}</strong>
+          <small>{activeRangeMode === "custom" && customRangeValid ? activeRangeLabel : metric.label}</small>
         </div>
         <div className="compare-summary-card">
           <span>样本量</span>
           <strong>{totalSamples}</strong>
-          <small>{isFetching ? "刷新中" : `${activeRangeLabel}区间`}</small>
+          <small>{isFetching ? "刷新中" : metric.shortLabel}</small>
         </div>
         <div className="compare-summary-card">
           <span>压力最高</span>
@@ -844,7 +872,7 @@ export function Compare() {
             rangeEnd={activeRangeMode === "custom" && customRangeValid ? customEndSeconds : null}
           />
         ) : (
-          <RankingTable metricKey={metricKey} rows={rankingRows} />
+          <RankingTable metricKey={metricKey} rows={rankingRows} selectedCount={selectedNodes.length} />
         )}
       </section>
 
@@ -854,25 +882,31 @@ export function Compare() {
           <p>按 P95 和平均值排序，适合快速定位压力最大的 VPS。</p>
         </header>
         <div className="compare-rank-cards">
-          {rankingRows.slice(0, 4).map((row, index) => (
-            <Link
-              key={row.uuid}
-              to={`/instance/${row.uuid}`}
-              className="compare-rank-card"
-              style={{ "--rank": index + 1 } as CSSProperties}
-            >
-              <span>#{index + 1}</span>
-              <strong>{row.name}</strong>
-              <small>
-                <ArrowUp size={11} />
-                P95 {formatComparisonValue(metricKey, row.p95)}
-              </small>
-              <small>
-                <ArrowDown size={11} />
-                平均 {formatComparisonValue(metricKey, row.average)}
-              </small>
-            </Link>
-          ))}
+          {rankingRows.length > 0 ? (
+            rankingRows.slice(0, 4).map((row, index) => (
+              <Link
+                key={row.uuid}
+                to={`/instance/${row.uuid}`}
+                className="compare-rank-card"
+                style={{ "--rank": index + 1 } as CSSProperties}
+              >
+                <span>#{index + 1}</span>
+                <strong>{row.name}</strong>
+                <small>
+                  <ArrowUp size={11} />
+                  P95 {formatComparisonValue(metricKey, row.p95)}
+                </small>
+                <small>
+                  <ArrowDown size={11} />
+                  平均 {formatComparisonValue(metricKey, row.average)}
+                </small>
+              </Link>
+            ))
+          ) : (
+            <div className="compare-rank-empty">
+              {selectedNodes.length === 0 ? "请选择 VPS 查看区间排行" : "当前范围暂无排行数据"}
+            </div>
+          )}
         </div>
       </section>
     </div>
