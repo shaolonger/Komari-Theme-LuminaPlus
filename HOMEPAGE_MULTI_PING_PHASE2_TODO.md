@@ -22,7 +22,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Add expandable homepage card Ping source details with per-task status and compare-page jump links.
 - [x] Extend `/compare` deep links so one VPS can show separate trend lines for its bound Ping tasks.
 - [x] Add targeted tests for strategy normalization, aggregation behavior, settings overview helpers, card source labels, and compare task-series data.
-- [ ] Run browser smoke verification for Phase 2 routes and record local limitations.
+- [x] Run browser smoke verification for Phase 2 routes and record local limitations.
 - [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
 
 ## Acceptance Criteria
@@ -34,3 +34,10 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - A card/detail control can open `/compare` directly into a single-VPS multi-task Ping trend view.
 - Existing single-task configurations continue to behave as before.
 - Tests, typecheck, package build, push, tag, and GitHub release all complete.
+
+## Browser Smoke Notes
+
+- Local dev server: `http://127.0.0.1:5173/`.
+- Home route `/` renders the empty-data dashboard/workbench state without console errors.
+- Compare deep link `/compare?nodes=node-a&metric=ping_latency&hours=4&tab=trend&pingTasks=2,5` renders without console errors; without real Komari node data it correctly shows no selected VPS/data.
+- Theme manage route `/?view=theme-manage` is gated by Komari auth in local standalone dev and shows `Request /api/me failed: 404`; no frontend crash or console errors were observed.
