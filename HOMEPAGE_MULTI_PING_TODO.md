@@ -29,7 +29,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Extend Ping binding utilities and types for multi-task interpretation while preserving old single-task helper behavior.
 - [x] Aggregate homepage Ping overview across all bound tasks per node, including task count metadata and merged one-hour buckets.
 - [x] Update theme settings Ping binding UI so a VPS can be assigned to multiple Ping tasks, with accurate copy, counters, and no single-task exclusion.
-- [ ] Update homepage large/compact Ping card presentation to surface multi-task summaries without increasing card density.
+- [x] Update homepage large/compact Ping card presentation to surface multi-task summaries without increasing card density.
 - [ ] Add and run targeted tests for multi-task bindings, overview aggregation, and affected diagnostics/settings behavior.
 - [ ] Run browser smoke verification for theme settings/homepage Ping UX and fix visual or console issues.
 - [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.

@@ -1,6 +1,8 @@
 // NodeCard 和 CompactNodeCard 之间共享的非视觉逻辑。两张卡刻意用不同的 class
 // 名和布局,所以 markup 不共享——只共享逻辑和文案,否则改一处另一处会漂移。
 
+import type { PingOverviewItem, PingOverviewTaskSummary } from "@/types/komari";
+
 /** 卡片标签行的完整 tag 列表 tooltip(两种卡片布局共用同一文案)。 */
 export function joinTagTitle(tags: { label: string }[]) {
   return tags.map((tag) => tag.label).join(" / ");
@@ -15,6 +17,32 @@ export function pingEmptyLabels(hasHomepagePingBinding: boolean): { title: strin
   return hasHomepagePingBinding
     ? { title: "暂无有效样本", text: "无样本" }
     : { title: "未配置首页 Ping", text: "未配置" };
+}
+
+function formatPingTaskSummary(summary: PingOverviewTaskSummary) {
+  const pieces = [summary.name];
+  if (summary.target) pieces.push(summary.target);
+  const latency = summary.lastValue != null ? `${Math.round(summary.lastValue)}ms` : "无有效延迟";
+  const loss = summary.loss != null ? `丢包 ${summary.loss.toFixed(1)}%` : "丢包未知";
+  return `${pieces.join(" / ")} (${latency}，${loss})`;
+}
+
+export function pingTaskAggregateLabels(
+  ping: Pick<PingOverviewItem, "taskCount" | "taskSummaries">,
+): { badge: string | null; title: string } {
+  const count = Math.max(0, Math.floor(ping.taskCount ?? 0));
+  const detail = (ping.taskSummaries ?? []).map(formatPingTaskSummary).join("；");
+  if (count <= 1) {
+    return {
+      badge: null,
+      title: detail || "首页 Ping 任务",
+    };
+  }
+
+  return {
+    badge: `${count}源`,
+    title: `由 ${count} 个首页 Ping 任务聚合，按最差延迟与最高丢包展示${detail ? `：${detail}` : ""}`,
+  };
 }
 
 /** 节点卡片头部"查看实例详情"链接的 title 和 aria-label。 */

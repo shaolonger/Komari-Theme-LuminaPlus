@@ -32,7 +32,12 @@ import { MetricBar } from "./MetricBar";
 import { MiniBars } from "./MiniBars";
 import { QualityBars } from "./QualityBars";
 import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
-import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
+import {
+  joinTagTitle,
+  nodeDetailLinkLabels,
+  pingEmptyLabels,
+  pingTaskAggregateLabels,
+} from "./nodeCardShared";
 import {
   formatLatencyBucketSummary,
   formatLossBucketSummary,
@@ -390,14 +395,18 @@ const NodeHealthSection = memo(function NodeHealthSection({
   onLossHover: (index: number | null) => void;
 }) {
   const { title: emptyTitle, text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
+  const pingAggregate = pingTaskAggregateLabels(ping);
 
   return (
     <div className="card-metric-section card-metric-divided server-health-grid">
-      <div className="server-health-block">
+      <div className="server-health-block" title={pingAggregate.title}>
         <div className="server-health-head">
           <div className="server-health-label">
             <Clock3 size={13} strokeWidth={2} />
             <span>延迟</span>
+            {pingAggregate.badge && (
+              <span className="server-health-source">{pingAggregate.badge}</span>
+            )}
           </div>
           <span className="server-health-value tabular" style={{ color: latencyColor }}>
             {ping.lastValue != null ? (
@@ -435,11 +444,14 @@ const NodeHealthSection = memo(function NodeHealthSection({
           )}
         </div>
       </div>
-      <div className="server-health-block">
+      <div className="server-health-block" title={pingAggregate.title}>
         <div className="server-health-head">
           <div className="server-health-label">
             <Unplug size={13} strokeWidth={2} />
             <span>丢包率</span>
+            {pingAggregate.badge && (
+              <span className="server-health-source">{pingAggregate.badge}</span>
+            )}
           </div>
           <span className="server-health-value tabular" style={{ color: lossColor }}>
             {ping.loss != null ? (

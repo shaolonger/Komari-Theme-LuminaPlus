@@ -246,6 +246,20 @@
   letter-spacing: 0.02em;
 }
 
+.server-health-source {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
 .traffic-stat-value {
   flex: 0 0 auto;
   font-size: 18px;

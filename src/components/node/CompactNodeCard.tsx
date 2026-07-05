@@ -33,7 +33,12 @@ import {
   speedRateColorFromBytes,
 } from "@/utils/metricTone";
 import { formatHealthBucketTooltip } from "./pingBucketText";
-import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
+import {
+  joinTagTitle,
+  nodeDetailLinkLabels,
+  pingEmptyLabels,
+  pingTaskAggregateLabels,
+} from "./nodeCardShared";
 import type {
   NodeInfo,
   NodeMetrics,
@@ -312,6 +317,8 @@ function HealthBars({
 function CompactHealthItem({
   icon,
   label,
+  sourceBadge,
+  sourceTitle,
   value,
   unit,
   color,
@@ -319,17 +326,20 @@ function CompactHealthItem({
 }: {
   icon: ReactNode;
   label: string;
+  sourceBadge?: string | null;
+  sourceTitle?: string;
   value: string;
   unit?: string;
   color: string;
   children: ReactNode;
 }) {
   return (
-    <div className="compact-node-health-item">
+    <div className="compact-node-health-item" title={sourceTitle}>
       <div className="compact-node-health-head">
         <span className="compact-node-health-label">
           {icon}
           {label}
+          {sourceBadge && <span className="compact-node-health-source">{sourceBadge}</span>}
         </span>
         <strong className="compact-node-health-value tabular" style={{ color }}>
           {value}
@@ -623,11 +633,14 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
 }) {
   // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
   const { text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
+  const pingAggregate = pingTaskAggregateLabels(ping);
   return (
     <div className="compact-node-bottom">
       <CompactHealthItem
         icon={<Clock3 size={12} />}
         label="延迟"
+        sourceBadge={pingAggregate.badge}
+        sourceTitle={pingAggregate.title}
         value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
         unit={ping.lastValue != null ? "ms" : undefined}
         color={latencyColor}
@@ -637,6 +650,8 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
       <CompactHealthItem
         icon={<Unplug size={12} />}
         label="丢包"
+        sourceBadge={pingAggregate.badge}
+        sourceTitle={pingAggregate.title}
         value={ping.loss != null ? ping.loss.toFixed(1) : emptyText}
         unit={ping.loss != null ? "%" : undefined}
         color={lossColor}

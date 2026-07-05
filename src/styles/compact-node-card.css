@@ -520,12 +520,28 @@
 }
 
 .compact-node-health-label {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
   min-width: 0;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 680;
   line-height: 1.1;
+}
+
+.compact-node-health-source {
+  display: inline-flex;
+  align-items: center;
+  height: 14px;
+  padding: 0 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 8.5px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1;
 }
 
 .compact-node-health-value {
