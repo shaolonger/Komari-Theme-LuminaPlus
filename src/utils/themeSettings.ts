@@ -9,6 +9,15 @@ import {
 import { DEFAULT_COST_RATE_API_URL, normalizeCostIgnoredNodes, normalizeCostRateApiUrl } from "@/utils/cost";
 import { normalizeHomeGroupOrder } from "@/utils/homeNodes";
 import {
+  DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+  normalizeHomepagePingAggregationStrategy,
+  normalizeHomepagePingPrimaryTasks,
+  normalizeHomepagePingTaskGroups,
+  type HomepagePingAggregationStrategy,
+  type HomepagePingPrimaryTasks,
+  type HomepagePingTaskGroups,
+} from "@/utils/homepagePingSettings";
+import {
   isOverviewRatingStyle,
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
@@ -24,6 +33,9 @@ export interface ResolvedThemeSettings {
   enableAdminButton: boolean;
   showPingChart: boolean;
   homepagePingBindings: HomepagePingTaskBindings;
+  homepagePingAggregationStrategy: HomepagePingAggregationStrategy;
+  homepagePingPrimaryTasks: HomepagePingPrimaryTasks;
+  homepagePingTaskGroups: HomepagePingTaskGroups;
   showHomeOverview: boolean;
   showGroupTabs: boolean;
   homeGroupOrder: string[];
@@ -57,6 +69,9 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   enableAdminButton: true,
   showPingChart: true,
   homepagePingBindings: {},
+  homepagePingAggregationStrategy: DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
+  homepagePingPrimaryTasks: {},
+  homepagePingTaskGroups: {},
   showHomeOverview: true,
   showGroupTabs: true,
   homeGroupOrder: [],
@@ -116,6 +131,8 @@ function normalizePlainText(value: unknown) {
 export function normalizeThemeSettings(
   settings: (ThemeSettings & Record<string, unknown>) | null | undefined,
 ): ResolvedThemeSettings {
+  const homepagePingBindings = normalizeHomepagePingTaskBindings(settings?.homepagePingBindings);
+
   return {
     defaultAppearance: normalizeAppearance(settings?.defaultAppearance),
     desktopNodeViewMode: normalizeNodeViewMode(
@@ -128,7 +145,15 @@ export function normalizeThemeSettings(
     ),
     enableAdminButton: enabledUnlessFalse(settings?.enableAdminButton),
     showPingChart: enabledUnlessFalse(settings?.showPingChart),
-    homepagePingBindings: normalizeHomepagePingTaskBindings(settings?.homepagePingBindings),
+    homepagePingBindings,
+    homepagePingAggregationStrategy: normalizeHomepagePingAggregationStrategy(
+      settings?.homepagePingAggregationStrategy,
+    ),
+    homepagePingPrimaryTasks: normalizeHomepagePingPrimaryTasks(
+      settings?.homepagePingPrimaryTasks,
+      homepagePingBindings,
+    ),
+    homepagePingTaskGroups: normalizeHomepagePingTaskGroups(settings?.homepagePingTaskGroups),
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
     homeGroupOrder: normalizeHomeGroupOrder(settings?.homeGroupOrder),

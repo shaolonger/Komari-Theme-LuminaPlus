@@ -156,6 +156,9 @@ export interface ThemeSettings {
   enableAdminButton?: boolean;
   showPingChart?: boolean;
   homepagePingBindings?: Record<string, string[]>;
+  homepagePingAggregationStrategy?: "worst" | "primary" | "average";
+  homepagePingPrimaryTasks?: Record<string, number>;
+  homepagePingTaskGroups?: Record<string, string>;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   homeGroupOrder?: string[];
