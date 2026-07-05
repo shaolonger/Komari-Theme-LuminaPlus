@@ -56,6 +56,14 @@ export interface ComparisonTrendData {
   rawSamples: number;
 }
 
+export interface ComparisonRequestWindowInput {
+  presetHours: number;
+  customStart?: number | null;
+  customEnd?: number | null;
+  nowSeconds?: number;
+  maxHours?: number | null;
+}
+
 export interface ComparisonStats {
   samples: number;
   average: number | null;
@@ -272,6 +280,43 @@ function breakLongTrendGaps(
     previousNumericIndex = index;
   }
   return out;
+}
+
+export function isValidComparisonCustomRange(
+  start: number | null | undefined,
+  end: number | null | undefined,
+) {
+  return (
+    typeof start === "number" &&
+    typeof end === "number" &&
+    Number.isFinite(start) &&
+    Number.isFinite(end) &&
+    end > start
+  );
+}
+
+export function getComparisonRequestHours({
+  presetHours,
+  customStart,
+  customEnd,
+  nowSeconds = Date.now() / 1000,
+  maxHours,
+}: ComparisonRequestWindowInput) {
+  const maxSafeHours =
+    typeof maxHours === "number" && Number.isFinite(maxHours) && maxHours > 0
+      ? Math.floor(maxHours)
+      : null;
+  const clampToMax = (hours: number) =>
+    maxSafeHours == null ? hours : Math.min(hours, maxSafeHours);
+
+  if (!isValidComparisonCustomRange(customStart, customEnd)) {
+    return clampToMax(Math.max(1, Math.ceil(presetHours)));
+  }
+
+  const safeNow = Number.isFinite(nowSeconds) ? nowSeconds : Date.now() / 1000;
+  const rangeStart = Number(customStart);
+  const spanFromNow = Math.max(1, safeNow - rangeStart);
+  return clampToMax(Math.max(1, Math.ceil(spanFromNow / 3_600)));
 }
 
 function normalizeNumber(value: number | null | undefined) {

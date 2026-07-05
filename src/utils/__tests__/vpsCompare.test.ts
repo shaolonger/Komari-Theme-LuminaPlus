@@ -5,7 +5,10 @@ import {
   buildComparisonRanking,
   buildComparisonSeries,
   formatComparisonValue,
+  getComparisonRequestHours,
+  isValidComparisonCustomRange,
   prepareComparisonTrendData,
+  trimComparisonSeriesToRange,
   type ComparisonNode,
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
@@ -180,6 +183,55 @@ describe("prepareComparisonTrendData", () => {
     expect(trend.smoothWindow).toBeGreaterThan(1);
     expect(trend.rawSamples).toBe(5);
     expect(trend.valuesBySeries[0][1]).toBeLessThan(320);
+  });
+});
+
+describe("comparison custom ranges", () => {
+  it("validates start/end ordering", () => {
+    expect(isValidComparisonCustomRange(100, 200)).toBe(true);
+    expect(isValidComparisonCustomRange(200, 100)).toBe(false);
+    expect(isValidComparisonCustomRange(null, 200)).toBe(false);
+  });
+
+  it("computes a compatible hours window from now back to custom start", () => {
+    expect(
+      getComparisonRequestHours({
+        presetHours: 4,
+        customStart: 1_000,
+        customEnd: 2_000,
+        nowSeconds: 8_200,
+      }),
+    ).toBe(2);
+    expect(
+      getComparisonRequestHours({
+        presetHours: 4,
+        customStart: 1_000,
+        customEnd: 2_000,
+        nowSeconds: 20_000,
+        maxHours: 3,
+      }),
+    ).toBe(3);
+  });
+
+  it("trims series points to the chosen custom range", () => {
+    const trimmed = trimComparisonSeriesToRange(
+      [
+        {
+          uuid: "a",
+          name: "alpha",
+          group: "",
+          region: "",
+          points: [
+            { time: 50, value: 1 },
+            { time: 100, value: 2 },
+            { time: 150, value: 3 },
+          ],
+        },
+      ],
+      { start: 75, end: 125 },
+    );
+
+    expect(trimmed[0].points).toEqual([{ time: 100, value: 2 }]);
   });
 });
 

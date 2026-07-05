@@ -43,9 +43,12 @@ import {
   buildComparisonSeries,
   COMPARISON_METRICS,
   formatComparisonValue,
+  getComparisonRequestHours,
   getComparisonMetric,
+  isValidComparisonCustomRange,
   nodesToComparisonNodes,
   prepareComparisonTrendData,
+  trimComparisonSeriesToRange,
   type ComparisonMetricKey,
   type ComparisonRankingRow,
   type ComparisonSeries,
@@ -55,6 +58,7 @@ import type { NodeInfo } from "@/types/komari";
 const DEFAULT_METRIC: ComparisonMetricKey = "cpu";
 const DEFAULT_HOURS = 4;
 type CompareView = "trend" | "ranking";
+type CompareRangeMode = "preset" | "custom";
 
 function isComparisonMetricKey(value: string | null): value is ComparisonMetricKey {
   return COMPARISON_METRICS.some((metric) => metric.key === value);
@@ -64,10 +68,42 @@ function isCompareView(value: string | null): value is CompareView {
   return value === "trend" || value === "ranking";
 }
 
+function isCompareRangeMode(value: string | null): value is CompareRangeMode {
+  return value === "preset" || value === "custom";
+}
+
+function parseUrlSeconds(value: string | null) {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function parseSelectedNodes(value: string | null) {
   return value
     ? Array.from(new Set(value.split(",").map((item) => item.trim()).filter(Boolean)))
     : [];
+}
+
+function toDateTimeLocalValue(seconds: number) {
+  const date = new Date(seconds * 1000);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalValue(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? Math.floor(time / 1000) : null;
+}
+
+function formatRangeDuration(hours: number) {
+  if (hours >= 24 && hours % 24 === 0) return `${hours / 24} 天`;
+  if (hours >= 24) return `${(hours / 24).toFixed(1)} 天`;
+  return `${Math.max(1, Math.round(hours * 10) / 10)} 小时`;
+}
+
+function formatExportRangeToken(mode: CompareRangeMode, hours: number, start: number | null, end: number | null) {
+  if (mode !== "custom" || start == null || end == null) return `${hours}h`;
+  return `${new Date(start * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}-${new Date(end * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
 }
 
 function nodeLabel(node: NodeInfo) {
@@ -112,6 +148,9 @@ function updateParams(
     metric?: ComparisonMetricKey;
     hours?: number;
     view?: CompareView;
+    rangeMode?: CompareRangeMode;
+    from?: number | null;
+    to?: number | null;
   },
 ) {
   const next = new URLSearchParams(base);
@@ -122,6 +161,22 @@ function updateParams(
   if (patch.metric) next.set("metric", patch.metric);
   if (patch.hours != null) next.set("hours", String(patch.hours));
   if (patch.view) next.set("tab", patch.view);
+  if (patch.rangeMode) {
+    if (patch.rangeMode === "custom") next.set("range", "custom");
+    else {
+      next.delete("range");
+      next.delete("from");
+      next.delete("to");
+    }
+  }
+  if (patch.from !== undefined) {
+    if (patch.from != null) next.set("from", String(Math.floor(patch.from)));
+    else next.delete("from");
+  }
+  if (patch.to !== undefined) {
+    if (patch.to != null) next.set("to", String(Math.floor(patch.to)));
+    else next.delete("to");
+  }
   return next;
 }
 
@@ -131,12 +186,16 @@ function ComparisonTrendChart({
   series,
   loading,
   selectedCount,
+  rangeStart,
+  rangeEnd,
 }: {
   metricKey: ComparisonMetricKey;
   hours: number;
   series: ComparisonSeries[];
   loading: boolean;
   selectedCount: number;
+  rangeStart?: number | null;
+  rangeEnd?: number | null;
 }) {
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref } = useResponsiveChartSize("wide");
@@ -150,8 +209,8 @@ function ComparisonTrendChart({
   });
   const metric = getComparisonMetric(metricKey);
   const trend = useMemo(
-    () => prepareComparisonTrendData({ metricKey, series, hours }),
-    [hours, metricKey, series],
+    () => prepareComparisonTrendData({ metricKey, series, hours, start: rangeStart, end: rangeEnd }),
+    [hours, metricKey, rangeEnd, rangeStart, series],
   );
   const visualSeries = trend.series;
   const data = useMemo(
@@ -334,17 +393,26 @@ export function Compare() {
   const { data: config } = usePublicConfig();
   const metricParam = searchParams.get("metric");
   const viewParam = searchParams.get("tab");
+  const rangeParam = searchParams.get("range");
   const initialMetric = isComparisonMetricKey(metricParam)
     ? metricParam
     : DEFAULT_METRIC;
   const initialHours = Number.parseInt(searchParams.get("hours") || "", 10);
   const initialView = isCompareView(viewParam) ? viewParam : "trend";
+  const initialRangeMode = isCompareRangeMode(rangeParam) ? rangeParam : "preset";
+  const initialFrom = parseUrlSeconds(searchParams.get("from"));
+  const initialTo = parseUrlSeconds(searchParams.get("to"));
+  const initialCustomEnd = initialTo ?? Math.floor(Date.now() / 1000);
+  const initialCustomStart = initialFrom ?? initialCustomEnd - Math.max(1, Number.isFinite(initialHours) ? initialHours : DEFAULT_HOURS) * 3_600;
   const [selectedUuids, setSelectedUuids] = useState(() =>
     parseSelectedNodes(searchParams.get("nodes")),
   );
   const [metricKey, setMetricKey] = useState<ComparisonMetricKey>(initialMetric);
   const [hours, setHours] = useState(Number.isFinite(initialHours) && initialHours > 0 ? initialHours : DEFAULT_HOURS);
   const [view, setView] = useState<CompareView>(initialView);
+  const [rangeMode, setRangeMode] = useState<CompareRangeMode>(initialRangeMode);
+  const [customStartInput, setCustomStartInput] = useState(() => toDateTimeLocalValue(initialCustomStart));
+  const [customEndInput, setCustomEndInput] = useState(() => toDateTimeLocalValue(initialCustomEnd));
   const [nodeSearch, setNodeSearch] = useState("");
   const [exportStatus, setExportStatus] = useState("");
 
@@ -375,6 +443,38 @@ export function Compare() {
   const activeHours = rangeOptions.some((range) => range.value === hours)
     ? hours
     : rangeOptions[0]?.value ?? DEFAULT_HOURS;
+  const customStartSeconds = fromDateTimeLocalValue(customStartInput);
+  const customEndSeconds = fromDateTimeLocalValue(customEndInput);
+  const customRangeValid = isValidComparisonCustomRange(customStartSeconds, customEndSeconds);
+  const activeRangeMode = rangeMode === "custom" ? "custom" : "preset";
+  const rangeIsUsable = activeRangeMode !== "custom" || customRangeValid;
+  const maxRangeHours = metric.source === "ping"
+    ? config?.ping_record_preserve_time
+    : config?.record_preserve_time;
+  const requestHours = getComparisonRequestHours({
+    presetHours: activeHours,
+    customStart: activeRangeMode === "custom" ? customStartSeconds : null,
+    customEnd: activeRangeMode === "custom" ? customEndSeconds : null,
+    maxHours: maxRangeHours,
+  });
+  const customRangeDurationHours =
+    customRangeValid && customStartSeconds != null && customEndSeconds != null
+      ? Math.max(1 / 60, (customEndSeconds - customStartSeconds) / 3_600)
+      : null;
+  const displayRangeHours =
+    activeRangeMode === "custom" && customRangeDurationHours != null
+      ? customRangeDurationHours
+      : activeHours;
+  const activeRangeLabel =
+    activeRangeMode === "custom" && customRangeValid
+      ? formatRangeDuration(displayRangeHours)
+      : `${activeHours} 小时`;
+  const exportRangeToken = formatExportRangeToken(
+    activeRangeMode,
+    activeHours,
+    customRangeValid ? customStartSeconds : null,
+    customRangeValid ? customEndSeconds : null,
+  );
   const filteredNodes = useMemo(() => {
     const query = nodeSearch.trim().toLowerCase();
     if (!query) return nodeOptions;
@@ -382,30 +482,31 @@ export function Compare() {
   }, [nodeOptions, nodeSearch]);
 
   const canQuery = selectedNodes.length > 0;
+  const canFetch = canQuery && rangeIsUsable;
   const loadQuery = useQuery({
-    queryKey: ["compare", "load", selectedKey, activeHours, metricKey],
+    queryKey: ["compare", "load", selectedKey, requestHours, metricKey, activeRangeMode, customStartSeconds, customEndSeconds],
     queryFn: () =>
       getComparisonLoadRecords({
         uuids: selectedNodes.map((node) => node.uuid),
-        hours: activeHours,
+        hours: requestHours,
         loadType: getSelectedMetricLoadType(metricKey),
       }),
-    enabled: canQuery && metric.source === "load",
+    enabled: canFetch && metric.source === "load",
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
   const pingQuery = useQuery({
-    queryKey: ["compare", "ping", selectedKey, activeHours],
+    queryKey: ["compare", "ping", selectedKey, requestHours, activeRangeMode, customStartSeconds, customEndSeconds],
     queryFn: () =>
       getComparisonPingRecords({
         uuids: selectedNodes.map((node) => node.uuid),
-        hours: activeHours,
+        hours: requestHours,
       }),
-    enabled: canQuery && metric.source === "ping",
+    enabled: canFetch && metric.source === "ping",
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
-  const series = useMemo(
+  const rawSeries = useMemo(
     () =>
       buildComparisonSeries({
         metricKey,
@@ -414,6 +515,16 @@ export function Compare() {
         pingRecords: pingQuery.data?.records ?? [],
       }),
     [compareNodes, loadQuery.data, metricKey, pingQuery.data?.records],
+  );
+  const series = useMemo(
+    () =>
+      activeRangeMode === "custom" && customRangeValid
+        ? trimComparisonSeriesToRange(rawSeries, {
+            start: customStartSeconds,
+            end: customEndSeconds,
+          })
+        : rawSeries,
+    [activeRangeMode, customEndSeconds, customRangeValid, customStartSeconds, rawSeries],
   );
   const rankingRows = useMemo(() => buildComparisonRanking(series), [series]);
   const isLoading = metric.source === "load" ? loadQuery.isLoading : pingQuery.isLoading;
@@ -435,13 +546,53 @@ export function Compare() {
     const nextHours = nextRanges.some((range) => range.value === hours)
       ? hours
       : nextRanges[0]?.value ?? DEFAULT_HOURS;
-    setHours(nextHours);
-    setSearchParams(updateParams(searchParams, { metric: next, hours: nextHours }), { replace: true });
+    if (activeRangeMode === "preset") setHours(nextHours);
+    setSearchParams(
+      updateParams(
+        searchParams,
+        activeRangeMode === "preset"
+          ? { metric: next, hours: nextHours, rangeMode: "preset" }
+          : { metric: next, rangeMode: "custom", from: customStartSeconds, to: customEndSeconds },
+      ),
+      { replace: true },
+    );
   };
 
   const commitHours = (next: number) => {
+    setRangeMode("preset");
     setHours(next);
-    setSearchParams(updateParams(searchParams, { hours: next }), { replace: true });
+    setSearchParams(updateParams(searchParams, { hours: next, rangeMode: "preset" }), { replace: true });
+  };
+
+  const commitCustomRange = (nextStartInput: string, nextEndInput: string) => {
+    setRangeMode("custom");
+    setCustomStartInput(nextStartInput);
+    setCustomEndInput(nextEndInput);
+    setSearchParams(
+      updateParams(searchParams, {
+        rangeMode: "custom",
+        from: fromDateTimeLocalValue(nextStartInput),
+        to: fromDateTimeLocalValue(nextEndInput),
+      }),
+      { replace: true },
+    );
+  };
+
+  const activateCustomRange = () => {
+    const start = fromDateTimeLocalValue(customStartInput);
+    const end = fromDateTimeLocalValue(customEndInput);
+    if (start && end && end > start) {
+      setRangeMode("custom");
+      setSearchParams(
+        updateParams(searchParams, { rangeMode: "custom", from: start, to: end }),
+        { replace: true },
+      );
+      return;
+    }
+
+    const seededEnd = Math.floor(Date.now() / 1000);
+    const seededStart = seededEnd - activeHours * 3_600;
+    commitCustomRange(toDateTimeLocalValue(seededStart), toDateTimeLocalValue(seededEnd));
   };
 
   const commitView = (next: CompareView) => {
@@ -450,6 +601,7 @@ export function Compare() {
   };
 
   const refresh = () => {
+    if (!canFetch) return;
     if (metric.source === "load") void loadQuery.refetch();
     else void pingQuery.refetch();
   };
@@ -462,7 +614,7 @@ export function Compare() {
 
   const exportCsv = () => {
     const csv = buildComparisonCsv(rankingRows, metricKey);
-    downloadText(`vps-compare-${metricKey}-${activeHours}h.csv`, csv, "text/csv;charset=utf-8");
+    downloadText(`vps-compare-${metricKey}-${exportRangeToken}.csv`, csv, "text/csv;charset=utf-8");
     setExportStatus("CSV 已下载");
   };
 
@@ -551,17 +703,46 @@ export function Compare() {
             </button>
           ))}
         </div>
-        <div className="compare-segmented" aria-label="选择时间区间">
-          {rangeOptions.map((range) => (
+        <div className="compare-range-control">
+          <div className="compare-segmented" aria-label="选择时间区间">
+            {rangeOptions.map((range) => (
+              <button
+                key={range.value}
+                type="button"
+                data-active={activeRangeMode === "preset" && activeHours === range.value ? "true" : "false"}
+                onClick={() => commitHours(range.value)}
+              >
+                {range.label}
+              </button>
+            ))}
             <button
-              key={range.value}
               type="button"
-              data-active={activeHours === range.value ? "true" : "false"}
-              onClick={() => commitHours(range.value)}
+              data-active={activeRangeMode === "custom" ? "true" : "false"}
+              onClick={activateCustomRange}
             >
-              {range.label}
+              自定义
             </button>
-          ))}
+          </div>
+          {activeRangeMode === "custom" && (
+            <div className="compare-custom-range" aria-label="自定义时间范围">
+              <label>
+                <span>开始</span>
+                <input
+                  type="datetime-local"
+                  value={customStartInput}
+                  onChange={(event) => commitCustomRange(event.target.value, customEndInput)}
+                />
+              </label>
+              <label>
+                <span>结束</span>
+                <input
+                  type="datetime-local"
+                  value={customEndInput}
+                  onChange={(event) => commitCustomRange(customStartInput, event.target.value)}
+                />
+              </label>
+            </div>
+          )}
         </div>
         <div className="compare-segmented" aria-label="选择视图">
           <button
@@ -597,7 +778,7 @@ export function Compare() {
         <div className="compare-summary-card">
           <span>样本量</span>
           <strong>{totalSamples}</strong>
-          <small>{isFetching ? "刷新中" : `${activeHours} 小时区间`}</small>
+          <small>{isFetching ? "刷新中" : `${activeRangeLabel}区间`}</small>
         </div>
         <div className="compare-summary-card">
           <span>压力最高</span>
@@ -619,7 +800,7 @@ export function Compare() {
             </p>
           </div>
           <div className="compare-stage-actions">
-            <button type="button" className="compare-action-button" onClick={refresh} disabled={!canQuery}>
+            <button type="button" className="compare-action-button" onClick={refresh} disabled={!canFetch}>
               <RefreshCw size={14} />
               刷新
             </button>
@@ -648,14 +829,19 @@ export function Compare() {
             {queryError instanceof Error ? queryError.message : "历史数据加载失败"}
           </div>
         )}
+        {activeRangeMode === "custom" && !customRangeValid && (
+          <div className="compare-error">结束时间需要晚于开始时间</div>
+        )}
         {exportStatus && <div className="compare-export-status">{exportStatus}</div>}
         {view === "trend" ? (
           <ComparisonTrendChart
             metricKey={metricKey}
-            hours={activeHours}
+            hours={displayRangeHours}
             series={series}
-            loading={canQuery && isLoading}
+            loading={canFetch && isLoading}
             selectedCount={selectedNodes.length}
+            rangeStart={activeRangeMode === "custom" && customRangeValid ? customStartSeconds : null}
+            rangeEnd={activeRangeMode === "custom" && customRangeValid ? customEndSeconds : null}
           />
         ) : (
           <RankingTable metricKey={metricKey} rows={rankingRows} />

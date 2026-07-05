@@ -250,6 +250,58 @@
   flex: 1 1 360px;
 }
 
+.compare-range-control {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-range-control .compare-segmented {
+  flex: 0 1 auto;
+}
+
+.compare-custom-range {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 320px;
+  align-items: center;
+  gap: 8px;
+}
+
+.compare-custom-range label {
+  display: inline-flex;
+  min-width: 0;
+  height: 40px;
+  flex: 1 1 150px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 36%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-a) 68%, transparent);
+  padding: 0 10px;
+}
+
+.compare-custom-range span {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.compare-custom-range input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .compare-segmented button {
   display: inline-flex;
   min-height: 30px;
@@ -554,6 +606,16 @@
 
   .compare-segmented.is-metrics {
     flex-basis: 100%;
+  }
+
+  .compare-range-control,
+  .compare-custom-range {
+    width: 100%;
+  }
+
+  .compare-custom-range {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .compare-summary-grid,
