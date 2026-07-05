@@ -1,5 +1,5 @@
 import type { ComparisonLoadRecords, ComparisonLoadType } from "@/services/api";
-import type { LoadRecord, NodeInfo, PingRecord } from "@/types/komari";
+import type { LoadRecord, NodeInfo, PingRecord, PingTask } from "@/types/komari";
 import { formatTrafficRateLabel, trimFixed } from "@/utils/format";
 
 export type ComparisonMetricKey =
@@ -432,6 +432,48 @@ function buildPingSeries(
     region: String(node.region || ""),
     points: buildPingPoints(metric, recordsByUuid.get(node.uuid) ?? []),
   }));
+}
+
+export function buildPingTaskComparisonSeries({
+  metricKey,
+  node,
+  records,
+  tasks,
+  taskIds,
+}: {
+  metricKey: ComparisonMetricKey;
+  node: ComparisonNode;
+  records: PingRecord[];
+  tasks: PingTask[];
+  taskIds: number[];
+}): ComparisonSeries[] {
+  const metric = getComparisonMetric(metricKey);
+  if (metric.source !== "ping") return [];
+
+  const normalizedTaskIds = Array.from(new Set(taskIds))
+    .filter((taskId) => Number.isInteger(taskId) && taskId > 0)
+    .sort((left, right) => left - right);
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const recordsByTask = new Map<number, PingRecord[]>();
+  for (const record of records) {
+    if (record.client && record.client !== node.uuid) continue;
+    if (!normalizedTaskIds.includes(record.task_id)) continue;
+    const list = recordsByTask.get(record.task_id) ?? [];
+    list.push(record);
+    recordsByTask.set(record.task_id, list);
+  }
+
+  return normalizedTaskIds.map((taskId) => {
+    const task = taskById.get(taskId);
+    const target = task?.target?.trim() ?? "";
+    return {
+      uuid: `${node.uuid}:ping:${taskId}`,
+      name: task?.name?.trim() || `任务 #${taskId}`,
+      group: node.name || node.uuid,
+      region: target || String(taskId),
+      points: buildPingPoints(metric, recordsByTask.get(taskId) ?? []),
+    };
+  });
 }
 
 export function buildComparisonSeries({

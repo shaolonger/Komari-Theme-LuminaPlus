@@ -41,6 +41,7 @@ import {
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
+  buildPingTaskComparisonSeries,
   COMPARISON_METRICS,
   formatComparisonValue,
   getComparisonRequestHours,
@@ -84,6 +85,19 @@ function parseSelectedNodes(value: string | null) {
     : [];
 }
 
+function parseSelectedTaskIds(value: string | null) {
+  return value
+    ? Array.from(
+        new Set(
+          value
+            .split(",")
+            .map((item) => Number.parseInt(item.trim(), 10))
+            .filter((item) => Number.isInteger(item) && item > 0),
+        ),
+      ).sort((left, right) => left - right)
+    : [];
+}
+
 function toDateTimeLocalValue(seconds: number) {
   const date = new Date(seconds * 1000);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -116,6 +130,10 @@ function formatExportRangeToken(mode: CompareRangeMode, hours: number, start: nu
 
 function nodeLabel(node: NodeInfo) {
   return node.name.trim() || node.uuid;
+}
+
+function rowInstanceUuid(rowUuid: string) {
+  return rowUuid.split(":ping:")[0] || rowUuid;
 }
 
 function formatNodeMeta(node: NodeInfo) {
@@ -380,7 +398,7 @@ function RankingTable({
           {rows.map((row) => (
             <tr key={row.uuid}>
               <td>
-                <Link to={`/instance/${row.uuid}`} className="compare-ranking-name">
+                <Link to={`/instance/${rowInstanceUuid(row.uuid)}`} className="compare-ranking-name">
                   {row.name}
                 </Link>
               </td>
@@ -435,6 +453,9 @@ export function Compare() {
   const [selectedUuids, setSelectedUuids] = useState(() =>
     parseSelectedNodes(searchParams.get("nodes")),
   );
+  const [selectedPingTaskIds] = useState(() =>
+    parseSelectedTaskIds(searchParams.get("pingTasks")),
+  );
   const [metricKey, setMetricKey] = useState<ComparisonMetricKey>(initialMetric);
   const [hours, setHours] = useState(Number.isFinite(initialHours) && initialHours > 0 ? initialHours : DEFAULT_HOURS);
   const [view, setView] = useState<CompareView>(initialView);
@@ -459,6 +480,8 @@ export function Compare() {
   const metric = getComparisonMetric(metricKey);
   const selectedKey = selectedNodes.map((node) => node.uuid).join(",");
   const compareNodes = useMemo(() => nodesToComparisonNodes(selectedNodes), [selectedNodes]);
+  const singleNodePingTaskMode =
+    metric.source === "ping" && compareNodes.length === 1 && selectedPingTaskIds.length > 0;
   const loadRanges = useMemo(
     () => buildLoadTimeRangeOptions(config?.record_preserve_time).filter((range) => range.value > 0),
     [config?.record_preserve_time],
@@ -535,14 +558,33 @@ export function Compare() {
     refetchOnWindowFocus: false,
   });
   const rawSeries = useMemo(
-    () =>
-      buildComparisonSeries({
+    () => {
+      if (singleNodePingTaskMode && compareNodes[0]) {
+        return buildPingTaskComparisonSeries({
+          metricKey,
+          node: compareNodes[0],
+          records: pingQuery.data?.records ?? [],
+          tasks: pingQuery.data?.tasks ?? [],
+          taskIds: selectedPingTaskIds,
+        });
+      }
+
+      return buildComparisonSeries({
         metricKey,
         nodes: compareNodes,
         loadRecords: loadQuery.data ?? {},
         pingRecords: pingQuery.data?.records ?? [],
-      }),
-    [compareNodes, loadQuery.data, metricKey, pingQuery.data?.records],
+      });
+    },
+    [
+      compareNodes,
+      loadQuery.data,
+      metricKey,
+      pingQuery.data?.records,
+      pingQuery.data?.tasks,
+      selectedPingTaskIds,
+      singleNodePingTaskMode,
+    ],
   );
   const series = useMemo(
     () =>
@@ -822,7 +864,9 @@ export function Compare() {
             <p>
               {selectedNodes.length === 0
                 ? "选择 VPS 后查看历史趋势。"
-                : selectedNodes.length === 1
+                : singleNodePingTaskMode
+                  ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${selectedPingTaskIds.length} 个 Ping 任务趋势。`
+                  : selectedNodes.length === 1
                   ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${metric.label}。`
                   : `正在比较 ${selectedNodes.length} 台 VPS 的 ${metric.label}。`}
             </p>
@@ -886,7 +930,7 @@ export function Compare() {
             rankingRows.slice(0, 4).map((row, index) => (
               <Link
                 key={row.uuid}
-                to={`/instance/${row.uuid}`}
+                to={`/instance/${rowInstanceUuid(row.uuid)}`}
                 className="compare-rank-card"
                 style={{ "--rank": index + 1 } as CSSProperties}
               >
