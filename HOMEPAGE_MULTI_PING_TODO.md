@@ -26,7 +26,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 ## Tasks
 
 - [x] Create this TODO with product decisions, acceptance criteria, and recovery instructions.
-- [ ] Extend Ping binding utilities and types for multi-task interpretation while preserving old single-task helper behavior.
+- [x] Extend Ping binding utilities and types for multi-task interpretation while preserving old single-task helper behavior.
 - [ ] Aggregate homepage Ping overview across all bound tasks per node, including task count metadata and merged one-hour buckets.
 - [ ] Update theme settings Ping binding UI so a VPS can be assigned to multiple Ping tasks, with accurate copy, counters, and no single-task exclusion.
 - [ ] Update homepage large/compact Ping card presentation to surface multi-task summaries without increasing card density.

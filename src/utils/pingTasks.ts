@@ -57,3 +57,39 @@ export function invertHomepagePingTaskBindings(
 
   return selectedTaskByClient;
 }
+
+export function getHomepagePingTaskIdsByClient(
+  bindings: HomepagePingTaskBindings,
+): Map<string, number[]> {
+  const taskIdsByClient = new Map<string, number[]>();
+  const entries = Object.entries(normalizeHomepagePingTaskBindings(bindings)).sort(
+    ([left], [right]) => Number(left) - Number(right),
+  );
+
+  for (const [taskId, clients] of entries) {
+    const numericTaskId = Number(taskId);
+    if (!Number.isInteger(numericTaskId) || numericTaskId <= 0) {
+      continue;
+    }
+    for (const client of clients) {
+      const current = taskIdsByClient.get(client) ?? [];
+      if (!current.includes(numericTaskId)) {
+        current.push(numericTaskId);
+        taskIdsByClient.set(client, current);
+      }
+    }
+  }
+
+  return taskIdsByClient;
+}
+
+export function countHomepagePingBindingPairs(bindings: HomepagePingTaskBindings) {
+  return Object.values(normalizeHomepagePingTaskBindings(bindings)).reduce(
+    (total, clients) => total + clients.length,
+    0,
+  );
+}
+
+export function countHomepagePingBoundClients(bindings: HomepagePingTaskBindings) {
+  return getHomepagePingTaskIdsByClient(bindings).size;
+}
