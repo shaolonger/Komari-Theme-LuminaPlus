@@ -45,6 +45,7 @@ import {
   formatComparisonValue,
   getComparisonMetric,
   nodesToComparisonNodes,
+  prepareComparisonTrendData,
   type ComparisonMetricKey,
   type ComparisonRankingRow,
   type ComparisonSeries,
@@ -84,36 +85,6 @@ function getSelectedMetricLoadType(metricKey: ComparisonMetricKey) {
     throw new Error(`Metric ${metricKey} does not use load records`);
   }
   return metric.loadType;
-}
-
-function downsamplePoints(points: ComparisonSeries["points"], limit: number) {
-  if (points.length <= limit || limit < 2) return points;
-
-  const result: ComparisonSeries["points"] = [];
-  const lastIndex = points.length - 1;
-  const step = lastIndex / (limit - 1);
-  let previousIndex = -1;
-  for (let index = 0; index < limit; index += 1) {
-    const sourceIndex = Math.min(lastIndex, Math.round(index * step));
-    if (sourceIndex === previousIndex) continue;
-    result.push(points[sourceIndex]);
-    previousIndex = sourceIndex;
-  }
-  return result;
-}
-
-function alignSeriesData(series: ComparisonSeries[]): uPlot.AlignedData {
-  const times = Array.from(
-    new Set(series.flatMap((item) => item.points.map((point) => point.time))),
-  ).sort((a, b) => a - b);
-
-  const valueMaps = series.map(
-    (item) => new Map(item.points.map((point) => [point.time, point.value])),
-  );
-  return [
-    times,
-    ...valueMaps.map((map) => times.map((time) => map.get(time) ?? null)),
-  ] as uPlot.AlignedData;
 }
 
 function formatAxisValue(metricKey: ComparisonMetricKey, value: number) {
@@ -178,16 +149,19 @@ function ComparisonTrendChart({
     time: "",
   });
   const metric = getComparisonMetric(metricKey);
-  const visualSeries = useMemo(
-    () =>
-      series.map((item) => ({
-        ...item,
-        points: downsamplePoints(item.points, 900),
-      })),
-    [series],
+  const trend = useMemo(
+    () => prepareComparisonTrendData({ metricKey, series, hours }),
+    [hours, metricKey, series],
   );
-  const data = useMemo(() => alignSeriesData(visualSeries), [visualSeries]);
+  const visualSeries = trend.series;
+  const data = useMemo(
+    () => [trend.times, ...trend.valuesBySeries] as uPlot.AlignedData,
+    [trend],
+  );
   dataRef.current = data;
+  const hasRenderableData = trend.valuesBySeries.some((values) =>
+    values.some((value) => typeof value === "number" && Number.isFinite(value)),
+  );
   const colors = useMemo(
     () => visualSeries.map((_, index) => colorForSeries(index, visualSeries.length)),
     [visualSeries],
@@ -239,7 +213,7 @@ function ComparisonTrendChart({
         ...visualSeries.map((item, index) => ({
           label: item.name,
           stroke: colors[index],
-          width: 1.8,
+          width: metric.source === "ping" ? 2 : 1.8,
           spanGaps: false,
           points: { show: false },
         })),
@@ -254,7 +228,7 @@ function ComparisonTrendChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     } as uPlot.Options;
-  }, [colors, h, hours, metric.axisKind, metric.label, metricKey, resolvedAppearance, visualSeries, w]);
+  }, [colors, h, hours, metric.axisKind, metric.label, metric.source, metricKey, resolvedAppearance, visualSeries, w]);
 
   if (loading) {
     return (
@@ -269,14 +243,14 @@ function ComparisonTrendChart({
     return <div className="compare-chart-empty">请选择 VPS 查看历史数据</div>;
   }
 
-  if (!visualSeries.some((item) => item.points.length > 0)) {
+  if (!hasRenderableData) {
     return <div className="compare-chart-empty">当前选择下暂无历史数据</div>;
   }
 
   return (
     <div ref={ref} className="compare-chart-wrap">
       <UplotReact
-        key={`${metricKey}-${hours}-${visualSeries.map((item) => item.uuid).join("-")}`}
+        key={`${metricKey}-${hours}-${trend.bucketSeconds ?? "raw"}-${visualSeries.map((item) => item.uuid).join("-")}`}
         options={options}
         data={data}
         resetScales={false}

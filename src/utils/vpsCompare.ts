@@ -47,6 +47,15 @@ export interface ComparisonSeries {
   points: ComparisonPoint[];
 }
 
+export interface ComparisonTrendData {
+  series: ComparisonSeries[];
+  times: number[];
+  valuesBySeries: Array<Array<number | null | undefined>>;
+  bucketSeconds: number | null;
+  smoothWindow: number;
+  rawSamples: number;
+}
+
 export interface ComparisonStats {
   samples: number;
   average: number | null;
@@ -155,6 +164,23 @@ export const COMPARISON_METRICS: ComparisonMetricDefinition[] = [
 ];
 
 const METRIC_BY_KEY = new Map(COMPARISON_METRICS.map((metric) => [metric.key, metric]));
+const COMPARISON_PING_TARGET_POINTS = 220;
+const COMPARISON_LONG_GAP_BUCKETS = 3;
+const COMPARISON_BUCKET_STEPS = [
+  30,
+  60,
+  120,
+  300,
+  600,
+  900,
+  1_800,
+  3_600,
+  7_200,
+  14_400,
+  21_600,
+  43_200,
+  86_400,
+] as const;
 
 export function getComparisonMetric(key: ComparisonMetricKey) {
   const metric = METRIC_BY_KEY.get(key);
@@ -170,6 +196,82 @@ export function toComparisonSeconds(value: string | number): number {
   }
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed / 1000;
+}
+
+function median(values: number[]) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) return (sorted[mid - 1] + sorted[mid]) / 2;
+  return sorted[mid];
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function aggregateTrendBucket(metricKey: ComparisonMetricKey, values: number[]) {
+  if (metricKey === "ping_latency") return median(values);
+  return average(values);
+}
+
+function chooseComparisonBucketSeconds(metric: ComparisonMetricDefinition, rangeSeconds: number) {
+  if (metric.source !== "ping") return null;
+  const safeRange = Number.isFinite(rangeSeconds) && rangeSeconds > 0 ? rangeSeconds : 3_600;
+  const desired = Math.max(60, Math.ceil(safeRange / COMPARISON_PING_TARGET_POINTS));
+  return COMPARISON_BUCKET_STEPS.find((step) => step >= desired) ?? 86_400;
+}
+
+function chooseComparisonSmoothWindow(metricKey: ComparisonMetricKey, bucketSeconds: number | null) {
+  if (bucketSeconds == null) return 1;
+  if (metricKey === "ping_latency") return bucketSeconds <= 60 ? 5 : 3;
+  if (metricKey === "ping_loss") return bucketSeconds <= 120 ? 3 : 1;
+  return 1;
+}
+
+function smoothTrendValues(
+  values: Array<number | null | undefined>,
+  windowPoints: number,
+): Array<number | null | undefined> {
+  if (windowPoints <= 1) return values;
+  const numericCount = values.filter((value) => typeof value === "number" && Number.isFinite(value)).length;
+  if (numericCount < Math.max(3, windowPoints)) return values;
+  const half = Math.floor(windowPoints / 2);
+  return values.map((value, index) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    let sum = 0;
+    let count = 0;
+    for (
+      let pointer = Math.max(0, index - half);
+      pointer <= Math.min(values.length - 1, index + half);
+      pointer += 1
+    ) {
+      const nearby = values[pointer];
+      if (typeof nearby === "number" && Number.isFinite(nearby)) {
+        sum += nearby;
+        count += 1;
+      }
+    }
+    return count > 0 ? sum / count : value;
+  });
+}
+
+function breakLongTrendGaps(
+  values: Array<number | null | undefined>,
+): Array<number | null | undefined> {
+  const out = values.slice();
+  let previousNumericIndex = -1;
+  for (let index = 0; index < out.length; index += 1) {
+    const value = out[index];
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    if (previousNumericIndex >= 0 && index - previousNumericIndex > COMPARISON_LONG_GAP_BUCKETS) {
+      const breakIndex = previousNumericIndex + 1;
+      if (out[breakIndex] === undefined) out[breakIndex] = null;
+    }
+    previousNumericIndex = index;
+  }
+  return out;
 }
 
 function normalizeNumber(value: number | null | undefined) {
@@ -302,6 +404,141 @@ export function buildComparisonSeries({
   return metric.source === "load"
     ? buildLoadSeries(metric, nodes, loadRecords)
     : buildPingSeries(metric, nodes, pingRecords);
+}
+
+function filterComparisonPoints(
+  points: ComparisonPoint[],
+  start: number | null | undefined,
+  end: number | null | undefined,
+) {
+  return points.filter((point) => {
+    if (start != null && point.time < start) return false;
+    if (end != null && point.time > end) return false;
+    return true;
+  });
+}
+
+export function trimComparisonSeriesToRange(
+  series: ComparisonSeries[],
+  range?: { start?: number | null; end?: number | null },
+): ComparisonSeries[] {
+  if (!range || (range.start == null && range.end == null)) return series;
+  return series.map((item) => ({
+    ...item,
+    points: filterComparisonPoints(item.points, range.start, range.end),
+  }));
+}
+
+function alignExactComparisonSeries(series: ComparisonSeries[]): ComparisonTrendData {
+  const times = Array.from(
+    new Set(series.flatMap((item) => item.points.map((point) => point.time))),
+  ).sort((a, b) => a - b);
+  const valueMaps = series.map(
+    (item) => new Map(item.points.map((point) => [point.time, point.value])),
+  );
+  return {
+    series,
+    times,
+    valuesBySeries: valueMaps.map((map) => times.map((time) => map.get(time) ?? null)),
+    bucketSeconds: null,
+    smoothWindow: 1,
+    rawSamples: series.reduce((total, item) => total + item.points.length, 0),
+  };
+}
+
+function resolveTrendExtent({
+  series,
+  hours,
+  start,
+  end,
+}: {
+  series: ComparisonSeries[];
+  hours: number;
+  start?: number | null;
+  end?: number | null;
+}) {
+  const allTimes = series.flatMap((item) => item.points.map((point) => point.time));
+  const minTime = allTimes.length ? Math.min(...allTimes) : null;
+  const maxTime = allTimes.length ? Math.max(...allTimes) : null;
+  const resolvedEnd = end ?? maxTime;
+  if (resolvedEnd == null || !Number.isFinite(resolvedEnd)) return null;
+
+  const fallbackStart = resolvedEnd - Math.max(1, hours) * 3_600;
+  const resolvedStart = start ?? (minTime == null ? fallbackStart : Math.max(fallbackStart, minTime));
+  if (!Number.isFinite(resolvedStart) || resolvedStart >= resolvedEnd) return null;
+  return { start: resolvedStart, end: resolvedEnd };
+}
+
+export function prepareComparisonTrendData({
+  metricKey,
+  series,
+  hours,
+  start,
+  end,
+}: {
+  metricKey: ComparisonMetricKey;
+  series: ComparisonSeries[];
+  hours: number;
+  start?: number | null;
+  end?: number | null;
+}): ComparisonTrendData {
+  const metric = getComparisonMetric(metricKey);
+  const rangedSeries = trimComparisonSeriesToRange(series, { start, end });
+  const rawSamples = rangedSeries.reduce((total, item) => total + item.points.length, 0);
+  if (metric.source !== "ping") {
+    return alignExactComparisonSeries(rangedSeries);
+  }
+
+  const extent = resolveTrendExtent({ series: rangedSeries, hours, start, end });
+  if (!extent) {
+    return {
+      series: rangedSeries,
+      times: [],
+      valuesBySeries: rangedSeries.map(() => []),
+      bucketSeconds: chooseComparisonBucketSeconds(metric, Math.max(1, hours) * 3_600),
+      smoothWindow: 1,
+      rawSamples,
+    };
+  }
+
+  const bucketSeconds = chooseComparisonBucketSeconds(metric, extent.end - extent.start) ?? 60;
+  const smoothWindow = chooseComparisonSmoothWindow(metricKey, bucketSeconds);
+  const bucketStart = Math.floor(extent.start / bucketSeconds) * bucketSeconds;
+  const bucketEnd = Math.ceil(extent.end / bucketSeconds) * bucketSeconds;
+  const bucketCount = Math.max(1, Math.floor((bucketEnd - bucketStart) / bucketSeconds) + 1);
+  const times = Array.from(
+    { length: bucketCount },
+    (_, index) => bucketStart + index * bucketSeconds,
+  );
+
+  const valuesBySeries = rangedSeries.map((item) => {
+    const buckets = new Map<number, number[]>();
+    for (const point of item.points) {
+      if (point.time < extent.start || point.time > extent.end) continue;
+      const index = Math.min(
+        bucketCount - 1,
+        Math.max(0, Math.floor((point.time - bucketStart) / bucketSeconds)),
+      );
+      const bucket = buckets.get(index) ?? [];
+      bucket.push(point.value);
+      buckets.set(index, bucket);
+    }
+
+    const bucketed = times.map((_, index) => {
+      const values = buckets.get(index);
+      return values ? aggregateTrendBucket(metricKey, values) : undefined;
+    });
+    return smoothTrendValues(breakLongTrendGaps(bucketed), smoothWindow);
+  });
+
+  return {
+    series: rangedSeries,
+    times,
+    valuesBySeries,
+    bucketSeconds,
+    smoothWindow,
+    rawSamples,
+  };
 }
 
 function percentile(sortedValues: number[], ratio: number) {
