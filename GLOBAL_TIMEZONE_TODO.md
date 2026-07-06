@@ -16,7 +16,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 
 - [x] Save this global time zone TODO with scope, product decisions, and recovery instructions.
 - [x] Add theme setting normalization and a reusable display-time utility for IANA time zones.
-- [ ] Add a theme settings UI control with quick presets, custom IANA input, validation, and live preview.
+- [x] Add a theme settings UI control with quick presets, custom IANA input, validation, and live preview.
 - [ ] Apply the display time zone to shared instance/compare chart axes, tooltips, coverage labels, export range labels, and compare custom range parsing.
 - [ ] Apply the display time zone to instance details, homepage Ping hover windows, and 3D replay/snapshot time labels.
 - [ ] Add targeted tests for time zone normalization, absolute formatting, custom datetime conversion, and Ping bucket labels.

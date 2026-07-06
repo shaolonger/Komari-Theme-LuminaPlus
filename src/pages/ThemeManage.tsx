@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  Globe2,
   LayoutTemplate,
   LayoutGrid,
   ListFilter,
@@ -72,6 +73,15 @@ import {
   type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
 import {
+  DISPLAY_TIME_ZONE_PRESETS,
+  SYSTEM_DISPLAY_TIME_ZONE,
+  describeDisplayTimeZone,
+  formatDisplayDateTime,
+  isValidIanaTimeZone,
+  normalizeDisplayTimeZone,
+  type DisplayTimeZone,
+} from "@/utils/timeDisplay";
+import {
   getDefaultOverviewRatingLabelText,
   OVERVIEW_RATING_STYLES,
   type OverviewRatingKind,
@@ -83,6 +93,15 @@ const APPEARANCE_OPTIONS = [
   { value: "system", label: "跟随系统", icon: SunMoon },
   { value: "dark", label: "深色", icon: Moon },
 ] as const;
+const DISPLAY_TIME_ZONE_LABELS: Record<string, string> = {
+  [SYSTEM_DISPLAY_TIME_ZONE]: "跟随浏览器",
+  UTC: "UTC",
+  "Asia/Shanghai": "上海",
+  "Asia/Tokyo": "东京",
+  "America/Los_Angeles": "洛杉矶",
+  "America/New_York": "纽约",
+  "Europe/London": "伦敦",
+};
 const NODE_VIEW_MODE_OPTIONS = [
   { value: "large", label: "大卡片", icon: LayoutGrid },
   { value: "compact", label: "小卡片", icon: Rows3 },
@@ -201,6 +220,7 @@ function applyAvailableClientAssignments(
 function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSettings {
   return {
     defaultAppearance: settings.defaultAppearance,
+    displayTimeZone: settings.displayTimeZone,
     desktopNodeViewMode: settings.desktopNodeViewMode,
     mobileNodeViewMode: settings.mobileNodeViewMode,
     homepagePingBindings: settings.homepagePingBindings,
@@ -241,6 +261,8 @@ function managedSettingsSignature(settings: ThemeSettings & Record<string, unkno
 export function ThemeManage() {
   const { data: config, isLoading: configLoading } = usePublicConfig();
   const [draftAppearance, setDraftAppearance] = useState<Appearance>("system");
+  const [draftDisplayTimeZoneText, setDraftDisplayTimeZoneText] =
+    useState<DisplayTimeZone>(DEFAULT_THEME_SETTINGS.displayTimeZone);
   const [draftDesktopNodeViewMode, setDraftDesktopNodeViewMode] =
     useState<NodeViewMode>("large");
   const [draftMobileNodeViewMode, setDraftMobileNodeViewMode] =
@@ -293,6 +315,7 @@ export function ThemeManage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [accessRevoked, setAccessRevoked] = useState(false);
+  const [timePreviewNow, setTimePreviewNow] = useState(() => Date.now());
 
   const {
     data: pingTasks,
@@ -332,6 +355,7 @@ export function ThemeManage() {
   // 把服务端设置灌入草稿字段的唯一出口,reseed effect 和重置按钮都走它,避免两边逻辑漂移。
   const seedDrafts = useCallback((next: ResolvedThemeSettings) => {
     setDraftAppearance(next.defaultAppearance);
+    setDraftDisplayTimeZoneText(next.displayTimeZone);
     setDraftDesktopNodeViewMode(next.desktopNodeViewMode);
     setDraftMobileNodeViewMode(next.mobileNodeViewMode);
     setDraftBindings(next.homepagePingBindings);
@@ -372,6 +396,11 @@ export function ThemeManage() {
     lastSeededSignatureRef.current = sourceSignature;
     seedDrafts(sourceThemeSettings);
   }, [config, sourceSignature, sourceThemeSettings, seedDrafts]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTimePreviewNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
@@ -433,6 +462,23 @@ export function ThemeManage() {
   const normalizedDraftCostRateApiUrl = normalizeCostRateApiUrl(draftCostRateApiUrl);
   const draftCostRateApiUrlInvalid =
     draftCostRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draftCostRateApiUrl.trim());
+  const draftDisplayTimeZoneInput = draftDisplayTimeZoneText.trim();
+  const draftDisplayTimeZoneInvalid =
+    draftDisplayTimeZoneInput !== "" &&
+    draftDisplayTimeZoneInput.toLowerCase() !== SYSTEM_DISPLAY_TIME_ZONE &&
+    !isValidIanaTimeZone(draftDisplayTimeZoneInput);
+  const normalizedDraftDisplayTimeZone = normalizeDisplayTimeZone(draftDisplayTimeZoneText);
+  const displayTimeZonePreview = draftDisplayTimeZoneInvalid
+    ? "请输入有效的 IANA 时区，例如 Asia/Shanghai"
+    : formatDisplayDateTime(timePreviewNow, normalizedDraftDisplayTimeZone, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      });
   const prunedDraftBindings = useMemo(() => pruneBindings(draftBindings), [draftBindings]);
   const normalizedDraftPingPrimaryTasks = useMemo(
     () => normalizeHomepagePingPrimaryTasks(draftPingPrimaryTasks, prunedDraftBindings),
@@ -448,6 +494,7 @@ export function ThemeManage() {
   const draftThemeSettings = useMemo<ThemeSettings>(
     () => ({
       defaultAppearance: draftAppearance,
+      displayTimeZone: normalizedDraftDisplayTimeZone,
       desktopNodeViewMode: draftDesktopNodeViewMode,
       mobileNodeViewMode: draftMobileNodeViewMode,
       homepagePingBindings: prunedDraftBindings,
@@ -481,6 +528,7 @@ export function ThemeManage() {
     }),
     [
       draftAppearance,
+      normalizedDraftDisplayTimeZone,
       draftDesktopNodeViewMode,
       draftMobileNodeViewMode,
       prunedDraftBindings,
@@ -523,7 +571,11 @@ export function ThemeManage() {
   // 标为 dirty(重置可用),而保存按钮再额外按合法性把关(见下文)。
   const costRateApiUrlDirty =
     draftCostRateApiUrl.trim() !== sourceThemeSettings.costRateApiUrl;
-  const isDirty = draftSignature !== sourceSignature || costRateApiUrlDirty;
+  const displayTimeZoneInputDirty =
+    draftDisplayTimeZoneInvalid ||
+    normalizedDraftDisplayTimeZone !== sourceThemeSettings.displayTimeZone;
+  const isDirty =
+    draftSignature !== sourceSignature || costRateApiUrlDirty || displayTimeZoneInputDirty;
 
   // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
@@ -591,6 +643,10 @@ export function ThemeManage() {
 
   const handleSave = async () => {
     if (!config?.theme) return;
+    if (draftDisplayTimeZoneInvalid) {
+      setError("显示时区不是有效的 IANA 时区");
+      return;
+    }
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -686,7 +742,7 @@ export function ThemeManage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={!isDirty || saving || draftCostRateApiUrlInvalid}
+            disabled={!isDirty || saving || draftCostRateApiUrlInvalid || draftDisplayTimeZoneInvalid}
             className="theme-manage-button is-primary"
           >
             {saving ? <Spinner size={14} /> : <Save size={14} />}
@@ -756,6 +812,76 @@ export function ThemeManage() {
               <span>{label}</span>
             </button>
           ))}
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="显示时区"
+        description="统一控制主题内绝对时间的显示时区；数据本身和查询时间戳保持不变。"
+        aside={<Globe2 size={16} />}
+      >
+        <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                快速选择
+              </div>
+              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                当前: {describeDisplayTimeZone(normalizedDraftDisplayTimeZone)}
+              </div>
+            </div>
+            <div className="instance-segmented is-scrollable">
+              {DISPLAY_TIME_ZONE_PRESETS.map((timeZone) => (
+                <button
+                  key={timeZone}
+                  type="button"
+                  data-active={
+                    !draftDisplayTimeZoneInvalid && normalizedDraftDisplayTimeZone === timeZone
+                      ? "true"
+                      : "false"
+                  }
+                  aria-pressed={
+                    !draftDisplayTimeZoneInvalid && normalizedDraftDisplayTimeZone === timeZone
+                  }
+                  onClick={() => setDraftDisplayTimeZoneText(timeZone)}
+                >
+                  {DISPLAY_TIME_ZONE_LABELS[timeZone] ?? timeZone}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="surface-inset flex flex-col gap-2 px-4 py-4">
+            <span className="text-[13px] font-semibold text-[var(--text-primary)]">
+              自定义 IANA 时区
+            </span>
+            <input
+              value={draftDisplayTimeZoneText}
+              onChange={(event) => setDraftDisplayTimeZoneText(event.target.value)}
+              placeholder="Asia/Shanghai"
+              className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
+              aria-invalid={draftDisplayTimeZoneInvalid}
+            />
+            <span
+              className={clsx(
+                "text-[11px] leading-relaxed",
+                draftDisplayTimeZoneInvalid
+                  ? "text-[var(--status-offline)]"
+                  : "text-[var(--text-tertiary)]",
+              )}
+            >
+              {draftDisplayTimeZoneInvalid
+                ? "无法识别该时区，请使用 IANA 名称。"
+                : "留空或填 system 即跟随浏览器。"}
+            </span>
+          </label>
+        </div>
+
+        <div className="surface-inset mt-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <span className="text-[12px] text-[var(--text-tertiary)]">当前显示时间</span>
+          <strong className="text-[15px] tabular text-[var(--text-primary)]">
+            {displayTimeZonePreview}
+          </strong>
         </div>
       </InstancePanel>
 
