@@ -1,0 +1,34 @@
+# Global Display Time Zone TODO
+
+Scope: add a global theme-level display time zone setting. The theme must keep all stored and queried timestamps unchanged, and only change how wall-clock time is shown or interpreted in the UI.
+
+Context recovery note: if LLM context compaction happens, resume from this file. Run `git status --short`, `git log --oneline -10`, and continue from the first unchecked task. Each task must be implemented, checked, committed, and then marked complete before moving on.
+
+## Product Decisions
+
+- Default behavior stays compatible: `displayTimeZone: "system"` follows the browser/system time zone.
+- Specific IANA zones such as `UTC`, `Asia/Shanghai`, `Asia/Tokyo`, `America/Los_Angeles`, and `Europe/London` can be selected.
+- The setting affects absolute wall-clock displays: chart axes, chart tooltips, custom range inputs, last update labels, Ping hover windows, and 3D replay labels.
+- The setting must not affect durations or relative values: uptime, "x days remaining", "x minutes ago", record retention windows, refresh intervals, or API query timestamps.
+- Invalid saved time zones must normalize back to `system`.
+
+## Tasks
+
+- [x] Save this global time zone TODO with scope, product decisions, and recovery instructions.
+- [ ] Add theme setting normalization and a reusable display-time utility for IANA time zones.
+- [ ] Add a theme settings UI control with quick presets, custom IANA input, validation, and live preview.
+- [ ] Apply the display time zone to shared instance/compare chart axes, tooltips, coverage labels, export range labels, and compare custom range parsing.
+- [ ] Apply the display time zone to instance details, homepage Ping hover windows, and 3D replay/snapshot time labels.
+- [ ] Add targeted tests for time zone normalization, absolute formatting, custom datetime conversion, and Ping bucket labels.
+- [ ] Run typecheck, targeted tests, package build, and browser smoke verification.
+- [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
+
+## Acceptance Criteria
+
+- The theme can be set to follow browser/system time or a concrete IANA time zone.
+- Existing installations without the setting behave exactly as before.
+- Absolute timestamps are displayed consistently across homepage, instance details, charts, compare, and 3D replay.
+- Compare custom range inputs represent and parse wall-clock time in the selected display time zone.
+- Raw data, stored timestamps, and API query semantics remain UTC/epoch based and unchanged.
+- Invalid custom time zones cannot break the UI and are normalized back to `system`.
+- Tests, typecheck, package build, push, tag, and GitHub release all complete.
