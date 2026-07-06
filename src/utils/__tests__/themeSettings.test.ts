@@ -15,6 +15,16 @@ describe("normalizeThemeSettings", () => {
     expect(normalizeThemeSettings({ showOverviewRatings: false }).showOverviewRatings).toBe(false);
   });
 
+  it("normalizes the global display time zone", () => {
+    expect(normalizeThemeSettings({}).displayTimeZone).toBe("system");
+    expect(normalizeThemeSettings({ displayTimeZone: "Asia/Shanghai" }).displayTimeZone).toBe(
+      "Asia/Shanghai",
+    );
+    expect(normalizeThemeSettings({ displayTimeZone: "Mars/Base" }).displayTimeZone).toBe(
+      "system",
+    );
+  });
+
   it("keeps a node bound to multiple homepage Ping tasks", () => {
     expect(
       normalizeThemeSettings({
