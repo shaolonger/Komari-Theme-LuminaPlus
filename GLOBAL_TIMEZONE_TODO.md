@@ -20,7 +20,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Apply the display time zone to shared instance/compare chart axes, tooltips, coverage labels, export range labels, and compare custom range parsing.
 - [x] Apply the display time zone to instance details, homepage Ping hover windows, and 3D replay/snapshot time labels.
 - [x] Add targeted tests for time zone normalization, absolute formatting, custom datetime conversion, and Ping bucket labels.
-- [ ] Run typecheck, targeted tests, package build, and browser smoke verification.
+- [x] Run typecheck, targeted tests, package build, and browser smoke verification.
 - [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
 
 ## Acceptance Criteria
@@ -32,3 +32,11 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - Raw data, stored timestamps, and API query semantics remain UTC/epoch based and unchanged.
 - Invalid custom time zones cannot break the UI and are normalized back to `system`.
 - Tests, typecheck, package build, push, tag, and GitHub release all complete.
+
+## Verification Notes
+
+- Targeted tests: `npx vitest run src/utils/__tests__/timeDisplay.test.ts src/components/node/__tests__/pingBucketText.test.ts src/utils/__tests__/themeSettings.test.ts`.
+- Typecheck: `npm run typecheck`.
+- Package build: `npm run package`.
+- Browser smoke: `/`, `/compare?range=custom&from=0&to=3600&metric=cpu&tab=trend`, and `/fleet-3d?demo=1` render without console errors in local dev.
+- Local standalone limitation: `/?view=theme-manage` is gated by Komari auth and shows `Request /api/me failed: 404`; no frontend crash or console errors were observed.
