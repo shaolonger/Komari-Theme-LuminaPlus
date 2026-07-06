@@ -21,7 +21,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Apply the display time zone to instance details, homepage Ping hover windows, and 3D replay/snapshot time labels.
 - [x] Add targeted tests for time zone normalization, absolute formatting, custom datetime conversion, and Ping bucket labels.
 - [x] Run typecheck, targeted tests, package build, and browser smoke verification.
-- [ ] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
+- [x] Update version, build package, tag, push to GitHub, and create a GitHub release with the new zip asset.
 
 ## Acceptance Criteria
 
