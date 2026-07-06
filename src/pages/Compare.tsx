@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import UplotReact from "uplot-react";
@@ -36,6 +36,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAllNodeMeta, useVisibleNodeUuids } from "@/hooks/useNode";
 import { usePreferences } from "@/hooks/usePreferences";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   buildComparisonCsv,
   buildComparisonMarkdown,
@@ -54,6 +55,12 @@ import {
   type ComparisonRankingRow,
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
+import {
+  formatDateTimeLocalValue,
+  formatExportRangeToken as formatDisplayExportRangeToken,
+  parseDateTimeLocalInZone,
+  type DisplayTimeZone,
+} from "@/utils/timeDisplay";
 import type { NodeInfo } from "@/types/komari";
 
 const DEFAULT_METRIC: ComparisonMetricKey = "cpu";
@@ -98,17 +105,6 @@ function parseSelectedTaskIds(value: string | null) {
     : [];
 }
 
-function toDateTimeLocalValue(seconds: number) {
-  const date = new Date(seconds * 1000);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function fromDateTimeLocalValue(value: string) {
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? Math.floor(time / 1000) : null;
-}
-
 function formatRangeDuration(hours: number) {
   if (hours >= 24 && hours % 24 === 0) return `${hours / 24} 天`;
   if (hours >= 24) return `${(hours / 24).toFixed(1)} 天`;
@@ -123,9 +119,15 @@ function formatDurationSeconds(seconds: number | null) {
   return `${seconds} 秒`;
 }
 
-function formatExportRangeToken(mode: CompareRangeMode, hours: number, start: number | null, end: number | null) {
+function formatExportRangeToken(
+  mode: CompareRangeMode,
+  hours: number,
+  start: number | null,
+  end: number | null,
+  displayTimeZone: DisplayTimeZone,
+) {
   if (mode !== "custom" || start == null || end == null) return `${hours}h`;
-  return `${new Date(start * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}-${new Date(end * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
+  return formatDisplayExportRangeToken(start, end, displayTimeZone);
 }
 
 function nodeLabel(node: NodeInfo) {
@@ -214,6 +216,7 @@ function ComparisonTrendChart({
   selectedCount,
   rangeStart,
   rangeEnd,
+  displayTimeZone,
 }: {
   metricKey: ComparisonMetricKey;
   hours: number;
@@ -222,6 +225,7 @@ function ComparisonTrendChart({
   selectedCount: number;
   rangeStart?: number | null;
   rangeEnd?: number | null;
+  displayTimeZone: DisplayTimeZone;
 }) {
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref } = useResponsiveChartSize("wide");
@@ -257,6 +261,7 @@ function ComparisonTrendChart({
     const tooltipHooks = buildChartTooltipHooks({
       dataRef,
       rangeHours: hours,
+      displayTimeZone,
       estimatedWidth: 220,
       setTooltip,
       buildRows: (idx) =>
@@ -283,7 +288,7 @@ function ComparisonTrendChart({
           grid: { stroke: grid, width: 1 },
           ticks: { stroke: grid },
           size: hours >= 72 ? 38 : 34,
-          values: createTimeAxisFormatter(hours),
+          values: createTimeAxisFormatter(hours, displayTimeZone),
         },
         {
           stroke: text,
@@ -313,7 +318,19 @@ function ComparisonTrendChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     } as uPlot.Options;
-  }, [colors, h, hours, metric.axisKind, metric.label, metric.source, metricKey, resolvedAppearance, visualSeries, w]);
+  }, [
+    colors,
+    displayTimeZone,
+    h,
+    hours,
+    metric.axisKind,
+    metric.label,
+    metric.source,
+    metricKey,
+    resolvedAppearance,
+    visualSeries,
+    w,
+  ]);
 
   if (loading) {
     return (
@@ -437,6 +454,8 @@ export function Compare() {
   const allNodes = useAllNodeMeta();
   const visibleNodeUuids = useVisibleNodeUuids();
   const { data: config } = usePublicConfig();
+  const themeSettings = useThemeSettings();
+  const displayTimeZone = themeSettings.displayTimeZone;
   const metricParam = searchParams.get("metric");
   const viewParam = searchParams.get("tab");
   const rangeParam = searchParams.get("range");
@@ -460,10 +479,29 @@ export function Compare() {
   const [hours, setHours] = useState(Number.isFinite(initialHours) && initialHours > 0 ? initialHours : DEFAULT_HOURS);
   const [view, setView] = useState<CompareView>(initialView);
   const [rangeMode, setRangeMode] = useState<CompareRangeMode>(initialRangeMode);
-  const [customStartInput, setCustomStartInput] = useState(() => toDateTimeLocalValue(initialCustomStart));
-  const [customEndInput, setCustomEndInput] = useState(() => toDateTimeLocalValue(initialCustomEnd));
+  const [customStartInput, setCustomStartInput] = useState(() =>
+    formatDateTimeLocalValue(initialCustomStart, displayTimeZone),
+  );
+  const [customEndInput, setCustomEndInput] = useState(() =>
+    formatDateTimeLocalValue(initialCustomEnd, displayTimeZone),
+  );
   const [nodeSearch, setNodeSearch] = useState("");
   const [exportStatus, setExportStatus] = useState("");
+  const previousDisplayTimeZoneRef = useRef<DisplayTimeZone>(displayTimeZone);
+
+  useEffect(() => {
+    const previousTimeZone = previousDisplayTimeZoneRef.current;
+    if (previousTimeZone === displayTimeZone) return;
+    previousDisplayTimeZoneRef.current = displayTimeZone;
+    setCustomStartInput((previousInput) => {
+      const seconds = parseDateTimeLocalInZone(previousInput, previousTimeZone);
+      return seconds == null ? previousInput : formatDateTimeLocalValue(seconds, displayTimeZone);
+    });
+    setCustomEndInput((previousInput) => {
+      const seconds = parseDateTimeLocalInZone(previousInput, previousTimeZone);
+      return seconds == null ? previousInput : formatDateTimeLocalValue(seconds, displayTimeZone);
+    });
+  }, [displayTimeZone]);
 
   const nodeOptions = useMemo(() => {
     const nodeByUuid = new Map(allNodes.map((node) => [node.uuid, node]));
@@ -494,8 +532,8 @@ export function Compare() {
   const activeHours = rangeOptions.some((range) => range.value === hours)
     ? hours
     : rangeOptions[0]?.value ?? DEFAULT_HOURS;
-  const customStartSeconds = fromDateTimeLocalValue(customStartInput);
-  const customEndSeconds = fromDateTimeLocalValue(customEndInput);
+  const customStartSeconds = parseDateTimeLocalInZone(customStartInput, displayTimeZone);
+  const customEndSeconds = parseDateTimeLocalInZone(customEndInput, displayTimeZone);
   const customRangeValid = isValidComparisonCustomRange(customStartSeconds, customEndSeconds);
   const activeRangeMode = rangeMode === "custom" ? "custom" : "preset";
   const rangeIsUsable = activeRangeMode !== "custom" || customRangeValid;
@@ -525,6 +563,7 @@ export function Compare() {
     activeHours,
     customRangeValid ? customStartSeconds : null,
     customRangeValid ? customEndSeconds : null,
+    displayTimeZone,
   );
   const filteredNodes = useMemo(() => {
     const query = nodeSearch.trim().toLowerCase();
@@ -638,19 +677,21 @@ export function Compare() {
     setRangeMode("custom");
     setCustomStartInput(nextStartInput);
     setCustomEndInput(nextEndInput);
+    const nextStart = parseDateTimeLocalInZone(nextStartInput, displayTimeZone);
+    const nextEnd = parseDateTimeLocalInZone(nextEndInput, displayTimeZone);
     setSearchParams(
       updateParams(searchParams, {
         rangeMode: "custom",
-        from: fromDateTimeLocalValue(nextStartInput),
-        to: fromDateTimeLocalValue(nextEndInput),
+        from: nextStart,
+        to: nextEnd,
       }),
       { replace: true },
     );
   };
 
   const activateCustomRange = () => {
-    const start = fromDateTimeLocalValue(customStartInput);
-    const end = fromDateTimeLocalValue(customEndInput);
+    const start = parseDateTimeLocalInZone(customStartInput, displayTimeZone);
+    const end = parseDateTimeLocalInZone(customEndInput, displayTimeZone);
     if (start && end && end > start) {
       setRangeMode("custom");
       setSearchParams(
@@ -662,7 +703,10 @@ export function Compare() {
 
     const seededEnd = Math.floor(Date.now() / 1000);
     const seededStart = seededEnd - activeHours * 3_600;
-    commitCustomRange(toDateTimeLocalValue(seededStart), toDateTimeLocalValue(seededEnd));
+    commitCustomRange(
+      formatDateTimeLocalValue(seededStart, displayTimeZone),
+      formatDateTimeLocalValue(seededEnd, displayTimeZone),
+    );
   };
 
   const commitView = (next: CompareView) => {
@@ -914,6 +958,7 @@ export function Compare() {
             selectedCount={selectedNodes.length}
             rangeStart={activeRangeMode === "custom" && customRangeValid ? customStartSeconds : null}
             rangeEnd={activeRangeMode === "custom" && customRangeValid ? customEndSeconds : null}
+            displayTimeZone={displayTimeZone}
           />
         ) : (
           <RankingTable metricKey={metricKey} rows={rankingRows} selectedCount={selectedNodes.length} />

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type uPlot from "uplot";
+import type { DisplayTimeZone } from "@/utils/timeDisplay";
+import {
+  formatAxisTime as formatDisplayAxisTime,
+  formatChartCoverageTime as formatDisplayChartCoverageTime,
+  formatTooltipTime as formatDisplayTooltipTime,
+} from "@/utils/timeDisplay";
 
 // 共享的图表配色。LoadChart 按指标 (cpu/memory/…) 取色，PingChart 按 task 循环取色；
 // 两者都取自这一处单一来源，避免 hex 值在两个图表间漂移。
@@ -147,44 +153,27 @@ export function toChartSeconds(value: string | number): number {
   return Number.isNaN(parsed) ? 0 : parsed / 1000;
 }
 
-function pad2(value: number) {
-  return value.toString().padStart(2, "0");
-}
-
-function getDateParts(timestampSeconds: number) {
-  const date = new Date(timestampSeconds * 1000);
-  return {
-    year: date.getFullYear(),
-    month: pad2(date.getMonth() + 1),
-    day: pad2(date.getDate()),
-    hour: pad2(date.getHours()),
-    minute: pad2(date.getMinutes()),
-    second: pad2(date.getSeconds()),
-  };
-}
-
-function formatAxisTime(timestampSeconds: number, rangeHours: number) {
-  const parts = getDateParts(timestampSeconds);
-  if (rangeHours >= 72) return `${parts.month}/${parts.day}`;
-  return `${parts.hour}:${parts.minute}`;
-}
-
-export function createTimeAxisFormatter(rangeHours: number) {
+export function createTimeAxisFormatter(
+  rangeHours: number,
+  displayTimeZone?: DisplayTimeZone,
+) {
   return (_self: uPlot, splits: number[]): string[] =>
-    splits.map((value) => formatAxisTime(value, rangeHours));
+    splits.map((value) => formatDisplayAxisTime(value, rangeHours, displayTimeZone));
 }
 
-export function formatTooltipTime(timestampSeconds: number, rangeHours = 0): string {
-  const parts = getDateParts(timestampSeconds);
-  if (rangeHours >= 24) {
-    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
-  }
-  return `${parts.hour}:${parts.minute}:${parts.second}`;
+export function formatTooltipTime(
+  timestampSeconds: number,
+  rangeHours = 0,
+  displayTimeZone?: DisplayTimeZone,
+): string {
+  return formatDisplayTooltipTime(timestampSeconds, rangeHours, displayTimeZone);
 }
 
-export function formatChartCoverageTime(timestampSeconds: number): string {
-  const parts = getDateParts(timestampSeconds);
-  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+export function formatChartCoverageTime(
+  timestampSeconds: number,
+  displayTimeZone?: DisplayTimeZone,
+): string {
+  return formatDisplayChartCoverageTime(timestampSeconds, displayTimeZone);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -233,12 +222,14 @@ export function getChartTooltipPosition({
 export function buildChartTooltipHooks({
   dataRef,
   rangeHours,
+  displayTimeZone,
   estimatedWidth,
   setTooltip,
   buildRows,
 }: {
   dataRef: { readonly current: uPlot.AlignedData };
   rangeHours: number;
+  displayTimeZone?: DisplayTimeZone;
   estimatedWidth: number;
   setTooltip: Dispatch<SetStateAction<ChartTooltipState>>;
   buildRows: (idx: number) => ChartTooltipState["rows"];
@@ -276,7 +267,7 @@ export function buildChartTooltipHooks({
         left: position.left,
         top: position.top,
         rows,
-        time: formatTooltipTime(timestamp, rangeHours),
+        time: formatTooltipTime(timestamp, rangeHours, displayTimeZone),
       });
     },
   };

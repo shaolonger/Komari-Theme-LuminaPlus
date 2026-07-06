@@ -22,6 +22,7 @@ import {
 } from "./chartData";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import type { PingRecord } from "@/types/komari";
 import type { TimedMetricPoint } from "./chartData";
 
@@ -54,6 +55,8 @@ export function PingChart({
 }) {
   const { data, isLoading, refetch, dataUpdatedAt } = usePingRecords(uuid, hours, active);
   const { resolvedAppearance } = usePreferences();
+  const themeSettings = useThemeSettings();
+  const displayTimeZone = themeSettings.displayTimeZone;
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [connectNulls, setConnectNulls] = useState(false);
@@ -215,6 +218,7 @@ export function PingChart({
     const tooltipHooks = buildChartTooltipHooks({
       dataRef: chartRef,
       rangeHours: hours,
+      displayTimeZone,
       estimatedWidth: 196,
       setTooltip,
       buildRows: (idx) =>
@@ -254,7 +258,7 @@ export function PingChart({
           grid: { stroke: grid, width: 1 },
           ticks: { stroke: grid },
           size: 36,
-          values: createTimeAxisFormatter(hours),
+          values: createTimeAxisFormatter(hours, displayTimeZone),
         },
         {
           stroke: text,
@@ -280,7 +284,20 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, connectNulls, hiddenTasks, hours, isDark, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [
+    chart,
+    connectNulls,
+    displayTimeZone,
+    hiddenTasks,
+    hours,
+    isDark,
+    taskColors,
+    taskIndexById,
+    taskLabels,
+    tasks,
+    visibleTasks,
+    yRange,
+  ]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),

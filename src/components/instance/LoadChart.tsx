@@ -21,7 +21,9 @@ import {
 } from "./chartData";
 import { formatBytes, formatTrafficRateLabel } from "@/utils/format";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import type { NodeMetrics } from "@/types/komari";
+import type { DisplayTimeZone } from "@/utils/timeDisplay";
 
 const LOAD_HISTORY_SAMPLE_LIMIT = 360;
 const LOAD_HISTORY_RENDER_LIMIT = 720;
@@ -164,6 +166,7 @@ function buildBaseOptions({
   unit,
   resolvedAppearance,
   rangeHours,
+  displayTimeZone,
   spanGaps,
   axisKind = "default",
   axisSize = 52,
@@ -174,6 +177,7 @@ function buildBaseOptions({
   unit: string;
   resolvedAppearance: "light" | "dark";
   rangeHours: number;
+  displayTimeZone: DisplayTimeZone;
   spanGaps?: boolean;
   axisKind?: "default" | "percent" | "network" | "count";
   axisSize?: number;
@@ -192,7 +196,7 @@ function buildBaseOptions({
         grid: { stroke: grid, width: 1 },
         ticks: { stroke: grid },
         size: rangeHours >= 72 ? 38 : 34,
-        values: createTimeAxisFormatter(rangeHours),
+        values: createTimeAxisFormatter(rangeHours, displayTimeZone),
       },
       {
         stroke: text,
@@ -246,6 +250,7 @@ const ChartCard = memo(function ChartCard({
   height,
   resolvedAppearance,
   rangeHours,
+  displayTimeZone,
   unit = "",
   spanGaps,
   axisKind,
@@ -263,6 +268,7 @@ const ChartCard = memo(function ChartCard({
   height: number;
   resolvedAppearance: "light" | "dark";
   rangeHours: number;
+  displayTimeZone: DisplayTimeZone;
   unit?: string;
   spanGaps?: boolean;
   axisKind?: "default" | "percent" | "network" | "count";
@@ -289,11 +295,23 @@ const ChartCard = memo(function ChartCard({
         unit,
         resolvedAppearance,
         rangeHours,
+        displayTimeZone,
         spanGaps,
         axisKind,
         axisSize,
       }),
-    [axisKind, axisSize, colors, keys, rangeHours, resolvedAppearance, spanGaps, title, unit],
+    [
+      axisKind,
+      axisSize,
+      colors,
+      displayTimeZone,
+      keys,
+      rangeHours,
+      resolvedAppearance,
+      spanGaps,
+      title,
+      unit,
+    ],
   );
 
   // 不含尺寸的增强配置 (base + 交互 hook)。resize 时保持稳定，最终对象上只有 width/height 变。
@@ -301,6 +319,7 @@ const ChartCard = memo(function ChartCard({
     const tooltip = buildChartTooltipHooks({
       dataRef,
       rangeHours,
+      displayTimeZone,
       estimatedWidth: 176,
       setTooltip,
       buildRows: (idx) =>
@@ -322,7 +341,7 @@ const ChartCard = memo(function ChartCard({
         setCursor: [tooltip.onSetCursor],
       },
     };
-  }, [colors, keys, baseOptions, rangeHours, unit]);
+  }, [colors, displayTimeZone, keys, baseOptions, rangeHours, unit]);
 
   // resize 时只有这个 memo 变，uplot-react 走 setSize() 而非整个 chart 的拆建重建。
   const chartOptions = useMemo<uPlot.Options>(
@@ -386,6 +405,8 @@ export function LoadChart({
   const isRealtime = hours === 0;
   const node = useNodeMetrics(uuid, isRealtime && active);
   const { resolvedAppearance } = usePreferences();
+  const themeSettings = useThemeSettings();
+  const displayTimeZone = themeSettings.displayTimeZone;
   const { w, h } = useResponsiveChartSize("grid");
   const [realtimePoints, setRealtimePoints] = useState<ChartPoint[]>([]);
   const [connectNulls, setConnectNulls] = useState(false);
@@ -452,7 +473,7 @@ export function LoadChart({
       ? `${points.length} / ${sourceRecordCount} 个点`
       : `${points.length} 个点`;
   const coverageSummary = points.length
-    ? `${formatChartCoverageTime(points[0].time)} - ${formatChartCoverageTime(points[points.length - 1].time)}`
+    ? `${formatChartCoverageTime(points[0].time, displayTimeZone)} - ${formatChartCoverageTime(points[points.length - 1].time, displayTimeZone)}`
     : "—";
 
   if (isLoading) {
@@ -522,6 +543,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           unit="%"
           spanGaps={connectNulls}
           axisKind="percent"
@@ -553,6 +575,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           unit="%"
           spanGaps={connectNulls}
           axisKind="percent"
@@ -576,6 +599,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           unit="%"
           spanGaps={connectNulls}
           axisKind="percent"
@@ -604,6 +628,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           spanGaps={connectNulls}
           axisKind="network"
           axisSize={78}
@@ -627,6 +652,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           spanGaps={connectNulls}
           axisKind="count"
         />
@@ -655,6 +681,7 @@ export function LoadChart({
           height={h}
           resolvedAppearance={resolvedAppearance}
           rangeHours={hours}
+          displayTimeZone={displayTimeZone}
           spanGaps={connectNulls}
           axisKind="count"
         />
