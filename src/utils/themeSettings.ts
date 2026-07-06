@@ -22,12 +22,18 @@ import {
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
 import { normalizeHomepagePingTaskBindings, type HomepagePingTaskBindings } from "@/utils/pingTasks";
+import {
+  SYSTEM_DISPLAY_TIME_ZONE,
+  normalizeDisplayTimeZone,
+  type DisplayTimeZone,
+} from "@/utils/timeDisplay";
 
 export type Appearance = "system" | "light" | "dark";
 export type NodeViewMode = "large" | "compact";
 
 export interface ResolvedThemeSettings {
   defaultAppearance: Appearance;
+  displayTimeZone: DisplayTimeZone;
   desktopNodeViewMode: NodeViewMode;
   mobileNodeViewMode: NodeViewMode;
   enableAdminButton: boolean;
@@ -64,6 +70,7 @@ export interface ResolvedThemeSettings {
 
 export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   defaultAppearance: "system",
+  displayTimeZone: SYSTEM_DISPLAY_TIME_ZONE,
   desktopNodeViewMode: "compact",
   mobileNodeViewMode: "compact",
   enableAdminButton: true,
@@ -135,6 +142,7 @@ export function normalizeThemeSettings(
 
   return {
     defaultAppearance: normalizeAppearance(settings?.defaultAppearance),
+    displayTimeZone: normalizeDisplayTimeZone(settings?.displayTimeZone),
     desktopNodeViewMode: normalizeNodeViewMode(
       settings?.desktopNodeViewMode,
       DEFAULT_THEME_SETTINGS.desktopNodeViewMode,

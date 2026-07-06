@@ -151,6 +151,7 @@ export interface NodeMetrics {
 
 export interface ThemeSettings {
   defaultAppearance?: "system" | "light" | "dark";
+  displayTimeZone?: string;
   desktopNodeViewMode?: "large" | "compact";
   mobileNodeViewMode?: "large" | "compact";
   enableAdminButton?: boolean;
