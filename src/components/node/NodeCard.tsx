@@ -107,8 +107,11 @@ export const NodeCard = memo(function NodeCard({
     hoveredLatencyIndex != null ? (pingBuckets[hoveredLatencyIndex] ?? null) : null;
   const hoveredLossBucket =
     hoveredLossIndex != null ? (pingBuckets[hoveredLossIndex] ?? null) : null;
-  const latencyHoverTime = formatPingBucketWindow(hoveredLatencyBucket);
-  const lossHoverTime = formatPingBucketWindow(hoveredLossBucket);
+  const latencyHoverTime = formatPingBucketWindow(
+    hoveredLatencyBucket,
+    themeSettings.displayTimeZone,
+  );
+  const lossHoverTime = formatPingBucketWindow(hoveredLossBucket, themeSettings.displayTimeZone);
   const latencyHoverColor = hoveredLatencyBucket?.value != null
     ? latencyHeatColor(hoveredLatencyBucket.value)
     : "var(--text-tertiary)";

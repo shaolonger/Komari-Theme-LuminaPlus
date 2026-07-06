@@ -7,6 +7,7 @@ import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { getAdminClients } from "@/services/api";
 import { formatBytes, formatExpireDays, formatUptimeDays, trimFixed } from "@/utils/format";
 import { formatRenewalPrice } from "@/utils/billing";
+import { formatDisplayDateTime } from "@/utils/timeDisplay";
 import {
   overlayAdminClientMeta,
   shouldIncludeAgentVersionCompleteness,
@@ -18,13 +19,6 @@ import {
   type VpsWorkbenchNode,
 } from "@/utils/vpsWorkbench";
 import { InstancePanel } from "./InstancePanel";
-
-// Intl.DateTimeFormat 构造开销大，复用一个实例，别每次 metrics 更新都重建
-const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-});
 
 function formatCapability(value: boolean | null, enabled = "已启用", disabled = "未启用") {
   if (value === true) return enabled;
@@ -156,7 +150,13 @@ export function InstanceDetails({
     nodeMeta.traffic_limit,
   );
   const lastUpdated =
-    metrics.updatedAt > 0 ? TIME_FORMATTER.format(metrics.updatedAt) : "—";
+    metrics.updatedAt > 0
+      ? formatDisplayDateTime(metrics.updatedAt, themeSettings.displayTimeZone, {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })
+      : "—";
   const trimmedName = nodeMeta.name?.trim();
   const panelTitle = trimmedName ? `${trimmedName} 信息` : "实例信息";
   const expire = formatExpireDays(nodeMeta.expired_at);

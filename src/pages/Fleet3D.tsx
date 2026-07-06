@@ -17,6 +17,7 @@ import {
 import { Fleet3DScene } from "@/components/fleet3d/Fleet3DScene";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { getComparisonLoadRecords } from "@/services/api";
 import {
   buildCompareHref,
@@ -41,6 +42,11 @@ import {
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
 import { formatBytes, formatByteRateLabel } from "@/utils/format";
+import {
+  formatDisplayDateTime,
+  getZonedDateTimeParts,
+  type DisplayTimeZone,
+} from "@/utils/timeDisplay";
 
 const MAX_COMPARE_NODES = 8;
 const CRUISE_STEP_MS = 6500;
@@ -99,6 +105,10 @@ function statusClass(status: Fleet3DStatus) {
   return `is-${status}`;
 }
 
+function pad2(value: number) {
+  return value.toString().padStart(2, "0");
+}
+
 function formatSyncTime(timestamp: number) {
   if (!timestamp) return "等待同步";
   const elapsedMs = Date.now() - timestamp;
@@ -112,12 +122,12 @@ function formatSyncTime(timestamp: number) {
   return `${Math.floor(hours / 24)} 天前`;
 }
 
-function formatReplayTime(timestamp: number) {
+function formatReplayTime(timestamp: number, displayTimeZone: DisplayTimeZone) {
   if (!timestamp) return "等待数据";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return formatDisplayDateTime(timestamp, displayTimeZone, {
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(timestamp));
+  });
 }
 
 function formatReplayPressure(node: Fleet3DNode) {
@@ -125,8 +135,9 @@ function formatReplayPressure(node: Fleet3DNode) {
   return `${Math.round(node.replay.pressure * 100)}%`;
 }
 
-function snapshotFileName() {
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+function snapshotFileName(displayTimeZone: DisplayTimeZone) {
+  const parts = getZonedDateTimeParts(Date.now(), displayTimeZone);
+  const timestamp = `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}-${pad2(parts.hour)}-${pad2(parts.minute)}-${pad2(parts.second)}`;
   return `lumina-3d-fleet-${timestamp}.png`;
 }
 
@@ -251,6 +262,8 @@ function Inspector({
 export function Fleet3D() {
   const allNodes = useAllNodeMeta();
   const summaries = useHomeNodeSummaries();
+  const themeSettings = useThemeSettings();
+  const displayTimeZone = themeSettings.displayTimeZone;
   useHomepagePingOverview();
   const demoMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "1";
   const [filter, setFilter] = useState<Fleet3DFilter>("all");
@@ -501,10 +514,10 @@ export function Fleet3D() {
     }
     const link = document.createElement("a");
     link.href = dataUrl;
-    link.download = snapshotFileName();
+    link.download = snapshotFileName(displayTimeZone);
     link.click();
     setSnapshotStatus("saved");
-  }, []);
+  }, [displayTimeZone]);
 
   return (
     <section className="fleet3d-page" aria-label="VPS 3D 星图" data-demo-mode={demoMode || undefined}>
@@ -781,7 +794,11 @@ export function Fleet3D() {
         <div className="fleet3d-timeline-head">
           <div>
             <p className="fleet3d-eyebrow">Timeline</p>
-            <strong>{timelineEnabled ? formatReplayTime(replayState?.timestamp ?? 0) : "实时视图"}</strong>
+            <strong>
+              {timelineEnabled
+                ? formatReplayTime(replayState?.timestamp ?? 0, displayTimeZone)
+                : "实时视图"}
+            </strong>
           </div>
           <button
             type="button"

@@ -1,21 +1,17 @@
 import type { PingOverviewBucket } from "@/types/komari";
 import { trimFixed } from "@/utils/format";
+import { formatClockTime, type DisplayTimeZone } from "@/utils/timeDisplay";
 
-export function formatPingBucketWindow(bucket: PingOverviewBucket | null) {
+export function formatPingBucketWindow(
+  bucket: PingOverviewBucket | null,
+  displayTimeZone?: DisplayTimeZone,
+) {
   if (!bucket || bucket.startAt == null || bucket.endAt == null) {
     return null;
   }
 
-  const start = new Date(bucket.startAt);
-  const end = new Date(bucket.endAt);
-  const startText = `${start.getHours().toString().padStart(2, "0")}:${start
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}`;
-  const endText = `${end.getHours().toString().padStart(2, "0")}:${end
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}`;
+  const startText = formatClockTime(bucket.startAt, displayTimeZone);
+  const endText = formatClockTime(bucket.endAt, displayTimeZone);
   return `${startText} - ${endText}`;
 }
 
@@ -37,8 +33,9 @@ export function formatLossBucketSummary(
 export function formatHealthBucketTooltip(
   bucket: PingOverviewBucket,
   kind: "latency" | "loss",
+  displayTimeZone?: DisplayTimeZone,
 ) {
-  const window = formatPingBucketWindow(bucket);
+  const window = formatPingBucketWindow(bucket, displayTimeZone);
   const summary =
     kind === "latency"
       ? formatLatencyBucketSummary(bucket)

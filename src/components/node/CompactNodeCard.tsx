@@ -54,6 +54,7 @@ import type {
 } from "@/types/komari";
 import type { ByteRateDisplay } from "@/utils/format";
 import type { TrafficDisplay } from "@/utils/traffic";
+import type { DisplayTimeZone } from "@/utils/timeDisplay";
 
 const TRAFFIC_DOT_COUNT = 14;
 const HEALTH_BAR_COUNT = 16;
@@ -229,10 +230,12 @@ function HealthBars({
   buckets,
   max,
   kind,
+  displayTimeZone,
 }: {
   buckets: PingOverviewBucket[];
   max: number;
   kind: "latency" | "loss";
+  displayTimeZone: DisplayTimeZone;
 }) {
   const safeMax = Math.max(1, max);
   const bars = buckets.slice(-HEALTH_BAR_COUNT);
@@ -241,7 +244,9 @@ function HealthBars({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const activeIndex = hoveredIndex ?? selectedIndex;
   const activeBucket = activeIndex == null ? null : bars[activeIndex] ?? null;
-  const activeTooltip = activeBucket ? formatHealthBucketTooltip(activeBucket, kind) : null;
+  const activeTooltip = activeBucket
+    ? formatHealthBucketTooltip(activeBucket, kind, displayTimeZone)
+    : null;
   const activeLeft =
     activeIndex == null || bars.length === 0
       ? "50%"
@@ -293,7 +298,7 @@ function HealthBars({
           "--compact-health-color": color,
           opacity: active ? 0.94 : 0.42,
         } as CSSProperties;
-        const tooltip = formatHealthBucketTooltip(bucket, kind);
+        const tooltip = formatHealthBucketTooltip(bucket, kind, displayTimeZone);
 
         return (
           <button
@@ -632,6 +637,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
   lossColor,
   hasHomepagePingBinding,
   taskGroups,
+  displayTimeZone,
 }: {
   uuid: string;
   ping: PingOverviewItem;
@@ -640,6 +646,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
   lossColor: string;
   hasHomepagePingBinding: boolean;
   taskGroups: Record<string, string>;
+  displayTimeZone: DisplayTimeZone;
 }) {
   // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
   const { text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
@@ -660,7 +667,12 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
           unit={ping.lastValue != null ? "ms" : undefined}
           color={latencyColor}
         >
-          <HealthBars buckets={pingBuckets} max={ping.max} kind="latency" />
+          <HealthBars
+            buckets={pingBuckets}
+            max={ping.max}
+            kind="latency"
+            displayTimeZone={displayTimeZone}
+          />
         </CompactHealthItem>
         <CompactHealthItem
           icon={<Unplug size={12} />}
@@ -671,7 +683,12 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
           unit={ping.loss != null ? "%" : undefined}
           color={lossColor}
         >
-          <HealthBars buckets={pingBuckets} max={1} kind="loss" />
+          <HealthBars
+            buckets={pingBuckets}
+            max={1}
+            kind="loss"
+            displayTimeZone={displayTimeZone}
+          />
         </CompactHealthItem>
       </div>
       {canShowSources && (
@@ -774,6 +791,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
         lossColor={lossColor}
         hasHomepagePingBinding={hasHomepagePingBinding}
         taskGroups={themeSettings.homepagePingTaskGroups}
+        displayTimeZone={themeSettings.displayTimeZone}
       />
     </article>
   );
