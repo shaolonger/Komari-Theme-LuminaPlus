@@ -133,10 +133,11 @@ export function resolveExpireTimestamp(
 
 export function getExpireDaysRemaining(
   iso: string | number | null | undefined,
+  now = Date.now(),
 ): number | null {
   const ts = resolveExpireTimestamp(iso);
   if (ts == null) return null;
-  return Math.floor((ts - Date.now()) / 86400000);
+  return Math.floor((ts - now) / 86400000);
 }
 
 function resolveExpireTone(days: number | null | undefined): ExpireTone {

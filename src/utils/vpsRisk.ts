@@ -70,7 +70,7 @@ export function getVpsOperationalRisks(input: VpsRiskInput): VpsRisk[] {
     });
   }
 
-  const expireDays = getExpireDaysRemaining(input.expiredAt);
+  const expireDays = getExpireDaysRemaining(input.expiredAt, now);
   if (expireDays != null && expireDays <= EXPIRY_WARNING_DAYS) {
     risks.push({
       uuid: input.uuid,
