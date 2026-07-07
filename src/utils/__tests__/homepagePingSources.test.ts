@@ -100,9 +100,117 @@ describe("homepage Ping source helpers", () => {
     );
   });
 
+  it("sorts critical, warning, empty, and healthy sources by attention", () => {
+    const rows = buildHomepagePingSourceRows({
+      taskSummaries: [
+        {
+          taskId: 1,
+          name: "Healthy",
+          target: "",
+          lastValue: 38,
+          loss: 0,
+          sampleCount: 12,
+          hasSamples: true,
+        },
+        {
+          taskId: 2,
+          name: "Empty",
+          target: "",
+          lastValue: null,
+          loss: null,
+          sampleCount: 0,
+          hasSamples: false,
+        },
+        {
+          taskId: 3,
+          name: "Slow",
+          target: "",
+          lastValue: 360,
+          loss: 0,
+          sampleCount: 12,
+          hasSamples: true,
+        },
+        {
+          taskId: 4,
+          name: "Lossy",
+          target: "",
+          lastValue: 80,
+          loss: 25,
+          sampleCount: 12,
+          hasSamples: true,
+        },
+      ],
+    });
+
+    expect(rows.map((row) => row.taskId)).toEqual([4, 3, 2, 1]);
+    expect(rows.map((row) => row.status)).toEqual(["critical", "warning", "empty", "ok"]);
+    expect(rows[0].title).toContain("严重");
+  });
+
+  it("maps packet loss to discrete dot levels", () => {
+    const rows = buildHomepagePingSourceRows({
+      taskSummaries: [0, 0.5, 2, 4, 8, 20].map((loss, index) => ({
+        taskId: index + 1,
+        name: `Loss ${loss}`,
+        target: "",
+        lastValue: 40,
+        loss,
+        sampleCount: 12,
+        hasSamples: true,
+      })),
+    });
+    const dotsByTask = new Map(rows.map((row) => [row.taskId, row.lossDotCount]));
+
+    expect(dotsByTask).toEqual(new Map([
+      [1, 0],
+      [2, 1],
+      [3, 2],
+      [4, 3],
+      [5, 4],
+      [6, 5],
+    ]));
+  });
+
+  it("keeps latency visual ratios bounded for tiny and extreme values", () => {
+    const rows = buildHomepagePingSourceRows({
+      taskSummaries: [
+        {
+          taskId: 1,
+          name: "Tiny",
+          target: "",
+          lastValue: 1,
+          loss: 0,
+          sampleCount: 1,
+          hasSamples: true,
+        },
+        {
+          taskId: 2,
+          name: "Extreme",
+          target: "",
+          lastValue: 2400,
+          loss: 0,
+          sampleCount: 1,
+          hasSamples: true,
+        },
+      ],
+    });
+    const tiny = rows.find((row) => row.taskId === 1);
+    const extreme = rows.find((row) => row.taskId === 2);
+
+    expect(tiny?.latencyRatio).toBeGreaterThan(0);
+    expect(tiny?.latencyRatio).toBeLessThan(0.1);
+    expect(extreme?.latencyRatio).toBe(1);
+  });
+
   it("builds a compare URL for single-VPS multi-task trends", () => {
     expect(buildHomepagePingCompareUrl("node-a", [5, 2, 2])).toBe(
       "/compare?nodes=node-a&metric=ping_latency&hours=4&tab=trend&pingTasks=2%2C5",
+    );
+  });
+
+  it("omits pingTasks from compare URLs when no valid task IDs exist", () => {
+    expect(buildHomepagePingCompareUrl("node-a", [0, -1, Number.NaN])).toBe(
+      "/compare?nodes=node-a&metric=ping_latency&hours=4&tab=trend",
     );
   });
 });
