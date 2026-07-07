@@ -34,17 +34,70 @@ describe("homepage Ping source helpers", () => {
 
     expect(rows).toEqual([
       expect.objectContaining({
-        taskId: 2,
-        latencyLabel: "42 ms",
-        lossLabel: "0.0%",
-        status: "ok",
-      }),
-      expect.objectContaining({
         taskId: 5,
         group: "海外",
+        latencyMs: 420,
+        lossPercent: 6,
+        latencyLabel: "420 ms",
+        latencyShortLabel: "420",
+        lossLabel: "6.0%",
+        lossShortLabel: "6.0",
+        lossDotCount: 4,
         status: "warning",
       }),
+      expect.objectContaining({
+        taskId: 2,
+        latencyMs: 42,
+        lossPercent: 0,
+        latencyLabel: "42 ms",
+        latencyShortLabel: "42",
+        lossLabel: "0.0%",
+        lossShortLabel: "0.0",
+        lossDotCount: 0,
+        status: "ok",
+      }),
     ]);
+    expect(rows[0].attentionScore).toBeGreaterThan(rows[1].attentionScore);
+    expect(rows[0].latencyRatio).toBeGreaterThan(rows[1].latencyRatio);
+    expect(rows[0].title).toContain("Los Angeles · 海外");
+  });
+
+  it("keeps same-attention rows in source order and models empty sources", () => {
+    const rows = buildHomepagePingSourceRows({
+      taskSummaries: [
+        {
+          taskId: 7,
+          name: "No samples",
+          target: "",
+          lastValue: null,
+          loss: null,
+          sampleCount: 0,
+          hasSamples: false,
+        },
+        {
+          taskId: 8,
+          name: "Also empty",
+          target: "",
+          lastValue: null,
+          loss: null,
+          sampleCount: 0,
+          hasSamples: false,
+        },
+      ],
+    });
+
+    expect(rows.map((row) => row.taskId)).toEqual([7, 8]);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        latencyLabel: "无有效延迟",
+        latencyShortLabel: "—",
+        lossLabel: "未知",
+        lossShortLabel: "—",
+        latencyRatio: 0,
+        lossDotCount: 0,
+        status: "empty",
+      }),
+    );
   });
 
   it("builds a compare URL for single-VPS multi-task trends", () => {

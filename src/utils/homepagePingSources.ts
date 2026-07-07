@@ -6,9 +6,22 @@ export interface HomepagePingSourceRow {
   name: string;
   group: string;
   target: string;
+  latencyMs: number | null;
+  lossPercent: number | null;
   latencyLabel: string;
+  latencyShortLabel: string;
   lossLabel: string;
+  lossShortLabel: string;
+  latencyRatio: number;
+  lossDotCount: number;
+  attentionScore: number;
+  title: string;
   status: "ok" | "warning" | "critical" | "empty";
+}
+
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
 }
 
 function sourceStatus(summary: PingOverviewTaskSummary): HomepagePingSourceRow["status"] {
@@ -18,27 +31,112 @@ function sourceStatus(summary: PingOverviewTaskSummary): HomepagePingSourceRow["
   return "ok";
 }
 
+function sourceAttentionScore(summary: PingOverviewTaskSummary) {
+  const status = sourceStatus(summary);
+  const base = status === "critical" ? 3000 : status === "warning" ? 2000 : status === "empty" ? 1000 : 0;
+  const loss = summary.loss != null ? summary.loss * 12 : 0;
+  const latency = summary.lastValue != null ? Math.min(summary.lastValue, 2000) / 10 : 0;
+  return base + loss + latency;
+}
+
+function latencyRatio(value: number | null) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return 0;
+  if (value <= 150) return clamp01(value / 220);
+  if (value <= 300) return clamp01(0.68 + ((value - 150) / 150) * 0.18);
+  return clamp01(0.86 + Math.min(value - 300, 700) / 700 * 0.14);
+}
+
+function lossDotCount(value: number | null) {
+  if (value == null || !Number.isFinite(value) || value <= 0) return 0;
+  if (value <= 1) return 1;
+  if (value <= 3) return 2;
+  if (value <= 5) return 3;
+  if (value <= 10) return 4;
+  return 5;
+}
+
 function latencyLabel(value: number | null) {
   return value != null ? `${Math.round(value)} ms` : "无有效延迟";
+}
+
+function latencyShortLabel(value: number | null) {
+  return value != null ? String(Math.round(value)) : "—";
 }
 
 function lossLabel(value: number | null) {
   return value != null ? `${value.toFixed(1)}%` : "未知";
 }
 
+function lossShortLabel(value: number | null) {
+  if (value == null) return "—";
+  if (value >= 10) return value.toFixed(0);
+  return value.toFixed(1);
+}
+
+function sourceTitle(row: {
+  name: string;
+  group: string;
+  target: string;
+  taskId: number;
+  latencyLabel: string;
+  lossLabel: string;
+  status: HomepagePingSourceRow["status"];
+}) {
+  const meta = [row.group, row.target || `ID ${row.taskId}`].filter(Boolean).join(" / ");
+  const status =
+    row.status === "critical"
+      ? "严重"
+      : row.status === "warning"
+        ? "需关注"
+        : row.status === "empty"
+          ? "暂无样本"
+          : "正常";
+  return `${row.name}${meta ? ` · ${meta}` : ""} · ${row.latencyLabel} · 丢包 ${row.lossLabel} · ${status}`;
+}
+
 export function buildHomepagePingSourceRows(
   ping: Pick<PingOverviewItem, "taskSummaries">,
   taskGroups: HomepagePingTaskGroups = {},
 ): HomepagePingSourceRow[] {
-  return (ping.taskSummaries ?? []).map((summary) => ({
-    taskId: summary.taskId,
-    name: summary.name,
-    group: taskGroups[String(summary.taskId)] ?? "",
-    target: summary.target,
-    latencyLabel: latencyLabel(summary.lastValue),
-    lossLabel: lossLabel(summary.loss),
-    status: sourceStatus(summary),
-  }));
+  return (ping.taskSummaries ?? [])
+    .map((summary, index) => {
+      const group = taskGroups[String(summary.taskId)] ?? "";
+      const status = sourceStatus(summary);
+      const latencyText = latencyLabel(summary.lastValue);
+      const lossText = lossLabel(summary.loss);
+      const row: HomepagePingSourceRow = {
+        taskId: summary.taskId,
+        name: summary.name,
+        group,
+        target: summary.target,
+        latencyMs: summary.lastValue,
+        lossPercent: summary.loss,
+        latencyLabel: latencyText,
+        latencyShortLabel: latencyShortLabel(summary.lastValue),
+        lossLabel: lossText,
+        lossShortLabel: lossShortLabel(summary.loss),
+        latencyRatio: latencyRatio(summary.lastValue),
+        lossDotCount: lossDotCount(summary.loss),
+        attentionScore: sourceAttentionScore(summary),
+        title: sourceTitle({
+          name: summary.name,
+          group,
+          target: summary.target,
+          taskId: summary.taskId,
+          latencyLabel: latencyText,
+          lossLabel: lossText,
+          status,
+        }),
+        status,
+      };
+      return { row, sourceIndex: index };
+    })
+    .sort((left, right) => {
+      const byAttention = right.row.attentionScore - left.row.attentionScore;
+      if (byAttention !== 0) return byAttention;
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .map(({ row }) => row);
 }
 
 export function buildHomepagePingCompareUrl(uuid: string, taskIds: number[]) {

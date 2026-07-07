@@ -22,7 +22,7 @@ Homepage VPS cards must show every related Ping task directly, without requiring
 ## Todo
 
 - [x] T0 Save this final design and implementation checklist locally.
-- [ ] T1 Extend homepage Ping source row modeling with numeric latency/loss fields, attention sorting, compact labels, titles, and visual ratios for latency rails/loss dots.
+- [x] T1 Extend homepage Ping source row modeling with numeric latency/loss fields, attention sorting, compact labels, titles, and visual ratios for latency rails/loss dots.
 - [ ] T2 Replace the normal NodeCard source drawer with an always-visible Ping source matrix and remove source-count badges from the primary latency/loss summary.
 - [ ] T3 Replace the CompactNodeCard source drawer with the same always-visible matrix, tuned for compact density.
 - [ ] T4 Add responsive CSS for the Ping source matrix, long names, many sources, dark/light appearance, and mobile card widths.
