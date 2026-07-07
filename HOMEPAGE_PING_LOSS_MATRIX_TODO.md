@@ -28,7 +28,7 @@ Homepage VPS cards must show every related Ping task directly, without requiring
 - [x] T4 Add responsive CSS for the Ping source matrix, long names, many sources, dark/light appearance, and mobile card widths.
 - [x] T5 Add and update unit tests for source modeling, sorting, labels, compare URLs, and edge states.
 - [x] T6 Run validation: unit tests, typecheck/build, and a local visual smoke check of the homepage card rendering.
-- [ ] T7 Bump the theme version, package the release artifact, create a git tag, push to GitHub, and publish a GitHub release.
+- [x] T7 Bump the theme version, package the release artifact, create a git tag, push to GitHub, and publish a GitHub release.
 
 ## Acceptance Checks
 
