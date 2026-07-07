@@ -530,20 +530,6 @@
   line-height: 1.1;
 }
 
-.compact-node-health-source {
-  display: inline-flex;
-  align-items: center;
-  height: 14px;
-  padding: 0 4px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  color: var(--text-tertiary);
-  font-size: 8.5px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1;
-}
-
 .compact-node-health-value {
   min-width: 0;
   overflow: hidden;
@@ -624,87 +610,6 @@
 
 .compact-node-health-bars:hover .compact-node-health-bar:not(:hover):not([data-selected="true"]) {
   opacity: 0.54 !important;
-}
-
-.compact-node-source-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-}
-
-.compact-node-source-actions button,
-.compact-node-source-actions a {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  text-decoration: none;
-}
-
-.compact-node-source-panel {
-  display: grid;
-  gap: 5px;
-}
-
-.compact-node-source-panel > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 6px 7px;
-  border: 1px solid var(--hairline);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-}
-
-.compact-node-source-panel > div[data-status="warning"] {
-  border-color: color-mix(in srgb, var(--status-warning) 34%, var(--hairline));
-}
-
-.compact-node-source-panel > div[data-status="critical"] {
-  border-color: color-mix(in srgb, var(--status-offline) 38%, var(--hairline));
-}
-
-.compact-node-source-panel span {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.compact-node-source-panel strong,
-.compact-node-source-panel small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-node-source-panel strong {
-  color: var(--text-primary);
-  font-size: 10.5px;
-  font-weight: 760;
-}
-
-.compact-node-source-panel small,
-.compact-node-source-panel em {
-  color: var(--text-tertiary);
-  font-size: 9.5px;
-  font-style: normal;
-}
-
-.compact-node-source-panel em {
-  flex: 0 0 auto;
-  color: var(--text-secondary);
 }
 
 @keyframes compact-health-tooltip-in {
