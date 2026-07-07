@@ -561,6 +561,66 @@
   background: var(--ping-source-loss-color, var(--status-success));
 }
 
+.ping-source-matrix[data-density="compact"] {
+  gap: 5px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-matrix-head {
+  padding-top: 1px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-matrix-title {
+  font-size: 10px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-matrix-link {
+  min-height: 20px;
+  padding: 0 6px;
+  font-size: 9.5px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-list {
+  gap: 4px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-row {
+  grid-template-columns: minmax(0, 1fr) minmax(112px, auto);
+  min-height: 30px;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-name {
+  gap: 1px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-name strong {
+  font-size: 10px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-name small {
+  font-size: 9px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-readings {
+  grid-template-columns: minmax(52px, 1fr) minmax(52px, 1fr);
+  gap: 5px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-reading {
+  gap: 2px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-reading-value {
+  font-size: 10px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-latency-rail,
+.ping-source-matrix[data-density="compact"] .ping-source-loss-dots {
+  height: 4px;
+}
+
 .traffic-stat-value {
   flex: 0 0 auto;
   font-size: 18px;

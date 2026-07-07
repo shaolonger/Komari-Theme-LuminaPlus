@@ -4,9 +4,7 @@ import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
-  BarChart3,
   Calendar,
-  ChevronDown,
   CircleDollarSign,
   Clock3,
   Cpu,
@@ -38,6 +36,7 @@ import {
   buildHomepagePingCompareUrl,
   buildHomepagePingSourceRows,
 } from "@/utils/homepagePingSources";
+import { PingSourceMatrix } from "./PingSourceMatrix";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import {
   joinTagTitle,
@@ -328,7 +327,6 @@ function HealthBars({
 function CompactHealthItem({
   icon,
   label,
-  sourceBadge,
   sourceTitle,
   value,
   unit,
@@ -337,7 +335,6 @@ function CompactHealthItem({
 }: {
   icon: ReactNode;
   label: string;
-  sourceBadge?: string | null;
   sourceTitle?: string;
   value: string;
   unit?: string;
@@ -350,7 +347,6 @@ function CompactHealthItem({
         <span className="compact-node-health-label">
           {icon}
           {label}
-          {sourceBadge && <span className="compact-node-health-source">{sourceBadge}</span>}
         </span>
         <strong className="compact-node-health-value tabular" style={{ color }}>
           {value}
@@ -651,7 +647,6 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
   // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
   const { text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
   const pingAggregate = pingTaskAggregateLabels(ping);
-  const [showSources, setShowSources] = useState(false);
   const sourceRows = buildHomepagePingSourceRows(ping, taskGroups);
   const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
   const canShowSources = hasHomepagePingBinding && sourceRows.length > 0;
@@ -661,7 +656,6 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
         <CompactHealthItem
           icon={<Clock3 size={12} />}
           label="延迟"
-          sourceBadge={pingAggregate.badge}
           sourceTitle={pingAggregate.title}
           value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
           unit={ping.lastValue != null ? "ms" : undefined}
@@ -677,7 +671,6 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
         <CompactHealthItem
           icon={<Unplug size={12} />}
           label="丢包"
-          sourceBadge={pingAggregate.badge}
           sourceTitle={pingAggregate.title}
           value={ping.loss != null ? ping.loss.toFixed(1) : emptyText}
           unit={ping.loss != null ? "%" : undefined}
@@ -692,35 +685,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
         </CompactHealthItem>
       </div>
       {canShowSources && (
-        <div className="compact-node-source-actions">
-          <button
-            type="button"
-            aria-expanded={showSources}
-            onClick={() => setShowSources((current) => !current)}
-          >
-            <ChevronDown size={11} />
-            <span>{showSources ? "收起" : `${sourceRows.length} 来源`}</span>
-          </button>
-          <Link to={compareUrl}>
-            <BarChart3 size={11} />
-            <span>对比</span>
-          </Link>
-        </div>
-      )}
-      {canShowSources && showSources && (
-        <div className="compact-node-source-panel">
-          {sourceRows.map((source) => (
-            <div key={source.taskId} data-status={source.status}>
-              <span>
-                <strong>{source.name}</strong>
-                <small>{source.group || source.target || `ID ${source.taskId}`}</small>
-              </span>
-              <em>
-                {source.latencyLabel} · {source.lossLabel}
-              </em>
-            </div>
-          ))}
-        </div>
+        <PingSourceMatrix rows={sourceRows} compareUrl={compareUrl} density="compact" />
       )}
     </>
   );
