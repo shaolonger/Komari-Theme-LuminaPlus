@@ -1357,7 +1357,6 @@ export function Compare() {
       loadQuery.data,
       metricKey,
       pingQuery.data?.records,
-      pingQuery.data?.tasks,
       selectedPingTaskId,
       selectedPingTaskIds,
       singleNodePingTaskMode,

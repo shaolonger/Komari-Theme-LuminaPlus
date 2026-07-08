@@ -10,7 +10,7 @@
 - [x] 4. 设计并实现多指标结果区：洞察摘要、VPS × 指标诊断矩阵、视角切换、行/列聚焦交互。
 - [x] 5. 扩展多指标排行和导出：动态指标列、综合风险排序、Markdown/CSV 导出多指标结果。
 - [x] 6. 补充测试：覆盖多指标序列构建、风险分、洞察摘要、`metrics=` URL 解析和零值 Ping 丢包兼容。
-- [ ] 7. 完整验证：运行 typecheck、test、lint、build、release；确认无未提交变更。
+- [x] 7. 完整验证：运行 typecheck、test、lint、build、release；确认无未提交变更。
 - [ ] 8. 发布：更新版本、打 tag、推送 GitHub，并创建新的 GitHub Release。
 
 ## 设计原则
@@ -31,3 +31,4 @@
 - 多指标结果区已接入洞察卡片、VPS × 指标诊断矩阵、迷你趋势线、行/列聚焦和右侧分析面板。
 - 多指标排行已支持动态指标列、综合风险排序；Markdown/CSV 导出已切换为完整多指标 analysis。
 - 已补充多指标模型、导出、`metrics=` URL 解析和零值 Ping 丢包兼容测试；完整测试 232 条通过。
+- 已完成发布前完整检查：typecheck、test、lint、build 均通过。
