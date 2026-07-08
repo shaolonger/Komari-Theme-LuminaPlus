@@ -4,10 +4,15 @@ import {
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
+  buildPingTaskVpsCompareUrl,
   buildPingTaskComparisonSeries,
+  buildPingTaskVpsComparisonSeries,
+  filterPingRecordsByTask,
   formatComparisonValue,
   getComparisonRequestHours,
+  getPingTaskBoundNodeUuids,
   isValidComparisonCustomRange,
+  normalizeComparisonPingTaskId,
   prepareComparisonTrendData,
   trimComparisonSeriesToRange,
   type ComparisonNode,
@@ -125,6 +130,61 @@ describe("buildComparisonSeries", () => {
     expect(series.map((item) => item.name)).toEqual(["Google", "Cloudflare"]);
     expect(series.map((item) => item.uuid)).toEqual(["a:ping:1", "a:ping:2"]);
     expect(series.map((item) => item.points[0]?.value)).toEqual([20, 80]);
+  });
+
+  it("filters multi-VPS ping comparison to one task", () => {
+    const pingRecords: PingRecord[] = [
+      { client: "a", task_id: 1, time: 1000, value: 20 },
+      { client: "a", task_id: 2, time: 1000, value: 80 },
+      { client: "b", task_id: 1, time: 1000, value: 30 },
+      { client: "b", task_id: 2, time: 1000, value: 10 },
+    ];
+
+    const series = buildPingTaskVpsComparisonSeries({
+      metricKey: "ping_latency",
+      nodes,
+      records: pingRecords,
+      taskId: 2,
+    });
+
+    expect(series.map((item) => item.uuid)).toEqual(["a", "b"]);
+    expect(series.map((item) => item.points[0]?.value)).toEqual([80, 10]);
+    expect(filterPingRecordsByTask(pingRecords, 1).map((record) => record.value)).toEqual([20, 30]);
+  });
+});
+
+describe("ping task VPS compare helpers", () => {
+  it("normalizes a single ping task id", () => {
+    expect(normalizeComparisonPingTaskId("2")).toBe(2);
+    expect(normalizeComparisonPingTaskId(5)).toBe(5);
+    expect(normalizeComparisonPingTaskId("0")).toBeNull();
+    expect(normalizeComparisonPingTaskId("abc")).toBeNull();
+  });
+
+  it("derives visible bound VPS uuids for one ping task", () => {
+    expect(
+      getPingTaskBoundNodeUuids(
+        {
+          2: ["b", "a", "a"],
+          5: ["c"],
+        },
+        2,
+        ["a", "b"],
+      ),
+    ).toEqual(["b", "a"]);
+    expect(getPingTaskBoundNodeUuids({ 2: ["a"] }, null)).toEqual([]);
+  });
+
+  it("builds a compare URL for one ping task across VPS nodes", () => {
+    expect(
+      buildPingTaskVpsCompareUrl({
+        taskId: 2,
+        nodes: ["b", "a", "a", ""],
+        metricKey: "ping_loss",
+        hours: 12,
+        view: "ranking",
+      }),
+    ).toBe("/compare?metric=ping_loss&hours=12&tab=ranking&nodes=b%2Ca&pingTask=2");
   });
 });
 

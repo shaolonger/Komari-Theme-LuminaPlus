@@ -1,6 +1,10 @@
 import type { ComparisonLoadRecords, ComparisonLoadType } from "@/services/api";
 import type { LoadRecord, NodeInfo, PingRecord, PingTask } from "@/types/komari";
 import { formatTrafficRateLabel, trimFixed } from "@/utils/format";
+import {
+  normalizeHomepagePingTaskBindings,
+  type HomepagePingTaskBindings,
+} from "@/utils/pingTasks";
 
 export type ComparisonMetricKey =
   | "cpu"
@@ -62,6 +66,14 @@ export interface ComparisonRequestWindowInput {
   customEnd?: number | null;
   nowSeconds?: number;
   maxHours?: number | null;
+}
+
+export interface PingTaskVpsCompareUrlInput {
+  taskId: number | null | undefined;
+  nodes?: string[];
+  metricKey?: Extract<ComparisonMetricKey, "ping_latency" | "ping_loss">;
+  hours?: number;
+  view?: "trend" | "ranking";
 }
 
 export interface ComparisonStats {
@@ -323,6 +335,57 @@ function normalizeNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+export function normalizeComparisonPingTaskId(value: unknown) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : Number.NaN;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function filterPingRecordsByTask(
+  records: PingRecord[],
+  taskId: number | null | undefined,
+) {
+  const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+  if (normalizedTaskId == null) return records;
+  return records.filter((record) => record.task_id === normalizedTaskId);
+}
+
+export function getPingTaskBoundNodeUuids(
+  bindings: HomepagePingTaskBindings,
+  taskId: number | null | undefined,
+  visibleUuids?: string[],
+) {
+  const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+  if (normalizedTaskId == null) return [];
+  const normalizedBindings = normalizeHomepagePingTaskBindings(bindings);
+  const visibleSet = visibleUuids ? new Set(visibleUuids) : null;
+  return Array.from(new Set(normalizedBindings[String(normalizedTaskId)] ?? []))
+    .filter((uuid) => !visibleSet || visibleSet.has(uuid));
+}
+
+export function buildPingTaskVpsCompareUrl({
+  taskId,
+  nodes = [],
+  metricKey = "ping_latency",
+  hours = 4,
+  view = "trend",
+}: PingTaskVpsCompareUrlInput) {
+  const params = new URLSearchParams({
+    metric: metricKey,
+    hours: String(hours),
+    tab: view,
+  });
+  const uniqueNodes = Array.from(new Set(nodes.map((node) => node.trim()).filter(Boolean)));
+  if (uniqueNodes.length > 0) params.set("nodes", uniqueNodes.join(","));
+  const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+  if (normalizedTaskId != null) params.set("pingTask", String(normalizedTaskId));
+  return `/compare?${params.toString()}`;
+}
+
 function percent(used: number, total: number) {
   if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return null;
   return (used / total) * 100;
@@ -474,6 +537,22 @@ export function buildPingTaskComparisonSeries({
       points: buildPingPoints(metric, recordsByTask.get(taskId) ?? []),
     };
   });
+}
+
+export function buildPingTaskVpsComparisonSeries({
+  metricKey,
+  nodes,
+  records,
+  taskId,
+}: {
+  metricKey: ComparisonMetricKey;
+  nodes: ComparisonNode[];
+  records: PingRecord[];
+  taskId: number | null | undefined;
+}): ComparisonSeries[] {
+  const metric = getComparisonMetric(metricKey);
+  if (metric.source !== "ping") return [];
+  return buildPingSeries(metric, nodes, filterPingRecordsByTask(records, taskId));
 }
 
 export function buildComparisonSeries({
