@@ -1,5 +1,3 @@
-import type { AdminClient, NodeInfo } from "@/types/komari";
-
 export interface HomeFacetDimension {
   id: string;
   label: string;
@@ -20,11 +18,17 @@ export interface HomeSavedView {
   sortKey: string;
 }
 
-export type HomeFacetNodeSource = Pick<
-  NodeInfo,
-  "uuid" | "name" | "group" | "region" | "tags" | "provider" | "business_role" | "public_remark"
-> &
-  Partial<Pick<AdminClient, "remark">>;
+export interface HomeFacetNodeSource {
+  uuid: string;
+  name: string;
+  group?: string | null;
+  region?: string | null;
+  tags?: string | null;
+  provider?: string | null;
+  business_role?: string | null;
+  public_remark?: string | null;
+  remark?: string | null;
+}
 
 export interface HomeFacetNode {
   uuid: string;

@@ -7,19 +7,22 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
-  Globe2,
-  LayoutTemplate,
-  LayoutGrid,
-  ListFilter,
-  Moon,
-  RefreshCw,
-  Rows3,
-  Save,
-  Search,
-  Sun,
-  SunMoon,
-  Wallpaper,
-} from "lucide-react";
+	  Globe2,
+	  LayoutTemplate,
+	  LayoutGrid,
+	  ListFilter,
+	  Moon,
+	  Plus,
+	  RefreshCw,
+	  Rows3,
+	  Save,
+	  Search,
+	  Sun,
+	  SunMoon,
+	  Tags,
+	  Trash2,
+	  Wallpaper,
+	} from "lucide-react";
 import { clsx } from "clsx";
 import { InstancePanel } from "@/components/instance/InstancePanel";
 import { Spinner } from "@/components/ui/Spinner";
@@ -50,6 +53,24 @@ import {
   normalizeHomeGroupOrder,
   sortHomeGroupOptions,
 } from "@/utils/homeNodes";
+import {
+  DEFAULT_HOME_FACET_DIMENSIONS,
+  HOME_FACET_LEGACY_GROUP,
+  buildHomeFacetNode,
+  normalizeHomeDefaultFacetDimension,
+  normalizeHomeDefaultSavedViewId,
+  normalizeHomeFacetDimensions,
+  normalizeHomeFacetFilters,
+  normalizeHomeFacetId,
+  normalizeHomeFacetValues,
+  normalizeHomeNodeFacets,
+  normalizeHomeSavedViews,
+  normalizeHomeSelectedNodeUuids,
+  type HomeFacetDimension,
+  type HomeFacetFilters,
+  type HomeNodeFacets,
+  type HomeSavedView,
+} from "@/utils/homeVpsViews";
 import { buildHomepagePingClientBindingRows } from "@/utils/homepagePingBindingRows";
 import {
   normalizeHomepagePingPrimaryTasks,
@@ -127,6 +148,15 @@ const BACKGROUND_POSITION_OPTIONS: Array<{ value: BackgroundPosition; label: str
   { value: "center", label: "居中" },
   { value: "bottom", label: "底部" },
 ];
+const HOME_VIEW_SORT_OPTIONS = [
+  { value: "weight", label: "默认排序" },
+  { value: "risk", label: "风险优先" },
+  { value: "expiry", label: "到期时间" },
+  { value: "traffic", label: "流量压力" },
+  { value: "completeness", label: "资料缺失" },
+  { value: "name", label: "名称" },
+];
+const DEFAULT_HOME_FACET_IDS = new Set(DEFAULT_HOME_FACET_DIMENSIONS.map((dimension) => dimension.id));
 
 const OVERVIEW_RATING_LABEL_FIELDS: Array<{
   key: OverviewRatingKind;
@@ -219,6 +249,54 @@ function applyAvailableClientAssignments(
   return next;
 }
 
+function formatFacetValues(values: string[] | undefined) {
+  return (values ?? []).join("; ");
+}
+
+function formatSavedViewFilters(filters: HomeFacetFilters) {
+  return Object.entries(filters)
+    .map(([dimensionId, values]) => `${dimensionId}=${formatFacetValues(values)}`)
+    .join("\n");
+}
+
+function parseSavedViewFilters(text: string) {
+  const result: HomeFacetFilters = {};
+  for (const line of text.split(/\n+/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const separatorIndex = trimmed.search(/[=:：]/);
+    if (separatorIndex <= 0) continue;
+    const dimensionId = normalizeHomeFacetId(trimmed.slice(0, separatorIndex));
+    const values = normalizeHomeFacetValues(trimmed.slice(separatorIndex + 1));
+    if (dimensionId && values.length > 0) result[dimensionId] = values;
+  }
+  return normalizeHomeFacetFilters(result);
+}
+
+function clearFacetFilter(filters: HomeFacetFilters, dimensionId: string) {
+  const next = { ...filters };
+  delete next[dimensionId];
+  return next;
+}
+
+function createSavedViewId(existing: HomeSavedView[]) {
+  const used = new Set(existing.map((view) => view.id));
+  for (let index = existing.length + 1; index < existing.length + 100; index += 1) {
+    const id = `view${index}`;
+    if (!used.has(id)) return id;
+  }
+  return `view${Date.now().toString(36)}`;
+}
+
+function createCustomDimensionId(existing: HomeFacetDimension[]) {
+  const used = new Set(existing.map((dimension) => dimension.id));
+  for (let index = 1; index < 100; index += 1) {
+    const id = `custom${index}`;
+    if (!used.has(id)) return id;
+  }
+  return `custom${Date.now().toString(36)}`;
+}
+
 function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSettings {
   return {
     defaultAppearance: settings.defaultAppearance,
@@ -232,6 +310,12 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSetting
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
     homeGroupOrder: settings.homeGroupOrder,
+    homeFacetDimensions: settings.homeFacetDimensions,
+    homeNodeFacets: settings.homeNodeFacets,
+    homeDefaultFacetDimension: settings.homeDefaultFacetDimension,
+    homeSelectedNodeUuids: settings.homeSelectedNodeUuids,
+    homeSavedViews: settings.homeSavedViews,
+    homeDefaultSavedViewId: settings.homeDefaultSavedViewId,
     moveOfflineNodesBack: settings.moveOfflineNodesBack,
     showCostSummary: settings.showCostSummary,
     showCostSummaryFloatingButton: settings.showCostSummaryFloatingButton,
@@ -279,6 +363,15 @@ export function ThemeManage() {
   const [draftShowHomeOverview, setDraftShowHomeOverview] = useState(true);
   const [draftShowGroupTabs, setDraftShowGroupTabs] = useState(true);
   const [draftHomeGroupOrder, setDraftHomeGroupOrder] = useState<string[]>([]);
+  const [draftFacetDimensions, setDraftFacetDimensions] = useState<HomeFacetDimension[]>(
+    DEFAULT_HOME_FACET_DIMENSIONS,
+  );
+  const [draftHomeNodeFacets, setDraftHomeNodeFacets] = useState<HomeNodeFacets>({});
+  const [draftHomeDefaultFacetDimension, setDraftHomeDefaultFacetDimension] =
+    useState(HOME_FACET_LEGACY_GROUP);
+  const [draftHomeSelectedNodeUuids, setDraftHomeSelectedNodeUuids] = useState<string[]>([]);
+  const [draftHomeSavedViews, setDraftHomeSavedViews] = useState<HomeSavedView[]>([]);
+  const [draftHomeDefaultSavedViewId, setDraftHomeDefaultSavedViewId] = useState("");
   const [draftMoveOfflineNodesBack, setDraftMoveOfflineNodesBack] = useState(true);
   const [draftShowCostSummary, setDraftShowCostSummary] = useState(true);
   const [draftShowCostSummaryFloatingButton, setDraftShowCostSummaryFloatingButton] =
@@ -313,6 +406,7 @@ export function ThemeManage() {
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
+  const [facetSearch, setFacetSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -367,6 +461,12 @@ export function ThemeManage() {
     setDraftShowHomeOverview(next.showHomeOverview);
     setDraftShowGroupTabs(next.showGroupTabs);
     setDraftHomeGroupOrder(next.homeGroupOrder);
+    setDraftFacetDimensions(next.homeFacetDimensions);
+    setDraftHomeNodeFacets(next.homeNodeFacets);
+    setDraftHomeDefaultFacetDimension(next.homeDefaultFacetDimension);
+    setDraftHomeSelectedNodeUuids(next.homeSelectedNodeUuids);
+    setDraftHomeSavedViews(next.homeSavedViews);
+    setDraftHomeDefaultSavedViewId(next.homeDefaultSavedViewId);
     setDraftMoveOfflineNodesBack(next.moveOfflineNodesBack);
     setDraftShowCostSummary(next.showCostSummary);
     setDraftShowCostSummaryFloatingButton(next.showCostSummaryFloatingButton);
@@ -456,6 +556,29 @@ export function ThemeManage() {
       );
     });
   }, [nodeSearch, sortedClients]);
+  const visibleFacetClients = useMemo(() => {
+    const keyword = facetSearch.trim().toLowerCase();
+    if (!keyword) return sortedClients;
+    return sortedClients.filter((client) => {
+      const facetNode = buildHomeFacetNode(client, draftHomeNodeFacets);
+      const haystack = [
+        client.name,
+        client.uuid,
+        client.group,
+        client.region,
+        client.provider,
+        client.business_role,
+        client.tags,
+        client.public_remark,
+        client.remark,
+        ...Object.values(facetNode.facets).flat(),
+      ]
+        .map((value) => String(value ?? "").trim().toLowerCase())
+        .filter(Boolean)
+        .join(" ");
+      return haystack.includes(keyword);
+    });
+  }, [draftHomeNodeFacets, facetSearch, sortedClients]);
 
   const draftCostIgnoredNodes = useMemo(
     () => normalizeCostIgnoredNodes(draftCostIgnoredText),
@@ -490,6 +613,34 @@ export function ThemeManage() {
     () => normalizeHomepagePingTaskGroups(draftPingTaskGroups),
     [draftPingTaskGroups],
   );
+  const normalizedDraftFacetDimensions = useMemo(
+    () => normalizeHomeFacetDimensions(draftFacetDimensions),
+    [draftFacetDimensions],
+  );
+  const normalizedDraftHomeNodeFacets = useMemo(
+    () => normalizeHomeNodeFacets(draftHomeNodeFacets),
+    [draftHomeNodeFacets],
+  );
+  const normalizedDraftHomeDefaultFacetDimension = useMemo(
+    () =>
+      normalizeHomeDefaultFacetDimension(
+        draftHomeDefaultFacetDimension,
+        normalizedDraftFacetDimensions,
+      ),
+    [draftHomeDefaultFacetDimension, normalizedDraftFacetDimensions],
+  );
+  const normalizedDraftHomeSelectedNodeUuids = useMemo(
+    () => normalizeHomeSelectedNodeUuids(draftHomeSelectedNodeUuids),
+    [draftHomeSelectedNodeUuids],
+  );
+  const normalizedDraftHomeSavedViews = useMemo(
+    () => normalizeHomeSavedViews(draftHomeSavedViews, normalizedDraftFacetDimensions),
+    [draftHomeSavedViews, normalizedDraftFacetDimensions],
+  );
+  const normalizedDraftHomeDefaultSavedViewId = useMemo(
+    () => normalizeHomeDefaultSavedViewId(draftHomeDefaultSavedViewId, normalizedDraftHomeSavedViews),
+    [draftHomeDefaultSavedViewId, normalizedDraftHomeSavedViews],
+  );
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。新增一项设置只需改这个对象
   // (和 seedDrafts),不必同时改六处。
@@ -506,6 +657,12 @@ export function ThemeManage() {
       showHomeOverview: draftShowHomeOverview,
       showGroupTabs: draftShowGroupTabs,
       homeGroupOrder: normalizeHomeGroupOrder(draftHomeGroupOrder),
+      homeFacetDimensions: normalizedDraftFacetDimensions,
+      homeNodeFacets: normalizedDraftHomeNodeFacets,
+      homeDefaultFacetDimension: normalizedDraftHomeDefaultFacetDimension,
+      homeSelectedNodeUuids: normalizedDraftHomeSelectedNodeUuids,
+      homeSavedViews: normalizedDraftHomeSavedViews,
+      homeDefaultSavedViewId: normalizedDraftHomeDefaultSavedViewId,
       moveOfflineNodesBack: draftMoveOfflineNodesBack,
       showCostSummary: draftShowCostSummary,
       showCostSummaryFloatingButton: draftShowCostSummaryFloatingButton,
@@ -540,6 +697,12 @@ export function ThemeManage() {
       draftShowHomeOverview,
       draftShowGroupTabs,
       draftHomeGroupOrder,
+      normalizedDraftFacetDimensions,
+      normalizedDraftHomeNodeFacets,
+      normalizedDraftHomeDefaultFacetDimension,
+      normalizedDraftHomeSelectedNodeUuids,
+      normalizedDraftHomeSavedViews,
+      normalizedDraftHomeDefaultSavedViewId,
       draftMoveOfflineNodesBack,
       draftShowCostSummary,
       draftShowCostSummaryFloatingButton,
@@ -641,6 +804,105 @@ export function ThemeManage() {
       else delete next[String(taskId)];
       return next;
     });
+  };
+  const setNodeFacetValues = (clientUuid: string, dimensionId: string, text: string) => {
+    const values = normalizeHomeFacetValues(text);
+    setDraftHomeNodeFacets((prev) => {
+      const next: HomeNodeFacets = { ...prev };
+      const nodeFacets = { ...(next[clientUuid] ?? {}) };
+      if (values.length > 0) nodeFacets[dimensionId] = values;
+      else delete nodeFacets[dimensionId];
+      if (Object.keys(nodeFacets).length > 0) next[clientUuid] = nodeFacets;
+      else delete next[clientUuid];
+      return normalizeHomeNodeFacets(next);
+    });
+  };
+  const updateFacetDimension = (
+    dimensionId: string,
+    patch: Partial<Pick<HomeFacetDimension, "label" | "visible" | "order">>,
+  ) => {
+    setDraftFacetDimensions((prev) =>
+      normalizeHomeFacetDimensions(
+        prev.map((dimension) =>
+          dimension.id === dimensionId ? { ...dimension, ...patch } : dimension,
+        ),
+      ),
+    );
+  };
+  const moveFacetDimension = (dimensionId: string, direction: -1 | 1) => {
+    setDraftFacetDimensions((prev) => {
+      const ordered = normalizeHomeFacetDimensions(prev);
+      const index = ordered.findIndex((dimension) => dimension.id === dimensionId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= ordered.length) return ordered;
+      const next = [...ordered];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((dimension, orderIndex) => ({ ...dimension, order: (orderIndex + 1) * 10 }));
+    });
+  };
+  const addFacetDimension = () => {
+    setDraftFacetDimensions((prev) => {
+      const normalized = normalizeHomeFacetDimensions(prev);
+      const id = createCustomDimensionId(normalized);
+      return normalizeHomeFacetDimensions([
+        ...normalized,
+        { id, label: "新维度", visible: true, order: (normalized.length + 1) * 10 },
+      ]);
+    });
+  };
+  const removeFacetDimension = (dimensionId: string) => {
+    if (DEFAULT_HOME_FACET_IDS.has(dimensionId)) return;
+    setDraftFacetDimensions((prev) => prev.filter((dimension) => dimension.id !== dimensionId));
+    setDraftHomeNodeFacets((prev) => {
+      const next: HomeNodeFacets = {};
+      for (const [uuid, facets] of Object.entries(prev)) {
+        const nodeFacets = { ...facets };
+        delete nodeFacets[dimensionId];
+        if (Object.keys(nodeFacets).length > 0) next[uuid] = nodeFacets;
+      }
+      return next;
+    });
+    setDraftHomeSavedViews((prev) =>
+      prev.map((view) => ({
+        ...view,
+        filters: clearFacetFilter(view.filters, dimensionId),
+        groupBy: view.groupBy === dimensionId ? HOME_FACET_LEGACY_GROUP : view.groupBy,
+      })),
+    );
+    if (draftHomeDefaultFacetDimension === dimensionId) {
+      setDraftHomeDefaultFacetDimension(HOME_FACET_LEGACY_GROUP);
+    }
+  };
+  const addSavedView = () => {
+    setDraftHomeSavedViews((prev) => {
+      const id = createSavedViewId(prev);
+      return normalizeHomeSavedViews(
+        [
+          ...prev,
+          {
+            id,
+            name: `视图 ${prev.length + 1}`,
+            selectedNodeUuids: [],
+            filters: {},
+            groupBy: normalizedDraftHomeDefaultFacetDimension,
+            sortKey: "weight",
+          },
+        ],
+        normalizedDraftFacetDimensions,
+      );
+    });
+  };
+  const updateSavedView = (viewId: string, patch: Partial<HomeSavedView>) => {
+    setDraftHomeSavedViews((prev) =>
+      normalizeHomeSavedViews(
+        prev.map((view) => (view.id === viewId ? { ...view, ...patch } : view)),
+        normalizedDraftFacetDimensions,
+      ),
+    );
+  };
+  const removeSavedView = (viewId: string) => {
+    setDraftHomeSavedViews((prev) => prev.filter((view) => view.id !== viewId));
+    if (draftHomeDefaultSavedViewId === viewId) setDraftHomeDefaultSavedViewId("");
   };
 
   const handleSave = async () => {
@@ -1265,10 +1527,334 @@ export function ThemeManage() {
             </div>
           </div>
         </div>
-      </InstancePanel>
+	      </InstancePanel>
 
-      <InstancePanel
-        title="小卡片显示项"
+	      <InstancePanel
+	        title="VPS 标签与视图"
+	        description="为首页多维筛选维护标签、默认展示 VPS 与保存视图；旧分组会继续作为兼容维度使用。"
+	        aside={<Tags size={16} />}
+	      >
+	        <div className="flex flex-col gap-4">
+	          <section className="surface-inset px-4 py-4">
+	            <div className="flex flex-wrap items-start justify-between gap-3">
+	              <div>
+	                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+	                  筛选维度
+	                </div>
+	                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+	                  控制首页维度切换栏的显示顺序、名称和默认维度。
+	                </div>
+	              </div>
+	              <div className="flex flex-wrap items-center gap-2">
+	                <label className="surface-inset flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+	                  <span className="shrink-0">默认</span>
+	                  <select
+	                    value={normalizedDraftHomeDefaultFacetDimension}
+	                    onChange={(event) => setDraftHomeDefaultFacetDimension(event.target.value)}
+	                    className="bg-transparent text-[12px] outline-none"
+	                  >
+	                    {normalizedDraftFacetDimensions
+	                      .filter((dimension) => dimension.visible)
+	                      .map((dimension) => (
+	                        <option key={dimension.id} value={dimension.id}>
+	                          {dimension.label}
+	                        </option>
+	                      ))}
+	                  </select>
+	                </label>
+	                <button type="button" className="theme-manage-button is-compact" onClick={addFacetDimension}>
+	                  <Plus size={13} />
+	                  <span>新增维度</span>
+	                </button>
+	              </div>
+	            </div>
+	            <div className="mt-3 flex flex-col gap-2">
+	              {normalizedDraftFacetDimensions.map((dimension, index) => (
+	                <div
+	                  key={dimension.id}
+	                  className="rounded-[12px] border border-[var(--hairline)] px-3 py-3"
+	                >
+	                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+	                    <label className="flex min-w-0 items-center gap-2">
+	                      <span className="w-20 shrink-0 text-[11px] font-medium text-[var(--text-tertiary)]">
+	                        {dimension.id}
+	                      </span>
+	                      <input
+	                        value={dimension.label}
+	                        onChange={(event) => updateFacetDimension(dimension.id, { label: event.target.value })}
+	                        className="surface-inset min-w-0 flex-1 px-3 py-2 text-[12px] outline-none"
+	                        aria-label={`设置 ${dimension.id} 的维度名称`}
+	                      />
+	                    </label>
+	                    <label className="inline-flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+	                      <input
+	                        type="checkbox"
+	                        checked={dimension.visible}
+	                        onChange={(event) =>
+	                          updateFacetDimension(dimension.id, { visible: event.target.checked })
+	                        }
+	                        className="h-4 w-4 accent-[var(--accent-500)]"
+	                      />
+	                      <span>首页显示</span>
+	                    </label>
+	                    <span className="flex items-center gap-1">
+	                      <button
+	                        type="button"
+	                        disabled={index === 0}
+	                        onClick={() => moveFacetDimension(dimension.id, -1)}
+	                        className="theme-manage-button is-compact"
+	                        aria-label={`上移 ${dimension.label}`}
+	                      >
+	                        <ChevronUp size={14} />
+	                      </button>
+	                      <button
+	                        type="button"
+	                        disabled={index === normalizedDraftFacetDimensions.length - 1}
+	                        onClick={() => moveFacetDimension(dimension.id, 1)}
+	                        className="theme-manage-button is-compact"
+	                        aria-label={`下移 ${dimension.label}`}
+	                      >
+	                        <ChevronDown size={14} />
+	                      </button>
+	                      {!DEFAULT_HOME_FACET_IDS.has(dimension.id) && (
+	                        <button
+	                          type="button"
+	                          onClick={() => removeFacetDimension(dimension.id)}
+	                          className="theme-manage-button is-compact is-danger"
+	                          aria-label={`删除 ${dimension.label}`}
+	                        >
+	                          <Trash2 size={13} />
+	                        </button>
+	                      )}
+	                    </span>
+	                  </div>
+	                </div>
+	              ))}
+	            </div>
+	          </section>
+
+	          <section className="surface-inset px-4 py-4">
+	            <div className="flex flex-wrap items-start justify-between gap-3">
+	              <div>
+	                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+	                  VPS 多维标签
+	                </div>
+	                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+	                  每个输入框可写多个值，用分号、逗号或换行分隔；后端已有字段会作为默认标签参与首页筛选。
+	                </div>
+	              </div>
+	              <label className="surface-inset flex min-w-[220px] items-center gap-2 px-3 py-2">
+	                <Search size={14} className="text-[var(--text-tertiary)]" />
+	                <input
+	                  value={facetSearch}
+	                  onChange={(event) => setFacetSearch(event.target.value)}
+	                  placeholder="搜索 VPS / UUID / 标签"
+	                  className="min-w-0 flex-1 bg-transparent text-[12px] outline-none placeholder:text-[var(--text-tertiary)]"
+	                />
+	              </label>
+	            </div>
+	            <div className="mt-3 grid max-h-[460px] gap-3 overflow-auto pr-1">
+	              {visibleFacetClients.map((client) => {
+	                const facetNode = buildHomeFacetNode(client, normalizedDraftHomeNodeFacets);
+	                const configured = normalizedDraftHomeNodeFacets[client.uuid] ?? {};
+	                return (
+	                  <article
+	                    key={client.uuid}
+	                    className="rounded-[12px] border border-[var(--hairline)] px-3 py-3"
+	                  >
+	                    <div className="flex flex-wrap items-center justify-between gap-2">
+	                      <span className="min-w-0">
+	                        <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
+	                          {client.name}
+	                        </span>
+	                        <span className="mt-0.5 block truncate text-[10px] text-[var(--text-tertiary)]">
+	                          {[client.group, client.region, client.uuid].filter(Boolean).join(" · ")}
+	                        </span>
+	                      </span>
+	                      {draftHomeSelectedNodeUuids.includes(client.uuid) && (
+	                        <span className="rounded-full border border-[color-mix(in_srgb,var(--accent-500)_30%,var(--hairline))] px-2 py-0.5 text-[10px] text-[var(--accent-600)]">
+	                          默认展示
+	                        </span>
+	                      )}
+	                    </div>
+	                    <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+	                      {normalizedDraftFacetDimensions.map((dimension) => (
+	                        <label key={dimension.id} className="flex min-w-0 flex-col gap-1.5">
+	                          <span className="text-[11px] font-medium text-[var(--text-tertiary)]">
+	                            {dimension.label}
+	                          </span>
+	                          <input
+	                            value={formatFacetValues(configured[dimension.id])}
+	                            onChange={(event) =>
+	                              setNodeFacetValues(client.uuid, dimension.id, event.target.value)
+	                            }
+	                            placeholder={formatFacetValues(facetNode.facets[dimension.id]) || "未设置"}
+	                            className="surface-inset w-full px-3 py-2 text-[12px] outline-none"
+	                          />
+	                        </label>
+	                      ))}
+	                    </div>
+	                  </article>
+	                );
+	              })}
+	              {visibleFacetClients.length === 0 && (
+	                <div className="rounded-[12px] border border-dashed border-[var(--hairline)] px-4 py-5 text-[12px] text-[var(--text-tertiary)]">
+	                  没有匹配的 VPS。
+	                </div>
+	              )}
+	            </div>
+	          </section>
+
+	          <section className="surface-inset px-4 py-4">
+	            <div className="flex flex-wrap items-start justify-between gap-3">
+	              <div>
+	                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+	                  默认指定展示
+	                </div>
+	                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+	                  首页首次打开时只展示这里列出的 VPS；留空则展示全部可见 VPS。
+	                </div>
+	              </div>
+	              <span className="text-[11px] text-[var(--text-tertiary)]">
+	                {normalizedDraftHomeSelectedNodeUuids.length} 台
+	              </span>
+	            </div>
+	            <textarea
+	              value={draftHomeSelectedNodeUuids.join("\n")}
+	              onChange={(event) =>
+	                setDraftHomeSelectedNodeUuids(normalizeHomeSelectedNodeUuids(event.target.value))
+	              }
+	              placeholder="每行一个 VPS UUID，也可以用逗号分隔"
+	              className="surface-inset mt-3 min-h-[96px] w-full resize-y px-3 py-2 text-[12px] outline-none"
+	            />
+	          </section>
+
+	          <section className="surface-inset px-4 py-4">
+	            <div className="flex flex-wrap items-start justify-between gap-3">
+	              <div>
+	                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+	                  保存视图
+	                </div>
+	                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+	                  保存常用的指定 VPS、维度筛选、排序和默认分组维度，首页可一键切换。
+	                </div>
+	              </div>
+	              <div className="flex flex-wrap items-center gap-2">
+	                <label className="surface-inset flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+	                  <span className="shrink-0">默认视图</span>
+	                  <select
+	                    value={normalizedDraftHomeDefaultSavedViewId}
+	                    onChange={(event) => setDraftHomeDefaultSavedViewId(event.target.value)}
+	                    className="bg-transparent text-[12px] outline-none"
+	                  >
+	                    <option value="">无</option>
+	                    {normalizedDraftHomeSavedViews.map((view) => (
+	                      <option key={view.id} value={view.id}>
+	                        {view.name}
+	                      </option>
+	                    ))}
+	                  </select>
+	                </label>
+	                <button type="button" className="theme-manage-button is-compact" onClick={addSavedView}>
+	                  <Plus size={13} />
+	                  <span>新增视图</span>
+	                </button>
+	              </div>
+	            </div>
+	            <div className="mt-3 grid gap-3">
+	              {normalizedDraftHomeSavedViews.map((view) => (
+	                <article key={view.id} className="rounded-[12px] border border-[var(--hairline)] px-3 py-3">
+	                  <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(150px,190px)_minmax(150px,190px)_auto] md:items-center">
+	                    <label className="flex min-w-0 items-center gap-2">
+	                      <span className="shrink-0 text-[11px] text-[var(--text-tertiary)]">
+	                        {view.id}
+	                      </span>
+	                      <input
+	                        value={view.name}
+	                        onChange={(event) => updateSavedView(view.id, { name: event.target.value })}
+	                        className="surface-inset min-w-0 flex-1 px-3 py-2 text-[12px] outline-none"
+	                        aria-label={`重命名视图 ${view.id}`}
+	                      />
+	                    </label>
+	                    <select
+	                      value={view.groupBy}
+	                      onChange={(event) => updateSavedView(view.id, { groupBy: event.target.value })}
+	                      className="surface-inset px-3 py-2 text-[12px] outline-none"
+	                      aria-label={`设置 ${view.name} 的分组维度`}
+	                    >
+	                      {normalizedDraftFacetDimensions.map((dimension) => (
+	                        <option key={dimension.id} value={dimension.id}>
+	                          {dimension.label}
+	                        </option>
+	                      ))}
+	                    </select>
+	                    <select
+	                      value={view.sortKey}
+	                      onChange={(event) => updateSavedView(view.id, { sortKey: event.target.value })}
+	                      className="surface-inset px-3 py-2 text-[12px] outline-none"
+	                      aria-label={`设置 ${view.name} 的排序`}
+	                    >
+	                      {HOME_VIEW_SORT_OPTIONS.map((option) => (
+	                        <option key={option.value} value={option.value}>
+	                          {option.label}
+	                        </option>
+	                      ))}
+	                    </select>
+	                    <button
+	                      type="button"
+	                      onClick={() => removeSavedView(view.id)}
+	                      className="theme-manage-button is-compact is-danger"
+	                    >
+	                      <Trash2 size={13} />
+	                      <span>删除</span>
+	                    </button>
+	                  </div>
+	                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+	                    <label className="flex min-w-0 flex-col gap-1.5">
+	                      <span className="text-[11px] font-medium text-[var(--text-tertiary)]">
+	                        指定 VPS
+	                      </span>
+	                      <textarea
+	                        value={view.selectedNodeUuids.join("\n")}
+	                        onChange={(event) =>
+	                          updateSavedView(view.id, {
+	                            selectedNodeUuids: normalizeHomeSelectedNodeUuids(event.target.value),
+	                          })
+	                        }
+	                        placeholder="每行一个 VPS UUID；留空则不限制"
+	                        className="surface-inset min-h-[92px] w-full resize-y px-3 py-2 text-[12px] outline-none"
+	                      />
+	                    </label>
+	                    <label className="flex min-w-0 flex-col gap-1.5">
+	                      <span className="text-[11px] font-medium text-[var(--text-tertiary)]">
+	                        维度筛选
+	                      </span>
+	                      <textarea
+	                        value={formatSavedViewFilters(view.filters)}
+	                        onChange={(event) =>
+	                          updateSavedView(view.id, {
+	                            filters: parseSavedViewFilters(event.target.value),
+	                          })
+	                        }
+	                        placeholder="provider=DMIT&#10;region=日本&#10;line=CMI; CN2"
+	                        className="surface-inset min-h-[92px] w-full resize-y px-3 py-2 text-[12px] outline-none"
+	                      />
+	                    </label>
+	                  </div>
+	                </article>
+	              ))}
+	              {normalizedDraftHomeSavedViews.length === 0 && (
+	                <div className="rounded-[12px] border border-dashed border-[var(--hairline)] px-4 py-5 text-[12px] text-[var(--text-tertiary)]">
+	                  暂无保存视图。
+	                </div>
+	              )}
+	            </div>
+	          </section>
+	        </div>
+	      </InstancePanel>
+
+	      <InstancePanel
+	        title="小卡片显示项"
         description="控制小卡片中间信息块的密度；实时速率始终显示，其他两项可以按需隐藏。"
         aside={<Rows3 size={16} />}
       >

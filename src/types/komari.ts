@@ -167,11 +167,11 @@ export interface ThemeSettings {
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   homeGroupOrder?: string[];
-  homeFacetDimensions?: Array<Record<string, unknown>>;
+  homeFacetDimensions?: unknown[];
   homeNodeFacets?: Record<string, Record<string, unknown>>;
   homeDefaultFacetDimension?: string;
   homeSelectedNodeUuids?: string[] | string;
-  homeSavedViews?: Array<Record<string, unknown>>;
+  homeSavedViews?: unknown[];
   homeDefaultSavedViewId?: string;
   moveOfflineNodesBack?: boolean;
   showCostSummary?: boolean;
