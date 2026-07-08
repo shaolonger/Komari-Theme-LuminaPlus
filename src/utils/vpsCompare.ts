@@ -92,6 +92,17 @@ export interface ComparisonRankingRow extends ComparisonStats {
   region: string;
 }
 
+export type ComparisonRankingSortKey =
+  | "name"
+  | "group"
+  | "region"
+  | "samples"
+  | "average"
+  | "p95"
+  | "max"
+  | "latest";
+export type ComparisonSortDirection = "asc" | "desc";
+
 export const COMPARISON_METRICS: ComparisonMetricDefinition[] = [
   {
     key: "cpu",
@@ -384,6 +395,34 @@ export function buildPingTaskVpsCompareUrl({
   const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
   if (normalizedTaskId != null) params.set("pingTask", String(normalizedTaskId));
   return `/compare?${params.toString()}`;
+}
+
+function pingTaskMetadataScore(task: PingTask) {
+  const name = task.name?.trim() ?? "";
+  const fallbackName = `任务 #${task.id}`;
+  let score = 0;
+  if (name && name !== fallbackName) score += 8;
+  else if (name) score += 1;
+  if (task.target?.trim()) score += 4;
+  if (task.clients.length > 0) score += 2;
+  if (task.type?.trim()) score += 1;
+  if (Number.isFinite(task.interval) && task.interval > 0) score += 1;
+  return score;
+}
+
+export function mergePingTasksById(taskLists: Array<PingTask[] | undefined>) {
+  const taskById = new Map<number, PingTask>();
+  for (const tasks of taskLists) {
+    for (const task of tasks ?? []) {
+      const taskId = normalizeComparisonPingTaskId(task.id);
+      if (taskId == null) continue;
+      const existing = taskById.get(taskId);
+      if (!existing || pingTaskMetadataScore(task) > pingTaskMetadataScore(existing)) {
+        taskById.set(taskId, task);
+      }
+    }
+  }
+  return taskById;
 }
 
 function percent(used: number, total: number) {
@@ -766,6 +805,112 @@ export function buildComparisonRanking(series: ComparisonSeries[]): ComparisonRa
       const bv = b.p95 ?? b.average ?? -Infinity;
       return bv - av;
     });
+}
+
+function compareNullableNumbers(
+  left: number | null | undefined,
+  right: number | null | undefined,
+) {
+  const leftValid = typeof left === "number" && Number.isFinite(left);
+  const rightValid = typeof right === "number" && Number.isFinite(right);
+  if (!leftValid && !rightValid) return 0;
+  if (!leftValid) return 1;
+  if (!rightValid) return -1;
+  return left - right;
+}
+
+function compareRankingText(left: string, right: string) {
+  const leftText = left.trim();
+  const rightText = right.trim();
+  if (!leftText && !rightText) return 0;
+  if (!leftText) return 1;
+  if (!rightText) return -1;
+  return leftText.localeCompare(rightText, "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
+function compareRankingRowsByKey(
+  left: ComparisonRankingRow,
+  right: ComparisonRankingRow,
+  key: ComparisonRankingSortKey,
+) {
+  switch (key) {
+    case "name":
+      return compareRankingText(left.name, right.name);
+    case "group":
+      return compareRankingText(left.group, right.group);
+    case "region":
+      return compareRankingText(left.region, right.region);
+    case "samples":
+      return compareNullableNumbers(left.samples, right.samples);
+    case "average":
+      return compareNullableNumbers(left.average, right.average);
+    case "p95":
+      return compareNullableNumbers(left.p95, right.p95);
+    case "max":
+      return compareNullableNumbers(left.max, right.max);
+    case "latest":
+      return compareNullableNumbers(left.latest, right.latest);
+    default:
+      return 0;
+  }
+}
+
+function rankingNumberValue(row: ComparisonRankingRow, key: ComparisonRankingSortKey) {
+  switch (key) {
+    case "samples":
+      return row.samples;
+    case "average":
+      return row.average;
+    case "p95":
+      return row.p95;
+    case "max":
+      return row.max;
+    case "latest":
+      return row.latest;
+    default:
+      return null;
+  }
+}
+
+function rankingTextValue(row: ComparisonRankingRow, key: ComparisonRankingSortKey) {
+  if (key === "name") return row.name;
+  if (key === "group") return row.group;
+  if (key === "region") return row.region;
+  return null;
+}
+
+function hasComparableNumber(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function sortComparisonRankingRows(
+  rows: ComparisonRankingRow[],
+  key: ComparisonRankingSortKey,
+  direction: ComparisonSortDirection,
+) {
+  const directionFactor = direction === "asc" ? 1 : -1;
+  return [...rows].sort((left, right) => {
+    const primary = compareRankingRowsByKey(left, right, key);
+    if (primary !== 0) {
+      const leftNumber = rankingNumberValue(left, key);
+      const rightNumber = rankingNumberValue(right, key);
+      const numberHasEmpty = hasComparableNumber(leftNumber) !== hasComparableNumber(rightNumber);
+      if (numberHasEmpty) return primary;
+
+      const leftText = rankingTextValue(left, key);
+      const rightText = rankingTextValue(right, key);
+      const textHasEmpty = leftText != null && rightText != null && !leftText.trim() !== !rightText.trim();
+      if (textHasEmpty) return primary;
+
+      return primary * directionFactor;
+    }
+    return (
+      compareRankingText(left.name, right.name) ||
+      compareRankingText(left.group, right.group) ||
+      compareRankingText(left.region, right.region) ||
+      left.uuid.localeCompare(right.uuid, "zh-CN", { numeric: true, sensitivity: "base" })
+    );
+  });
 }
 
 export function formatComparisonValue(

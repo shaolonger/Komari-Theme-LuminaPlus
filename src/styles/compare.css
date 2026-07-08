@@ -615,6 +615,45 @@
   font-weight: 720;
 }
 
+.compare-ranking-sort-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 24px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  letter-spacing: 0;
+  text-align: inherit;
+  white-space: nowrap;
+}
+
+.compare-ranking-table th:first-child .compare-ranking-sort-button {
+  justify-content: flex-start;
+}
+
+.compare-ranking-sort-button svg {
+  flex: 0 0 auto;
+  opacity: 0.52;
+}
+
+.compare-ranking-sort-button[data-active="true"] {
+  color: var(--text-primary);
+}
+
+.compare-ranking-sort-button[data-active="true"] svg {
+  color: var(--accent-500);
+  opacity: 1;
+}
+
+.compare-ranking-sort-button:hover {
+  color: var(--text-primary);
+}
+
 .compare-ranking-table td {
   color: var(--text-secondary);
   font-weight: 640;

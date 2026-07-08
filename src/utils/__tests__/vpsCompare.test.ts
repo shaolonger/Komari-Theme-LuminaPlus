@@ -12,10 +12,13 @@ import {
   getComparisonRequestHours,
   getPingTaskBoundNodeUuids,
   isValidComparisonCustomRange,
+  mergePingTasksById,
   normalizeComparisonPingTaskId,
   prepareComparisonTrendData,
+  sortComparisonRankingRows,
   trimComparisonSeriesToRange,
   type ComparisonNode,
+  type ComparisonRankingRow,
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
 import type { ComparisonLoadRecords } from "@/services/api";
@@ -186,6 +189,16 @@ describe("ping task VPS compare helpers", () => {
       }),
     ).toBe("/compare?metric=ping_loss&hours=12&tab=ranking&nodes=b%2Ca&pingTask=2");
   });
+
+  it("prefers complete ping task metadata over fallback task labels", () => {
+    const taskById = mergePingTasksById([
+      [task({ id: 12, name: "广州电信", target: "example.com" })],
+      [task({ id: 12, name: "任务 #12", target: "" })],
+    ]);
+
+    expect(taskById.get(12)?.name).toBe("广州电信");
+    expect(taskById.get(12)?.target).toBe("example.com");
+  });
 });
 
 describe("prepareComparisonTrendData", () => {
@@ -349,5 +362,57 @@ describe("comparison export helpers", () => {
     expect(formatComparisonValue("cpu", 12.3456)).toBe("12.3%");
     expect(buildComparisonCsv(rows, "cpu")).toContain('"alpha, one"');
     expect(buildComparisonMarkdown(rows, "cpu")).toContain("VPS 对比 - CPU 使用率");
+  });
+});
+
+describe("comparison ranking sorting", () => {
+  const rows: ComparisonRankingRow[] = [
+    {
+      uuid: "b",
+      name: "beta",
+      group: "",
+      region: "JP",
+      samples: 8,
+      average: 20,
+      min: 1,
+      max: 60,
+      p95: 40,
+      latest: null,
+    },
+    {
+      uuid: "a",
+      name: "alpha",
+      group: "edge",
+      region: "US",
+      samples: 12,
+      average: 30,
+      min: 1,
+      max: 80,
+      p95: 70,
+      latest: 15,
+    },
+    {
+      uuid: "c",
+      name: "gamma",
+      group: "core",
+      region: "",
+      samples: 10,
+      average: 10,
+      min: 1,
+      max: 20,
+      p95: 25,
+      latest: 8,
+    },
+  ];
+
+  it("sorts text and numeric ranking columns by the requested direction", () => {
+    expect(sortComparisonRankingRows(rows, "name", "asc").map((row) => row.uuid)).toEqual(["a", "b", "c"]);
+    expect(sortComparisonRankingRows(rows, "p95", "desc").map((row) => row.uuid)).toEqual(["a", "b", "c"]);
+    expect(sortComparisonRankingRows(rows, "latest", "asc").map((row) => row.uuid)).toEqual(["c", "a", "b"]);
+  });
+
+  it("keeps empty text values and missing numeric values at the end", () => {
+    expect(sortComparisonRankingRows(rows, "group", "desc").map((row) => row.uuid)).toEqual(["a", "c", "b"]);
+    expect(sortComparisonRankingRows(rows, "latest", "desc").map((row) => row.uuid)).toEqual(["a", "c", "b"]);
   });
 });

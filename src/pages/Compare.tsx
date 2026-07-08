@@ -7,6 +7,7 @@ import "uplot/dist/uPlot.min.css";
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpDown,
   BarChart3,
   Check,
   ChevronLeft,
@@ -19,6 +20,7 @@ import {
 import {
   getComparisonLoadRecords,
   getComparisonPingRecords,
+  getPingOverview,
 } from "@/services/api";
 import {
   buildChartTooltipHooks,
@@ -50,12 +52,16 @@ import {
   getComparisonMetric,
   getPingTaskBoundNodeUuids,
   isValidComparisonCustomRange,
+  mergePingTasksById,
   nodesToComparisonNodes,
   normalizeComparisonPingTaskId,
   prepareComparisonTrendData,
+  sortComparisonRankingRows,
   trimComparisonSeriesToRange,
   type ComparisonMetricKey,
   type ComparisonRankingRow,
+  type ComparisonRankingSortKey,
+  type ComparisonSortDirection,
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
 import {
@@ -64,7 +70,7 @@ import {
   parseDateTimeLocalInZone,
   type DisplayTimeZone,
 } from "@/utils/timeDisplay";
-import type { NodeInfo } from "@/types/komari";
+import type { NodeInfo, PingTask } from "@/types/komari";
 
 const DEFAULT_METRIC: ComparisonMetricKey = "cpu";
 const DEFAULT_HOURS = 4;
@@ -237,6 +243,42 @@ function pingTaskDisplayName(
   const name = taskName?.trim() || taskFallbackName(taskId);
   const groupLabel = group?.trim();
   return groupLabel ? `${groupLabel} / ${name}` : name;
+}
+
+const RANKING_SORT_COLUMNS: Array<{
+  key: ComparisonRankingSortKey;
+  label: string;
+}> = [
+  { key: "name", label: "VPS" },
+  { key: "group", label: "分组" },
+  { key: "region", label: "地区" },
+  { key: "samples", label: "样本" },
+  { key: "average", label: "平均" },
+  { key: "p95", label: "P95" },
+  { key: "max", label: "峰值" },
+  { key: "latest", label: "最新" },
+];
+
+function defaultRankingSortDirection(key: ComparisonRankingSortKey): ComparisonSortDirection {
+  return key === "name" || key === "group" || key === "region" ? "asc" : "desc";
+}
+
+function nextRankingSort(
+  current: { key: ComparisonRankingSortKey; direction: ComparisonSortDirection },
+  key: ComparisonRankingSortKey,
+) {
+  if (current.key !== key) {
+    return { key, direction: defaultRankingSortDirection(key) };
+  }
+  return { key, direction: current.direction === "asc" ? "desc" : "asc" } as const;
+}
+
+function ariaSortValue(
+  current: { key: ComparisonRankingSortKey; direction: ComparisonSortDirection },
+  key: ComparisonRankingSortKey,
+) {
+  if (current.key !== key) return "none";
+  return current.direction === "asc" ? "ascending" : "descending";
 }
 
 function ComparisonTrendChart({
@@ -427,23 +469,45 @@ function RankingTable({
   rows: ComparisonRankingRow[];
   selectedCount: number;
 }) {
+  const [sort, setSort] = useState<{
+    key: ComparisonRankingSortKey;
+    direction: ComparisonSortDirection;
+  }>({ key: "p95", direction: "desc" });
+  const sortedRows = useMemo(
+    () => sortComparisonRankingRows(rows, sort.key, sort.direction),
+    [rows, sort.direction, sort.key],
+  );
+
   return (
     <div className="compare-ranking-table-wrap">
       <table className="compare-ranking-table">
         <thead>
           <tr>
-            <th>VPS</th>
-            <th>分组</th>
-            <th>地区</th>
-            <th>样本</th>
-            <th>平均</th>
-            <th>P95</th>
-            <th>峰值</th>
-            <th>最新</th>
+            {RANKING_SORT_COLUMNS.map((column) => {
+              const active = sort.key === column.key;
+              return (
+                <th key={column.key} aria-sort={ariaSortValue(sort, column.key)}>
+                  <button
+                    type="button"
+                    className="compare-ranking-sort-button"
+                    data-active={active ? "true" : "false"}
+                    onClick={() => setSort((current) => nextRankingSort(current, column.key))}
+                    title={`按${column.label}${active && sort.direction === "asc" ? "降序" : "排序"}`}
+                  >
+                    <span>{column.label}</span>
+                    {active ? (
+                      sort.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                    ) : (
+                      <ArrowUpDown size={12} />
+                    )}
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {sortedRows.map((row) => (
             <tr key={row.uuid}>
               <td>
                 <Link to={`/instance/${rowInstanceUuid(row.uuid)}`} className="compare-ranking-name">
@@ -461,7 +525,7 @@ function RankingTable({
           ))}
         </tbody>
       </table>
-      {rows.length === 0 && (
+      {sortedRows.length === 0 && (
         <div className="compare-chart-empty">
           {selectedCount === 0 ? "请选择 VPS 查看排行" : "当前范围暂无排行数据"}
         </div>
@@ -611,6 +675,18 @@ export function Compare() {
     if (!query) return nodeOptions;
     return nodeOptions.filter((node) => compareSearchText(node).includes(query));
   }, [nodeOptions, nodeSearch]);
+  const pingTaskCatalogIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const taskId of Object.keys(themeSettings.homepagePingBindings)) {
+      const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+      if (normalizedTaskId != null) ids.add(normalizedTaskId);
+    }
+    if (selectedPingTaskId != null) ids.add(selectedPingTaskId);
+    for (const taskId of selectedPingTaskIds) {
+      ids.add(taskId);
+    }
+    return Array.from(ids).sort((left, right) => left - right);
+  }, [selectedPingTaskId, selectedPingTaskIds, themeSettings.homepagePingBindings]);
   const selectedPingTaskBoundUuids = useMemo(
     () =>
       getPingTaskBoundNodeUuids(
@@ -646,15 +722,33 @@ export function Compare() {
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
+  const pingTaskCatalogQuery = useQuery({
+    queryKey: ["compare", "ping-task-catalog", pingTaskCatalogIds.join(",")],
+    queryFn: async ({ signal }) => {
+      const results = await Promise.allSettled(
+        pingTaskCatalogIds.map((taskId) => getPingOverview(1, taskId, { signal })),
+      );
+      const catalogTasks: PingTask[] = [];
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        catalogTasks.push(...result.value.tasks);
+      }
+      return Array.from(mergePingTasksById([catalogTasks]).values())
+        .sort((left, right) => left.id - right.id);
+    },
+    enabled: metric.source === "ping" && pingTaskCatalogIds.length > 0,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+  });
   const taskById = useMemo(() => {
-    return new Map((pingQuery.data?.tasks ?? []).map((task) => [task.id, task]));
-  }, [pingQuery.data?.tasks]);
+    return mergePingTasksById([
+      pingTaskCatalogQuery.data,
+      pingQuery.data?.tasks,
+    ]);
+  }, [pingQuery.data?.tasks, pingTaskCatalogQuery.data]);
   const pingTaskOptions = useMemo(() => {
     const ids = new Set<number>();
-    for (const taskId of Object.keys(themeSettings.homepagePingBindings)) {
-      const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
-      if (normalizedTaskId != null) ids.add(normalizedTaskId);
-    }
+    for (const taskId of pingTaskCatalogIds) ids.add(taskId);
     for (const task of pingQuery.data?.tasks ?? []) {
       ids.add(task.id);
     }
@@ -686,6 +780,7 @@ export function Compare() {
         };
       });
   }, [
+    pingTaskCatalogIds,
     pingQuery.data?.tasks,
     selectedPingTaskId,
     taskById,
@@ -715,7 +810,7 @@ export function Compare() {
           metricKey,
           node: compareNodes[0],
           records: pingQuery.data?.records ?? [],
-          tasks: pingQuery.data?.tasks ?? [],
+          tasks: Array.from(taskById.values()),
           taskIds: selectedPingTaskIds,
         });
       }
@@ -736,6 +831,7 @@ export function Compare() {
       selectedPingTaskId,
       selectedPingTaskIds,
       singleNodePingTaskMode,
+      taskById,
       taskScopedPingMode,
     ],
   );
