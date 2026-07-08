@@ -3,6 +3,7 @@ import {
   DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
   type HomepagePingAggregationStrategy,
 } from "@/utils/homepagePingSettings";
+import { isLostPingSample, isValidPingLatency } from "@/utils/pingSamples";
 
 interface TaskRecord {
   task_id: number;
@@ -97,7 +98,7 @@ export function buildPingOverviewItemsForTask(
 
     const stats = lossStatsByClient.get(record.client) ?? { total: 0, lost: 0 };
     stats.total += 1;
-    if (record.value <= 0) {
+    if (isLostPingSample(record.value)) {
       stats.lost += 1;
     }
     lossStatsByClient.set(record.client, stats);
@@ -121,7 +122,7 @@ export function buildPingOverviewItemsForTask(
       if (time > 0) {
         samples.push({ time, value });
       }
-      if (value > max) {
+      if (isValidPingLatency(value) && value > max) {
         max = value;
       }
     }
@@ -130,7 +131,7 @@ export function buildPingOverviewItemsForTask(
     const item: PingOverviewItem = {
       client,
       isAssigned: true,
-      lastValue: latestRecord && latestRecord.value > 0 ? latestRecord.value : null,
+      lastValue: latestRecord && isValidPingLatency(latestRecord.value) ? latestRecord.value : null,
       values,
       samples,
       max,
@@ -180,7 +181,7 @@ export function aggregateHomepagePingOverviewItem(options: {
     .map(({ taskId, item }) => ({ taskId, value: item?.lastValue }))
     .filter(
       (item): item is { taskId: number; value: number } =>
-        item.value != null && item.value > 0,
+        isValidPingLatency(item.value),
     );
   const losses = taskItems
     .map(({ taskId, item }) => ({ taskId, value: item?.loss }))

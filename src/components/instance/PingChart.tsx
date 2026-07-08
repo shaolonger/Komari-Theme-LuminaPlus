@@ -21,6 +21,7 @@ import {
   smoothByCount,
 } from "./chartData";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
+import { isLostPingSample, isValidPingLatency } from "@/utils/pingSamples";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import type { PingRecord } from "@/types/komari";
@@ -145,7 +146,7 @@ export function PingChart({
       const anchor = time - lastAnchor <= tolerance ? lastAnchor : time;
       if (anchor === time) lastAnchor = time;
       const current = pointMap.get(anchor) ?? { time: anchor };
-      current[String(record.task_id)] = record.value > 0 ? record.value : null;
+      current[String(record.task_id)] = isValidPingLatency(record.value) ? record.value : null;
       pointMap.set(anchor, current);
     }
 
@@ -194,7 +195,7 @@ export function PingChart({
       const series = chart[index + 1] as Array<number | null | undefined> | undefined;
       if (!series) continue;
       for (const value of series) {
-        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        if (isValidPingLatency(value)) {
           if (value < min) min = value;
           if (value > max) max = value;
         }
@@ -319,10 +320,10 @@ export function PingChart({
     return tasks.map((task, index) => {
       const records = grouped.get(task.id) ?? [];
       const positives = records
-        .filter((record) => record.value > 0)
+        .filter((record) => isValidPingLatency(record.value))
         .map((record) => record.value)
         .sort((a, b) => a - b);
-      const latest = [...records].reverse().find((record) => record.value > 0)?.value ?? null;
+      const latest = [...records].reverse().find((record) => isValidPingLatency(record.value))?.value ?? null;
       const avg = positives.length
         ? positives.reduce((sum, value) => sum + value, 0) / positives.length
         : null;
@@ -333,7 +334,7 @@ export function PingChart({
       // positives 全部 > 0，所以非 null 的 p50 必然 > 0——旧的 `p50 > 0` 子判断是多余的。
       const volatility = p50 && p99 ? p99 / p50 : null;
       const total = records.length;
-      const lost = records.filter((record) => record.value <= 0).length;
+      const lost = records.filter((record) => isLostPingSample(record.value)).length;
       const loss = total > 0 ? (lost / total) * 100 : task.loss;
       return {
         ...task,

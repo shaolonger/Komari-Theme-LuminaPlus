@@ -19,6 +19,7 @@ import {
   getHomepagePingTaskIdsByClient,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
+import { isValidPingLatency } from "@/utils/pingSamples";
 
 const DEFAULT_PING_REFRESH_INTERVAL = 60_000;
 const MIN_PING_REFRESH_INTERVAL = 10_000;
@@ -654,7 +655,7 @@ export function usePingMiniBuckets(
       if (bucketIndex >= resolvedCount) bucketIndex = resolvedCount - 1;
 
       totals[bucketIndex] += 1;
-      if (sample.value > 0) {
+      if (isValidPingLatency(sample.value)) {
         positiveSums[bucketIndex] += sample.value;
         positiveCounts[bucketIndex] += 1;
       } else {

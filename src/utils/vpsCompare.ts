@@ -5,6 +5,7 @@ import {
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
+import { isLostPingSample, isValidPingLatency } from "@/utils/pingSamples";
 
 export type ComparisonMetricKey =
   | "cpu"
@@ -489,9 +490,9 @@ function buildPingPoints(metric: ComparisonMetricDefinition, records: PingRecord
       latencyCount: 0,
     };
     bucket.total += 1;
-    if (record.value < 0) {
+    if (isLostPingSample(record.value)) {
       bucket.lost += 1;
-    } else {
+    } else if (isValidPingLatency(record.value)) {
       bucket.latencySum += record.value;
       bucket.latencyCount += 1;
     }

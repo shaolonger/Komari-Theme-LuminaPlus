@@ -8,6 +8,7 @@ import {
   type TrafficForecastStatus,
 } from "@/utils/vpsWorkbench";
 import { getVpsOperationalRisks, strongestRiskSeverity } from "@/utils/vpsRisk";
+import { isValidPingLatency } from "@/utils/pingSamples";
 
 export type Fleet3DStatus = "online" | "offline" | "unknown";
 export type Fleet3DFilter = "all" | Fleet3DStatus;
@@ -265,7 +266,7 @@ function pingSignal(ping: PingOverviewItem | undefined): Fleet3DPingSignal {
     };
   }
 
-  const latency = ping.lastValue != null && ping.lastValue > 0 ? ping.lastValue : null;
+  const latency = isValidPingLatency(ping.lastValue) ? ping.lastValue : null;
   const loss = ping.loss != null && Number.isFinite(ping.loss) ? Math.max(0, ping.loss) : null;
   const hasSamples = ping.values.length > 0;
   const tone: Fleet3DPingTone =

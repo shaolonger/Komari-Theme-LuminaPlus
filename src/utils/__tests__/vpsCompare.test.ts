@@ -117,6 +117,19 @@ describe("buildComparisonSeries", () => {
     expect(loss[1].points.map((point) => point.value)).toEqual([50]);
   });
 
+  it("treats zero-valued ping samples as packet loss, not latency", () => {
+    const pingRecords: PingRecord[] = [
+      { client: "a", task_id: 1, time: 1000, value: 0 },
+      { client: "a", task_id: 2, time: 1000, value: 20 },
+    ];
+
+    const latency = buildComparisonSeries({ metricKey: "ping_latency", nodes, pingRecords });
+    const loss = buildComparisonSeries({ metricKey: "ping_loss", nodes, pingRecords });
+
+    expect(latency[0].points.map((point) => point.value)).toEqual([20]);
+    expect(loss[0].points.map((point) => point.value)).toEqual([50]);
+  });
+
   it("splits one VPS ping records into task-level comparison series", () => {
     const series = buildPingTaskComparisonSeries({
       metricKey: "ping_latency",

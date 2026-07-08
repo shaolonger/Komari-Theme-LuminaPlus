@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 import { getBarGeometry, getBarSlot } from "./nodeCardShared";
 import { latencyHeatColor } from "@/utils/metricTone";
+import { isValidPingLatency } from "@/utils/pingSamples";
 import type { PingOverviewBucket } from "@/types/komari";
 
 interface MiniBarsProps {
@@ -43,7 +44,7 @@ export function MiniBars({ buckets, max, redrawKey, onHoverIndex }: MiniBarsProp
       const safeMax = max > 0 ? max : 1;
 
       bars.forEach(({ value, tone }, index) => {
-        const has = value > 0;
+        const has = isValidPingLatency(value);
         const barHeight = height * (has ? Math.max(0.2, Math.min(1, value / safeMax)) : 0.25);
         const x = index * (barWidth + gap);
         const y = height - barHeight;
