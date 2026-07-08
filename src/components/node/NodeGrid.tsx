@@ -1,7 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpDown, BarChart3, ChevronDown, CircleDollarSign, Network, Search } from "lucide-react";
+import {
+  ArrowUpDown,
+  BarChart3,
+  Bookmark,
+  Check,
+  ChevronDown,
+  CircleDollarSign,
+  ListChecks,
+  Network,
+  Search,
+  X,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
 import { useHomepagePingOverview } from "@/hooks/usePingMini";
@@ -18,12 +29,22 @@ import {
 import { calculateCostSummary, formatCnyMoney, getExchangeRates } from "@/utils/cost";
 import { speedRateColor } from "@/utils/metricTone";
 import {
-  getHomeGroupLabel,
-  getHomeGroupOptions,
   HOME_ALL_GROUP,
   sortHomeGroupOptions,
   sortHomeNodeSummaries,
 } from "@/utils/homeNodes";
+import {
+  HOME_FACET_LEGACY_GROUP,
+  buildHomeFacetNode,
+  filterHomeFacetNodes,
+  getHomeFacetOptions,
+  getHomeFacetSearchText,
+  normalizeHomeFacetFilters,
+  normalizeHomeSelectedNodeUuids,
+  type HomeFacetDimension,
+  type HomeFacetFilters,
+  type HomeFacetNode,
+} from "@/utils/homeVpsViews";
 import {
   getOverviewRating,
   type OverviewRating,
@@ -579,40 +600,247 @@ function HomeOverviewCards({
   );
 }
 
-function GroupTabs({
-  groups,
-  selectedGroup,
-  onSelectGroup,
+function withoutFacetFilterValue(filters: HomeFacetFilters, dimensionId: string, value: string) {
+  const next = { ...filters };
+  const values = (next[dimensionId] ?? []).filter((item) => item !== value);
+  if (values.length > 0) next[dimensionId] = values;
+  else delete next[dimensionId];
+  return next;
+}
+
+function clearFacetFilter(filters: HomeFacetFilters, dimensionId: string) {
+  const next = { ...filters };
+  delete next[dimensionId];
+  return next;
+}
+
+function getDimensionLabel(dimensions: HomeFacetDimension[], id: string) {
+  return dimensions.find((dimension) => dimension.id === id)?.label ?? id;
+}
+
+function FacetTabs({
+  dimensions,
+  selectedDimension,
+  options,
+  selectedValues,
+  onSelectDimension,
+  onSelectValue,
 }: {
-  groups: string[];
-  selectedGroup: string;
-  onSelectGroup: (group: string) => void;
+  dimensions: HomeFacetDimension[];
+  selectedDimension: string;
+  options: string[];
+  selectedValues: string[];
+  onSelectDimension: (dimension: string) => void;
+  onSelectValue: (value: string) => void;
 }) {
   return (
-    <div className="home-group-tabs" role="tablist" aria-label="节点分组">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={selectedGroup === HOME_ALL_GROUP}
-        data-active={selectedGroup === HOME_ALL_GROUP ? "true" : "false"}
-        onClick={() => onSelectGroup(HOME_ALL_GROUP)}
-      >
-        全部
-      </button>
-      {groups.map((group) => (
+    <div className="home-facet-tabs">
+      <div className="home-facet-dimensions" role="tablist" aria-label="筛选维度">
+        {dimensions.map((dimension) => (
+          <button
+            key={dimension.id}
+            type="button"
+            role="tab"
+            aria-selected={selectedDimension === dimension.id}
+            data-active={selectedDimension === dimension.id ? "true" : "false"}
+            onClick={() => onSelectDimension(dimension.id)}
+            title={dimension.label}
+          >
+            {dimension.label}
+          </button>
+        ))}
+      </div>
+      <div className="home-group-tabs" role="tablist" aria-label={`${getDimensionLabel(dimensions, selectedDimension)}筛选`}>
         <button
-          key={group}
           type="button"
           role="tab"
-          aria-selected={selectedGroup === group}
-          data-active={selectedGroup === group ? "true" : "false"}
-          onClick={() => onSelectGroup(group)}
-          title={group}
+          aria-selected={selectedValues.length === 0}
+          data-active={selectedValues.length === 0 ? "true" : "false"}
+          onClick={() => onSelectValue(HOME_ALL_GROUP)}
         >
-          {group}
+          全部
+        </button>
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="tab"
+            aria-selected={selectedValues.includes(option)}
+            data-active={selectedValues.includes(option) ? "true" : "false"}
+            onClick={() => onSelectValue(option)}
+            title={option}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeFilterChips({
+  dimensions,
+  filters,
+  selectedNodeCount,
+  search,
+  riskFilter,
+  activeSavedViewName,
+  onClearSearch,
+  onClearSelectedNodes,
+  onRemoveFacetValue,
+  onClearRiskFilter,
+  onClearAll,
+}: {
+  dimensions: HomeFacetDimension[];
+  filters: HomeFacetFilters;
+  selectedNodeCount: number;
+  search: string;
+  riskFilter: HomeRiskFilter;
+  activeSavedViewName: string;
+  onClearSearch: () => void;
+  onClearSelectedNodes: () => void;
+  onRemoveFacetValue: (dimensionId: string, value: string) => void;
+  onClearRiskFilter: () => void;
+  onClearAll: () => void;
+}) {
+  const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+  const normalizedSearch = search.trim();
+
+  if (activeSavedViewName) {
+    chips.push({ key: "view", label: `视图: ${activeSavedViewName}`, onRemove: onClearAll });
+  }
+  if (selectedNodeCount > 0) {
+    chips.push({
+      key: "selected",
+      label: `已选 ${selectedNodeCount} 台`,
+      onRemove: onClearSelectedNodes,
+    });
+  }
+  for (const [dimensionId, values] of Object.entries(filters)) {
+    for (const value of values) {
+      chips.push({
+        key: `${dimensionId}:${value}`,
+        label: `${getDimensionLabel(dimensions, dimensionId)}: ${value}`,
+        onRemove: () => onRemoveFacetValue(dimensionId, value),
+      });
+    }
+  }
+  if (riskFilter !== "all") {
+    const riskLabel = HOME_RISK_FILTERS.find((item) => item.value === riskFilter)?.label ?? riskFilter;
+    chips.push({ key: "risk", label: `事项: ${riskLabel}`, onRemove: onClearRiskFilter });
+  }
+  if (normalizedSearch) {
+    chips.push({ key: "search", label: `搜索: ${normalizedSearch}`, onRemove: onClearSearch });
+  }
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="home-filter-chips" aria-label="已生效筛选">
+      {chips.map((chip) => (
+        <button key={chip.key} type="button" onClick={chip.onRemove} title={`移除 ${chip.label}`}>
+          <span>{chip.label}</span>
+          <X size={13} aria-hidden="true" />
         </button>
       ))}
+      <button type="button" className="home-filter-clear" onClick={onClearAll}>
+        清空筛选
+      </button>
     </div>
+  );
+}
+
+function NodeSelectionPanel({
+  nodes,
+  selectedUuids,
+  searchTextByUuid,
+  search,
+  onSearch,
+  onToggleNode,
+  onSelectMany,
+  onClear,
+  onClose,
+}: {
+  nodes: VpsWorkbenchNode[];
+  selectedUuids: string[];
+  searchTextByUuid: Map<string, string>;
+  search: string;
+  onSearch: (value: string) => void;
+  onToggleNode: (uuid: string, checked: boolean) => void;
+  onSelectMany: (uuids: string[]) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const selected = new Set(selectedUuids);
+  const keyword = search.trim().toLowerCase();
+  const visibleNodes = keyword
+    ? nodes.filter((node) => {
+        const searchText = searchTextByUuid.get(node.uuid) ?? `${node.name} ${node.uuid}`.toLowerCase();
+        return searchText.includes(keyword);
+      })
+    : nodes;
+  const allVisibleSelected =
+    visibleNodes.length > 0 && visibleNodes.every((node) => selected.has(node.uuid));
+
+  return (
+    <section className="home-node-select-panel" aria-label="指定展示 VPS">
+      <div className="home-node-select-head">
+        <div>
+          <strong>指定展示 VPS</strong>
+          <span>{selected.size > 0 ? `已选择 ${selected.size} 台` : "未指定时展示全部可见 VPS"}</span>
+        </div>
+        <button type="button" onClick={onClose} aria-label="关闭 VPS 选择面板">
+          <X size={15} />
+        </button>
+      </div>
+      <div className="home-node-select-toolbar">
+        <label className="home-workbench-search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="搜索 VPS、UUID、备注或标签"
+            aria-label="搜索可选择 VPS"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={visibleNodes.length === 0 || allVisibleSelected}
+          onClick={() => onSelectMany(visibleNodes.map((node) => node.uuid))}
+        >
+          <Check size={14} aria-hidden="true" />
+          {allVisibleSelected ? "已全选当前结果" : "全选当前结果"}
+        </button>
+        <button type="button" disabled={selected.size === 0} onClick={onClear}>
+          <X size={14} aria-hidden="true" />
+          清空
+        </button>
+      </div>
+      <div className="home-node-select-list">
+        {visibleNodes.map((node) => (
+          <label key={node.uuid} className="home-node-select-item">
+            <input
+              type="checkbox"
+              checked={selected.has(node.uuid)}
+              onChange={(event) => onToggleNode(node.uuid, event.target.checked)}
+            />
+            <span className="home-node-select-main">
+              <span>
+                {node.name}
+                {node.riskSeverity !== "none" && <em data-risk={node.riskSeverity}>需关注</em>}
+              </span>
+              <small>
+                {[node.group, node.region, node.uuid].filter(Boolean).join(" · ") || node.uuid}
+              </small>
+            </span>
+          </label>
+        ))}
+        {visibleNodes.length === 0 && (
+          <div className="home-filter-empty">当前搜索下没有可选择的 VPS</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -622,12 +850,18 @@ export function NodeGrid() {
   const { data: me } = useAuth();
   const themeSettings = useThemeSettings();
   const { mode } = useViewMode();
-  const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
+  const [selectedFacetDimension, setSelectedFacetDimension] = useState(HOME_FACET_LEGACY_GROUP);
+  const [facetFilters, setFacetFilters] = useState<HomeFacetFilters>({});
+  const [selectedNodeUuids, setSelectedNodeUuids] = useState<string[]>([]);
+  const [nodeSelectorOpen, setNodeSelectorOpen] = useState(false);
+  const [nodeSelectorSearch, setNodeSelectorSearch] = useState("");
+  const [activeSavedViewId, setActiveSavedViewId] = useState("");
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<HomeRiskFilter>("all");
   const [nodeSearch, setNodeSearch] = useState("");
   const [workbenchSort, setWorkbenchSort] = useState<WorkbenchSortKey>("weight");
   const [workbenchOpen, setWorkbenchOpen] = useState(readStoredWorkbenchOpen);
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
+  const seededHomeViewRef = useRef(false);
   useHomepagePingOverview();
   const adminClientsQuery = useQuery({
     queryKey: ["admin-clients"],
@@ -720,6 +954,63 @@ export function NodeGrid() {
     () => Array.from(workbenchNodesByUuid.values()),
     [workbenchNodesByUuid],
   );
+  const visibleFacetDimensions = useMemo(
+    () => themeSettings.homeFacetDimensions.filter((dimension) => dimension.visible),
+    [themeSettings.homeFacetDimensions],
+  );
+  const activeSavedView = useMemo(
+    () => themeSettings.homeSavedViews.find((view) => view.id === activeSavedViewId) ?? null,
+    [activeSavedViewId, themeSettings.homeSavedViews],
+  );
+  const facetNodes = useMemo<HomeFacetNode[]>(
+    () =>
+      visibleNodes.map((node) => {
+        const meta = workbenchMetaByUuid.get(node.uuid);
+        return buildHomeFacetNode(
+          meta ?? {
+            uuid: node.uuid,
+            name: node.uuid,
+            group: node.group,
+            region: node.region,
+            tags: "",
+            provider: "",
+            business_role: "",
+            public_remark: "",
+          },
+          themeSettings.homeNodeFacets,
+        );
+      }),
+    [themeSettings.homeNodeFacets, visibleNodes, workbenchMetaByUuid],
+  );
+  const facetNodeByUuid = useMemo(
+    () => new Map(facetNodes.map((node) => [node.uuid, node])),
+    [facetNodes],
+  );
+  const facetSearchTextByUuid = useMemo(() => {
+    const next = new Map<string, string>();
+    for (const node of visibleNodes) {
+      const facetNode = facetNodeByUuid.get(node.uuid);
+      const meta = workbenchMetaByUuid.get(node.uuid);
+      if (!facetNode) continue;
+      next.set(
+        node.uuid,
+        getHomeFacetSearchText(
+          meta ?? {
+            uuid: node.uuid,
+            name: node.uuid,
+            group: node.group,
+            region: node.region,
+            tags: "",
+            provider: "",
+            business_role: "",
+            public_remark: "",
+          },
+          facetNode.facets,
+        ),
+      );
+    }
+    return next;
+  }, [facetNodeByUuid, visibleNodes, workbenchMetaByUuid]);
   const risksByUuid = useMemo(() => {
     const next = new Map<string, HomeRiskItem[]>();
     for (const node of workbenchNodesByUuid.values()) {
@@ -784,30 +1075,119 @@ export function NodeGrid() {
   useEffect(() => {
     window.localStorage.setItem(WORKBENCH_OPEN_STORAGE_KEY, String(workbenchOpen));
   }, [workbenchOpen]);
-  const groupOptions = useMemo(
+  const applySavedView = useCallback(
+    (viewId: string) => {
+      const view = themeSettings.homeSavedViews.find((item) => item.id === viewId);
+      if (!view) {
+        setActiveSavedViewId("");
+        return;
+      }
+      setActiveSavedViewId(view.id);
+      setSelectedNodeUuids(view.selectedNodeUuids);
+      setFacetFilters(normalizeHomeFacetFilters(view.filters));
+      setSelectedFacetDimension(view.groupBy);
+      if (WORKBENCH_SORT_OPTIONS.some((option) => option.value === view.sortKey)) {
+        setWorkbenchSort(view.sortKey as WorkbenchSortKey);
+      }
+    },
+    [themeSettings.homeSavedViews],
+  );
+  useEffect(() => {
+    if (!themeSettings.isReady || seededHomeViewRef.current) return;
+    seededHomeViewRef.current = true;
+    if (themeSettings.homeDefaultSavedViewId) {
+      applySavedView(themeSettings.homeDefaultSavedViewId);
+      return;
+    }
+    setSelectedNodeUuids(themeSettings.homeSelectedNodeUuids);
+    setSelectedFacetDimension(themeSettings.homeDefaultFacetDimension);
+  }, [
+    applySavedView,
+    themeSettings.homeDefaultFacetDimension,
+    themeSettings.homeDefaultSavedViewId,
+    themeSettings.homeSelectedNodeUuids,
+    themeSettings.isReady,
+  ]);
+  const visibleNodeUuidSet = useMemo(
+    () => new Set(visibleNodes.map((node) => node.uuid)),
+    [visibleNodes],
+  );
+  useEffect(() => {
+    setSelectedNodeUuids((prev) => prev.filter((uuid) => visibleNodeUuidSet.has(uuid)));
+  }, [visibleNodeUuidSet]);
+  useEffect(() => {
+    if (visibleFacetDimensions.length === 0) return;
+    if (!visibleFacetDimensions.some((dimension) => dimension.id === selectedFacetDimension)) {
+      setSelectedFacetDimension(themeSettings.homeDefaultFacetDimension);
+    }
+  }, [
+    selectedFacetDimension,
+    themeSettings.homeDefaultFacetDimension,
+    visibleFacetDimensions,
+  ]);
+  const selectedFacetValues = facetFilters[selectedFacetDimension] ?? [];
+  const optionFacetFilters = useMemo(
+    () => clearFacetFilter(facetFilters, selectedFacetDimension),
+    [facetFilters, selectedFacetDimension],
+  );
+  const optionFacetNodes = useMemo(
     () =>
-      sortHomeGroupOptions(
-        getHomeGroupOptions(visibleNodes),
-        themeSettings.isReady ? themeSettings.homeGroupOrder : [],
+      filterHomeFacetNodes({
+        nodes: facetNodes,
+        filters: optionFacetFilters,
+        selectedNodeUuids,
+      }),
+    [facetNodes, optionFacetFilters, selectedNodeUuids],
+  );
+  const facetOptions = useMemo(() => {
+    const options = getHomeFacetOptions(optionFacetNodes, selectedFacetDimension);
+    return selectedFacetDimension === HOME_FACET_LEGACY_GROUP
+      ? sortHomeGroupOptions(options, themeSettings.isReady ? themeSettings.homeGroupOrder : [])
+      : options;
+  }, [
+    optionFacetNodes,
+    selectedFacetDimension,
+    themeSettings.homeGroupOrder,
+    themeSettings.isReady,
+  ]);
+  useEffect(() => {
+    if (selectedFacetValues.length === 0) return;
+    const available = new Set(facetOptions);
+    const nextValues = selectedFacetValues.filter((value) => available.has(value));
+    if (nextValues.length === selectedFacetValues.length) return;
+    setFacetFilters((prev) => {
+      const next = { ...prev };
+      if (nextValues.length > 0) next[selectedFacetDimension] = nextValues;
+      else delete next[selectedFacetDimension];
+      return next;
+    });
+  }, [facetOptions, selectedFacetDimension, selectedFacetValues]);
+  const facetFilteredUuidSet = useMemo(
+    () =>
+      new Set(
+        filterHomeFacetNodes({
+          nodes: facetNodes,
+          filters: facetFilters,
+          selectedNodeUuids,
+        }).map((node) => node.uuid),
       ),
-    [visibleNodes, themeSettings.homeGroupOrder, themeSettings.isReady],
+    [facetFilters, facetNodes, selectedNodeUuids],
   );
   const filteredNodes = useMemo(() => {
-    const groupFiltered =
-      selectedGroup === HOME_ALL_GROUP
-        ? visibleNodes
-        : visibleNodes.filter((node) => getHomeGroupLabel(node.group) === selectedGroup);
+    const facetFiltered = visibleNodes.filter((node) => facetFilteredUuidSet.has(node.uuid));
     const normalizedSearch = nodeSearch.trim().toLowerCase();
     const searchFiltered = normalizedSearch
-      ? groupFiltered.filter((node) => {
+      ? facetFiltered.filter((node) => {
           const workbenchNode = workbenchNodesByUuid.get(node.uuid);
           const meta = workbenchMetaByUuid.get(node.uuid);
           if (workbenchNode && meta) {
-            return searchWorkbenchNode(workbenchNode, meta, normalizedSearch);
+            if (searchWorkbenchNode(workbenchNode, meta, normalizedSearch)) return true;
           }
-          return node.uuid.toLowerCase().includes(normalizedSearch);
+          return (facetSearchTextByUuid.get(node.uuid) ?? node.uuid.toLowerCase()).includes(
+            normalizedSearch,
+          );
         })
-      : groupFiltered;
+      : facetFiltered;
     const riskFiltered =
       selectedRiskFilter === "all"
         ? searchFiltered
@@ -835,8 +1215,9 @@ export function NodeGrid() {
       ...sortHomeNodeSummaries(unmatchedNodes, moveOfflineBack),
     ];
   }, [
+    facetFilteredUuidSet,
+    facetSearchTextByUuid,
     visibleNodes,
-    selectedGroup,
     selectedRiskFilter,
     nodeSearch,
     workbenchSort,
@@ -846,11 +1227,6 @@ export function NodeGrid() {
     themeSettings.moveOfflineNodesBack,
     workbenchMetaByUuid,
   ]);
-  useEffect(() => {
-    if (selectedGroup !== HOME_ALL_GROUP && !groupOptions.includes(selectedGroup)) {
-      setSelectedGroup(HOME_ALL_GROUP);
-    }
-  }, [groupOptions, selectedGroup]);
 
   useEffect(() => {
     if (
@@ -881,15 +1257,64 @@ export function NodeGrid() {
     if (seed.length < 2) return "/compare";
     return `/compare?${new URLSearchParams({ nodes: seed.join(",") }).toString()}`;
   }, [filteredNodes]);
-  const showGroupTabs =
-    themeSettings.isReady && themeSettings.showGroupTabs && groupOptions.length > 0;
-  // 分组标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
+  const showFacetTabs =
+    themeSettings.isReady &&
+    themeSettings.showGroupTabs &&
+    visibleFacetDimensions.length > 0 &&
+    facetOptions.length > 0;
+  // 筛选标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
   // 边缘和第一张卡片对齐。
   const gridClassName = mode === "compact" ? "grid gap-3" : "grid gap-4 xl:gap-5";
   const gridColumns =
     mode === "compact"
       ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))"
       : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))";
+  const activeSavedViewName = activeSavedView?.name ?? "";
+  const selectFacetValue = (value: string) => {
+    setActiveSavedViewId("");
+    setFacetFilters((prev) => {
+      if (value === HOME_ALL_GROUP) return clearFacetFilter(prev, selectedFacetDimension);
+      return {
+        ...prev,
+        [selectedFacetDimension]: [value],
+      };
+    });
+  };
+  const selectFacetDimension = (dimension: string) => {
+    setSelectedFacetDimension(dimension);
+  };
+  const removeFacetValue = (dimensionId: string, value: string) => {
+    setActiveSavedViewId("");
+    setFacetFilters((prev) => withoutFacetFilterValue(prev, dimensionId, value));
+  };
+  const clearAllFilters = () => {
+    setActiveSavedViewId("");
+    setFacetFilters({});
+    setSelectedNodeUuids([]);
+    setSelectedRiskFilter("all");
+    setNodeSearch("");
+  };
+  const clearSelectedNodes = () => {
+    setActiveSavedViewId("");
+    setSelectedNodeUuids([]);
+  };
+  const toggleSelectedNode = (uuid: string, checked: boolean) => {
+    setActiveSavedViewId("");
+    setSelectedNodeUuids((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(uuid);
+      else next.delete(uuid);
+      return Array.from(next).sort((left, right) => left.localeCompare(right));
+    });
+  };
+  const selectManyNodes = (uuids: string[]) => {
+    setActiveSavedViewId("");
+    setSelectedNodeUuids((prev) =>
+      normalizeHomeSelectedNodeUuids([...prev, ...uuids]).sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    );
+  };
 
   if (!themeSettings.isReady) {
     return (
@@ -985,31 +1410,64 @@ export function NodeGrid() {
       <div className="home-workbench-controls">
         <label className="home-workbench-search">
           <Search size={15} aria-hidden="true" />
-          <input
-            type="search"
-            value={nodeSearch}
-            onChange={(event) => setNodeSearch(event.target.value)}
-            placeholder="搜索名称、UUID、分组、地区或备注"
-            aria-label="搜索 VPS"
-          />
-        </label>
-        <label className="home-workbench-sort">
-          <ArrowUpDown size={15} aria-hidden="true" />
-          <select
-            value={workbenchSort}
-            onChange={(event) => setWorkbenchSort(event.target.value as WorkbenchSortKey)}
-            aria-label="排序 VPS"
-          >
+	          <input
+	            type="search"
+	            value={nodeSearch}
+	            onChange={(event) => setNodeSearch(event.target.value)}
+	            placeholder="搜索 VPS、UUID、备注或标签"
+	            aria-label="搜索 VPS"
+	          />
+	        </label>
+	        {themeSettings.homeSavedViews.length > 0 && (
+	          <label className="home-workbench-sort home-saved-view-picker">
+	            <Bookmark size={15} aria-hidden="true" />
+	            <select
+	              value={activeSavedViewId}
+	              onChange={(event) => {
+	                const viewId = event.target.value;
+	                if (viewId) applySavedView(viewId);
+	                else setActiveSavedViewId("");
+	              }}
+	              aria-label="切换保存视图"
+	            >
+	              <option value="">手动视图</option>
+	              {themeSettings.homeSavedViews.map((view) => (
+	                <option key={view.id} value={view.id}>
+	                  {view.name}
+	                </option>
+	              ))}
+	            </select>
+	          </label>
+	        )}
+	        <label className="home-workbench-sort">
+	          <ArrowUpDown size={15} aria-hidden="true" />
+	          <select
+	            value={workbenchSort}
+	            onChange={(event) => {
+	              setActiveSavedViewId("");
+	              setWorkbenchSort(event.target.value as WorkbenchSortKey);
+	            }}
+	            aria-label="排序 VPS"
+	          >
             {WORKBENCH_SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
-            ))}
-          </select>
-        </label>
-        <Link to="/fleet-3d" className="home-3d-link">
-          <Network size={15} aria-hidden="true" />
-          3D
+	            ))}
+	          </select>
+	        </label>
+	        <button
+	          type="button"
+	          className="home-select-button"
+	          data-active={selectedNodeUuids.length > 0 ? "true" : "false"}
+	          onClick={() => setNodeSelectorOpen((value) => !value)}
+	        >
+	          <ListChecks size={15} aria-hidden="true" />
+	          {selectedNodeUuids.length > 0 ? `${selectedNodeUuids.length} 台` : "选择 VPS"}
+	        </button>
+	        <Link to="/fleet-3d" className="home-3d-link">
+	          <Network size={15} aria-hidden="true" />
+	          3D
         </Link>
         <Link to={compareHref} className="home-compare-link">
           <BarChart3 size={15} aria-hidden="true" />
@@ -1018,18 +1476,47 @@ export function NodeGrid() {
         <HomeRiskFilters
           risks={operationRisks}
           selectedFilter={selectedRiskFilter}
-          onSelectFilter={setSelectedRiskFilter}
-        />
-      </div>
-      {showGroupTabs && (
-        <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
-          <GroupTabs
-            groups={groupOptions}
-            selectedGroup={selectedGroup}
-            onSelectGroup={setSelectedGroup}
-          />
-        </div>
-      )}
+	          onSelectFilter={setSelectedRiskFilter}
+	        />
+	      </div>
+	      {nodeSelectorOpen && (
+	        <NodeSelectionPanel
+	          nodes={workbenchNodes}
+	          selectedUuids={selectedNodeUuids}
+	          searchTextByUuid={facetSearchTextByUuid}
+	          search={nodeSelectorSearch}
+	          onSearch={setNodeSelectorSearch}
+	          onToggleNode={toggleSelectedNode}
+	          onSelectMany={selectManyNodes}
+	          onClear={clearSelectedNodes}
+	          onClose={() => setNodeSelectorOpen(false)}
+	        />
+	      )}
+	      <HomeFilterChips
+	        dimensions={visibleFacetDimensions}
+	        filters={facetFilters}
+	        selectedNodeCount={selectedNodeUuids.length}
+	        search={nodeSearch}
+	        riskFilter={selectedRiskFilter}
+	        activeSavedViewName={activeSavedViewName}
+	        onClearSearch={() => setNodeSearch("")}
+	        onClearSelectedNodes={clearSelectedNodes}
+	        onRemoveFacetValue={removeFacetValue}
+	        onClearRiskFilter={() => setSelectedRiskFilter("all")}
+	        onClearAll={clearAllFilters}
+	      />
+	      {showFacetTabs && (
+	        <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
+	          <FacetTabs
+	            dimensions={visibleFacetDimensions}
+	            selectedDimension={selectedFacetDimension}
+	            options={facetOptions}
+	            selectedValues={selectedFacetValues}
+	            onSelectDimension={selectFacetDimension}
+	            onSelectValue={selectFacetValue}
+	          />
+	        </div>
+	      )}
       <div className={gridClassName} style={{ gridTemplateColumns: gridColumns }}>
         {cards.length > 0 ? (
           cards
