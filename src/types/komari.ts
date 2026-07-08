@@ -64,6 +64,8 @@ export const NodeInfoSchema = z
     billing_cycle: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     auto_renewal: looseBool.default(false),
     currency: looseString.default(""),
+    provider: looseString.default(""),
+    business_role: looseString.default(""),
     expired_at: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     tags: looseString.default(""),
     public_remark: looseString.default(""),
@@ -100,6 +102,8 @@ export interface NodeInfo {
   billing_cycle?: string | null;
   auto_renewal: boolean;
   currency: string;
+  provider?: string | null;
+  business_role?: string | null;
   expired_at?: string | null;
   tags: string;
   public_remark: string;
@@ -163,6 +167,12 @@ export interface ThemeSettings {
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   homeGroupOrder?: string[];
+  homeFacetDimensions?: Array<Record<string, unknown>>;
+  homeNodeFacets?: Record<string, Record<string, unknown>>;
+  homeDefaultFacetDimension?: string;
+  homeSelectedNodeUuids?: string[] | string;
+  homeSavedViews?: Array<Record<string, unknown>>;
+  homeDefaultSavedViewId?: string;
   moveOfflineNodesBack?: boolean;
   showCostSummary?: boolean;
   showCostSummaryFloatingButton?: boolean;
@@ -227,6 +237,11 @@ export const AdminClientSchema = z
     group: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     region: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     weight: looseNumber.default(0),
+    provider: looseString.default(""),
+    business_role: looseString.default(""),
+    tags: looseString.default(""),
+    remark: looseString.default(""),
+    public_remark: looseString.default(""),
     version: looseString.default(""),
     ipv4: looseString.default(""),
     ipv6: looseString.default(""),
@@ -241,6 +256,11 @@ export interface AdminClient {
   group?: string | null;
   region?: string | null;
   weight: number;
+  provider?: string | null;
+  business_role?: string | null;
+  tags?: string | null;
+  remark?: string | null;
+  public_remark?: string | null;
   version: string;
   ipv4: string;
   ipv6: string;

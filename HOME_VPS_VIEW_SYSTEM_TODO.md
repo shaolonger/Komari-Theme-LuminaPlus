@@ -14,9 +14,9 @@
 
 ## 2. 主题端数据模型
 
-- [ ] 新增首页维度配置、每台 VPS 多维标签、指定展示集合、保存视图的数据类型与默认值。
-- [ ] 增加 normalize/build/filter 工具，兼容旧 `group`、`region`、`provider`、`business_role`、`tags`。
-- [ ] 增加单元测试覆盖去重、空值、旧配置兼容、AND 筛选、指定 VPS 强约束。
+- [x] 新增首页维度配置、每台 VPS 多维标签、指定展示集合、保存视图的数据类型与默认值。
+- [x] 增加 normalize/build/filter 工具，兼容旧 `group`、`region`、`provider`、`business_role`、`tags`。
+- [x] 增加单元测试覆盖去重、空值、旧配置兼容、AND 筛选、指定 VPS 强约束。
 
 验收：
 

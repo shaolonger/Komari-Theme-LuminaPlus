@@ -70,4 +70,47 @@ describe("normalizeThemeSettings", () => {
         .homepagePingAggregationStrategy,
     ).toBe("worst");
   });
+
+  it("normalizes home VPS facet settings", () => {
+    const settings = normalizeThemeSettings({
+      homeFacetDimensions: [
+        { id: "provider", label: "供应商", visible: true, order: 5 },
+        { id: "line", label: "线路", visible: false, order: 30 },
+      ],
+      homeNodeFacets: {
+        "node-a": {
+          line: "CMI;CN2;CMI",
+          purpose: ["落地"],
+        },
+      },
+      homeDefaultFacetDimension: "provider",
+      homeSelectedNodeUuids: "node-a,node-b,node-a",
+      homeSavedViews: [
+        {
+          id: "core",
+          name: "核心节点",
+          selectedNodeUuids: ["node-a"],
+          filters: { provider: "DMIT" },
+          groupBy: "provider",
+          sortKey: "risk",
+        },
+      ],
+      homeDefaultSavedViewId: "core",
+    });
+
+    expect(settings.homeFacetDimensions.find((item) => item.id === "provider")).toMatchObject({
+      label: "供应商",
+      order: 5,
+    });
+    expect(settings.homeNodeFacets).toEqual({
+      "node-a": {
+        line: ["CMI", "CN2"],
+        purpose: ["落地"],
+      },
+    });
+    expect(settings.homeDefaultFacetDimension).toBe("provider");
+    expect(settings.homeSelectedNodeUuids).toEqual(["node-a", "node-b"]);
+    expect(settings.homeSavedViews).toHaveLength(1);
+    expect(settings.homeDefaultSavedViewId).toBe("core");
+  });
 });

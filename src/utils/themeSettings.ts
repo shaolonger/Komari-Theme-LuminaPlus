@@ -9,6 +9,18 @@ import {
 import { DEFAULT_COST_RATE_API_URL, normalizeCostIgnoredNodes, normalizeCostRateApiUrl } from "@/utils/cost";
 import { normalizeHomeGroupOrder } from "@/utils/homeNodes";
 import {
+  DEFAULT_HOME_FACET_DIMENSIONS,
+  normalizeHomeDefaultFacetDimension,
+  normalizeHomeDefaultSavedViewId,
+  normalizeHomeFacetDimensions,
+  normalizeHomeNodeFacets,
+  normalizeHomeSavedViews,
+  normalizeHomeSelectedNodeUuids,
+  type HomeFacetDimension,
+  type HomeNodeFacets,
+  type HomeSavedView,
+} from "@/utils/homeVpsViews";
+import {
   DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
   normalizeHomepagePingAggregationStrategy,
   normalizeHomepagePingPrimaryTasks,
@@ -45,6 +57,12 @@ export interface ResolvedThemeSettings {
   showHomeOverview: boolean;
   showGroupTabs: boolean;
   homeGroupOrder: string[];
+  homeFacetDimensions: HomeFacetDimension[];
+  homeNodeFacets: HomeNodeFacets;
+  homeDefaultFacetDimension: string;
+  homeSelectedNodeUuids: string[];
+  homeSavedViews: HomeSavedView[];
+  homeDefaultSavedViewId: string;
   moveOfflineNodesBack: boolean;
   showCostSummary: boolean;
   showCostSummaryFloatingButton: boolean;
@@ -82,6 +100,12 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   showHomeOverview: true,
   showGroupTabs: true,
   homeGroupOrder: [],
+  homeFacetDimensions: DEFAULT_HOME_FACET_DIMENSIONS,
+  homeNodeFacets: {},
+  homeDefaultFacetDimension: "legacyGroup",
+  homeSelectedNodeUuids: [],
+  homeSavedViews: [],
+  homeDefaultSavedViewId: "",
   moveOfflineNodesBack: true,
   showCostSummary: true,
   showCostSummaryFloatingButton: true,
@@ -139,6 +163,8 @@ export function normalizeThemeSettings(
   settings: (ThemeSettings & Record<string, unknown>) | null | undefined,
 ): ResolvedThemeSettings {
   const homepagePingBindings = normalizeHomepagePingTaskBindings(settings?.homepagePingBindings);
+  const homeFacetDimensions = normalizeHomeFacetDimensions(settings?.homeFacetDimensions);
+  const homeSavedViews = normalizeHomeSavedViews(settings?.homeSavedViews, homeFacetDimensions);
 
   return {
     defaultAppearance: normalizeAppearance(settings?.defaultAppearance),
@@ -165,6 +191,18 @@ export function normalizeThemeSettings(
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
     homeGroupOrder: normalizeHomeGroupOrder(settings?.homeGroupOrder),
+    homeFacetDimensions,
+    homeNodeFacets: normalizeHomeNodeFacets(settings?.homeNodeFacets),
+    homeDefaultFacetDimension: normalizeHomeDefaultFacetDimension(
+      settings?.homeDefaultFacetDimension,
+      homeFacetDimensions,
+    ),
+    homeSelectedNodeUuids: normalizeHomeSelectedNodeUuids(settings?.homeSelectedNodeUuids),
+    homeSavedViews,
+    homeDefaultSavedViewId: normalizeHomeDefaultSavedViewId(
+      settings?.homeDefaultSavedViewId,
+      homeSavedViews,
+    ),
     moveOfflineNodesBack: enabledUnlessFalse(settings?.moveOfflineNodesBack),
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
     showCostSummaryFloatingButton: enabledUnlessFalse(settings?.showCostSummaryFloatingButton),
