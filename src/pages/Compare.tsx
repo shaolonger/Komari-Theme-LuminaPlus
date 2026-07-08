@@ -60,8 +60,11 @@ import {
   sortComparisonRankingRows,
   trimComparisonSeriesToRange,
   type ComparisonMetricKey,
+  type ComparisonMultiMetricAnalysis,
+  type ComparisonMultiMetricCell,
   type ComparisonRankingRow,
   type ComparisonRankingSortKey,
+  type ComparisonRiskTone,
   type ComparisonSortDirection,
   type ComparisonSeries,
 } from "@/utils/vpsCompare";
@@ -549,6 +552,318 @@ function RankingTable({
       {sortedRows.length === 0 && (
         <div className="compare-chart-empty">
           {selectedCount === 0 ? "请选择 VPS 查看排行" : "当前范围暂无排行数据"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function riskToneLabel(tone: ComparisonRiskTone) {
+  switch (tone) {
+    case "critical":
+      return "高风险";
+    case "warning":
+      return "警告";
+    case "notice":
+      return "注意";
+    case "good":
+      return "良好";
+    default:
+      return "无数据";
+  }
+}
+
+function MiniMetricSparkline({
+  cell,
+}: {
+  cell: ComparisonMultiMetricCell;
+}) {
+  const points = cell.points.slice(-48);
+  const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
+  if (values.length < 2) {
+    return <div className="compare-matrix-sparkline is-empty" aria-hidden />;
+  }
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max > min ? max - min : 1;
+  const width = 100;
+  const height = 34;
+  const step = width / Math.max(1, points.length - 1);
+  const polyline = points
+    .map((point, index) => {
+      const x = index * step;
+      const y = height - ((point.value - min) / span) * (height - 6) - 3;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg className="compare-matrix-sparkline" viewBox={`0 0 ${width} ${height}`} aria-hidden>
+      <polyline points={polyline} fill="none" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+function MultiMetricInsightCards({
+  analysis,
+}: {
+  analysis: ComparisonMultiMetricAnalysis;
+}) {
+  if (analysis.insights.length === 0) {
+    return (
+      <div className="compare-multi-empty">
+        选择 VPS 和多个指标后，会在这里生成综合风险、最佳/最差对象和数据质量洞察。
+      </div>
+    );
+  }
+
+  return (
+    <div className="compare-insight-grid">
+      {analysis.insights.map((insight) => (
+        <article
+          key={`${insight.label}-${insight.uuid ?? "global"}-${insight.metricKey ?? "all"}`}
+          className="compare-insight-card"
+          data-tone={insight.tone}
+        >
+          <span>{insight.label}</span>
+          <strong>{insight.title}</strong>
+          <p>{insight.detail}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function MultiMetricMatrix({
+  analysis,
+  metricKeys,
+  focusedUuid,
+  focusedMetricKey,
+  onFocusUuid,
+  onFocusMetric,
+}: {
+  analysis: ComparisonMultiMetricAnalysis;
+  metricKeys: ComparisonMetricKey[];
+  focusedUuid: string | null;
+  focusedMetricKey: ComparisonMetricKey | null;
+  onFocusUuid: (uuid: string | null) => void;
+  onFocusMetric: (metricKey: ComparisonMetricKey | null) => void;
+}) {
+  return (
+    <div className="compare-matrix-wrap">
+      <div
+        className="compare-matrix"
+        style={{ "--metric-count": metricKeys.length } as CSSProperties}
+      >
+        <div className="compare-matrix-corner">VPS / 指标</div>
+        {metricKeys.map((metricKey) => {
+          const metric = getComparisonMetric(metricKey);
+          const active = focusedMetricKey === metricKey;
+          return (
+            <button
+              key={metricKey}
+              type="button"
+              className="compare-matrix-metric-head"
+              data-active={active ? "true" : "false"}
+              onClick={() => onFocusMetric(active ? null : metricKey)}
+            >
+              <strong>{metric.shortLabel}</strong>
+              <span>{metric.label}</span>
+            </button>
+          );
+        })}
+        {analysis.rows.map((row) => {
+          const rowActive = focusedUuid === row.uuid;
+          const rowDimmed = Boolean(focusedUuid && !rowActive);
+          return (
+            <div key={row.uuid} className="compare-matrix-row">
+              <button
+                type="button"
+                className="compare-matrix-node"
+                data-active={rowActive ? "true" : "false"}
+                data-dimmed={rowDimmed ? "true" : "false"}
+                onClick={() => onFocusUuid(rowActive ? null : row.uuid)}
+              >
+                <span>{row.name}</span>
+                <small>
+                  综合 {row.overallScore != null ? Math.round(row.overallScore) : "--"} · 异常 {row.alertCount}
+                </small>
+              </button>
+              {metricKeys.map((metricKey) => {
+                const cell = row.cells[metricKey];
+                const metricActive = focusedMetricKey === metricKey;
+                const dimmed = rowDimmed || Boolean(focusedMetricKey && !metricActive);
+                return (
+                  <button
+                    key={`${row.uuid}-${metricKey}`}
+                    type="button"
+                    className="compare-matrix-cell"
+                    data-tone={cell?.riskTone ?? "none"}
+                    data-active={rowActive || metricActive ? "true" : "false"}
+                    data-dimmed={dimmed ? "true" : "false"}
+                    onClick={() => {
+                      onFocusUuid(row.uuid);
+                      onFocusMetric(metricKey);
+                    }}
+                  >
+                    {cell ? (
+                      <>
+                        <span className="compare-cell-topline">
+                          <strong>{formatComparisonValue(metricKey, cell.primaryValue)}</strong>
+                          <em>{cell.riskScore != null ? Math.round(cell.riskScore) : "--"}</em>
+                        </span>
+                        <MiniMetricSparkline cell={cell} />
+                        <span className="compare-cell-meta">
+                          <small>最新 {formatComparisonValue(metricKey, cell.stats.latest)}</small>
+                          <small>P95 {formatComparisonValue(metricKey, cell.stats.p95)}</small>
+                        </span>
+                        <span className="compare-cell-tags">
+                          {(cell.tags.length > 0 ? cell.tags : [riskToneLabel(cell.riskTone)]).map((tag) => (
+                            <i key={tag}>{tag}</i>
+                          ))}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="compare-cell-empty">无数据</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MultiMetricInspector({
+  analysis,
+  metricKeys,
+  focusedUuid,
+  focusedMetricKey,
+}: {
+  analysis: ComparisonMultiMetricAnalysis;
+  metricKeys: ComparisonMetricKey[];
+  focusedUuid: string | null;
+  focusedMetricKey: ComparisonMetricKey | null;
+}) {
+  const focusedRow = focusedUuid ? analysis.rows.find((row) => row.uuid === focusedUuid) ?? null : null;
+  const metric = focusedMetricKey ? getComparisonMetric(focusedMetricKey) : null;
+  const metricRows = metric
+    ? analysis.rows
+        .map((row) => ({ row, cell: row.cells[metric.key] }))
+        .filter((item): item is { row: typeof item.row; cell: ComparisonMultiMetricCell } => Boolean(item.cell))
+        .sort((left, right) => (right.cell.riskScore ?? -1) - (left.cell.riskScore ?? -1))
+    : [];
+
+  if (!focusedRow && !metric) {
+    const first = analysis.rows[0];
+    return (
+      <aside className="compare-multi-inspector">
+        <span>分析面板</span>
+        <strong>{first?.name ?? "等待数据"}</strong>
+        <p>
+          点击任意 VPS 行、指标列或矩阵单元，查看它在多指标里的风险来源、最新状态和样本质量。
+        </p>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="compare-multi-inspector">
+      <span>{metric && focusedRow ? "单元诊断" : metric ? "指标聚焦" : "VPS 画像"}</span>
+      <strong>{metric && focusedRow ? `${focusedRow.name} · ${metric.shortLabel}` : metric?.label ?? focusedRow?.name}</strong>
+      {focusedRow && (
+        <div className="compare-inspector-strip">
+          {metricKeys.map((metricKey) => {
+            const cell = focusedRow.cells[metricKey];
+            return (
+              <div key={metricKey} data-tone={cell?.riskTone ?? "none"}>
+                <small>{getComparisonMetric(metricKey).shortLabel}</small>
+                <b>{cell?.riskScore != null ? Math.round(cell.riskScore) : "--"}</b>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {metric && (
+        <div className="compare-inspector-list">
+          {metricRows.slice(0, 5).map(({ row, cell }) => (
+            <div key={row.uuid}>
+              <span>{row.name}</span>
+              <strong>{formatComparisonValue(metric.key, cell.primaryValue)}</strong>
+              <small>{riskToneLabel(cell.riskTone)} · {cell.stats.samples} 样本</small>
+            </div>
+          ))}
+        </div>
+      )}
+      {focusedRow?.worstCell && !metric && (
+        <p>
+          主要风险来自 {focusedRow.worstCell.metric.shortLabel}，
+          风险分 {Math.round(focusedRow.worstCell.riskScore ?? 0)}，
+          当前综合分 {focusedRow.overallScore != null ? Math.round(focusedRow.overallScore) : "--"}。
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function MultiMetricResults({
+  analysis,
+  metricKeys,
+  view,
+  loading,
+  selectedCount,
+}: {
+  analysis: ComparisonMultiMetricAnalysis;
+  metricKeys: ComparisonMetricKey[];
+  view: CompareView;
+  loading: boolean;
+  selectedCount: number;
+}) {
+  const [focusedUuid, setFocusedUuid] = useState<string | null>(null);
+  const [focusedMetricKey, setFocusedMetricKey] = useState<ComparisonMetricKey | null>(null);
+
+  if (loading) {
+    return (
+      <div className="compare-chart-empty">
+        <Spinner size={22} />
+        <span>正在加载多指标历史数据</span>
+      </div>
+    );
+  }
+
+  if (selectedCount === 0) {
+    return <div className="compare-chart-empty">请选择 VPS 开始多指标分析</div>;
+  }
+
+  if (analysis.rows.length === 0) {
+    return <div className="compare-chart-empty">当前选择下暂无多指标数据</div>;
+  }
+
+  return (
+    <div className="compare-multi-results" data-view={view}>
+      <MultiMetricInsightCards analysis={analysis} />
+      {view === "ranking" ? (
+        <div className="compare-multi-empty">多指标排行表会在下一步接入动态列和导出。</div>
+      ) : (
+        <div className="compare-multi-layout">
+          <MultiMetricMatrix
+            analysis={analysis}
+            metricKeys={metricKeys}
+            focusedUuid={focusedUuid}
+            focusedMetricKey={focusedMetricKey}
+            onFocusUuid={setFocusedUuid}
+            onFocusMetric={setFocusedMetricKey}
+          />
+          <MultiMetricInspector
+            analysis={analysis}
+            metricKeys={metricKeys}
+            focusedUuid={focusedUuid}
+            focusedMetricKey={focusedMetricKey}
+          />
         </div>
       )}
     </div>
@@ -1490,7 +1805,13 @@ export function Compare() {
         ) : !multiMetricMode ? (
           <RankingTable metricKey={metricKey} rows={rankingRows} selectedCount={selectedNodes.length} />
         ) : (
-          <div className="compare-chart-empty">多指标结果视图正在准备渲染</div>
+          <MultiMetricResults
+            analysis={multiAnalysis}
+            metricKeys={selectedMetricKeys}
+            view={activeView}
+            loading={canFetch && isLoading}
+            selectedCount={selectedNodes.length}
+          />
         )}
       </section>
 
