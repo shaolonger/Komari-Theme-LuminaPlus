@@ -363,6 +363,13 @@
   gap: 2px;
 }
 
+.ping-source-name-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
 .ping-source-name strong,
 .ping-source-name small {
   overflow: hidden;
@@ -371,6 +378,8 @@
 }
 
 .ping-source-name strong {
+  min-width: 0;
+  flex: 1 1 auto;
   color: var(--text-primary);
   font-size: 10.5px;
   font-weight: 760;
@@ -382,6 +391,33 @@
   font-size: 9.5px;
   font-weight: 590;
   line-height: 1.1;
+}
+
+.ping-source-task-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 17px;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 44%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-elev) 54%, transparent);
+  color: var(--text-tertiary);
+  padding: 0 5px;
+  font-size: 9px;
+  font-weight: 740;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.ping-source-task-link:hover {
+  border-color: color-mix(in srgb, var(--accent-500) 44%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-500) 10%, var(--surface-elev));
+  color: var(--text-primary);
 }
 
 .ping-source-readings {
@@ -513,6 +549,15 @@
 
 .ping-source-matrix[data-density="compact"] .ping-source-name {
   gap: 1px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-task-link {
+  min-height: 16px;
+  padding: 0 4px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-task-link span {
+  display: none;
 }
 
 .ping-source-matrix[data-density="compact"] .ping-source-name strong {

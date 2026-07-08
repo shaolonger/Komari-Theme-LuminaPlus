@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  BarChart3,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
@@ -65,6 +66,7 @@ import {
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 import { buildPingDiagnostics } from "@/utils/pingDiagnostics";
+import { buildPingTaskVpsCompareUrl } from "@/utils/vpsCompare";
 import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
@@ -1656,6 +1658,15 @@ export function ThemeManage() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {assigned.length > 0 && (
+                        <Link
+                          to={buildPingTaskVpsCompareUrl({ taskId: task.id, nodes: assigned })}
+                          className="theme-manage-button is-compact"
+                        >
+                          <BarChart3 size={13} />
+                          <span>查看对比</span>
+                        </Link>
+                      )}
                       {isExpanded && (
                         <button
                           type="button"

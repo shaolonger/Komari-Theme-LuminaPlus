@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { BarChart3, Clock3, Unplug } from "lucide-react";
 import type { HomepagePingSourceRow } from "@/utils/homepagePingSources";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
+import { buildPingTaskVpsCompareUrl } from "@/utils/vpsCompare";
 
 const LOSS_DOT_COUNT = 5;
 
@@ -61,7 +62,17 @@ export function PingSourceMatrix({
               title={source.title}
             >
               <span className="ping-source-name">
-                <strong>{source.name}</strong>
+                <span className="ping-source-name-head">
+                  <strong>{source.name}</strong>
+                  <Link
+                    to={buildPingTaskVpsCompareUrl({ taskId: source.taskId })}
+                    className="ping-source-task-link"
+                    title="对比该任务下的 VPS"
+                  >
+                    <BarChart3 size={10} strokeWidth={2.2} />
+                    <span>任务</span>
+                  </Link>
+                </span>
                 <small>{sourceMeta(source)}</small>
               </span>
               <span className="ping-source-readings">
