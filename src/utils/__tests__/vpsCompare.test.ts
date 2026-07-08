@@ -17,6 +17,7 @@ import {
   isValidComparisonCustomRange,
   mergePingTasksById,
   normalizeComparisonPingTaskId,
+  parseComparisonMetricKeys,
   prepareComparisonTrendData,
   sortComparisonRankingRows,
   trimComparisonSeriesToRange,
@@ -169,6 +170,14 @@ describe("buildComparisonSeries", () => {
     expect(series.map((item) => item.uuid)).toEqual(["a", "b"]);
     expect(series.map((item) => item.points[0]?.value)).toEqual([80, 10]);
     expect(filterPingRecordsByTask(pingRecords, 1).map((record) => record.value)).toEqual([20, 30]);
+  });
+});
+
+describe("parseComparisonMetricKeys", () => {
+  it("parses metrics url values with dedupe and fallback", () => {
+    expect(parseComparisonMetricKeys("cpu,ram,cpu,ping_loss", "disk")).toEqual(["cpu", "ram", "ping_loss"]);
+    expect(parseComparisonMetricKeys("bad,,unknown", "disk")).toEqual(["disk"]);
+    expect(parseComparisonMetricKeys(null, "ping_latency")).toEqual(["ping_latency"]);
   });
 });
 

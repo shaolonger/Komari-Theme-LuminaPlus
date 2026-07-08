@@ -276,6 +276,23 @@ export function getComparisonMetric(key: ComparisonMetricKey) {
   return metric;
 }
 
+export function parseComparisonMetricKeys(
+  value: string | null | undefined,
+  fallback: ComparisonMetricKey = "cpu",
+) {
+  const parsed = value
+    ? Array.from(
+        new Set(
+          value
+            .split(",")
+            .map((item) => item.trim())
+            .filter((item): item is ComparisonMetricKey => METRIC_BY_KEY.has(item as ComparisonMetricKey)),
+        ),
+      )
+    : [];
+  return parsed.length > 0 ? parsed : [fallback];
+}
+
 export function toComparisonSeconds(value: string | number): number {
   if (typeof value === "number") {
     return value > 1_000_000_000_000 ? value / 1000 : value;

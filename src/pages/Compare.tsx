@@ -58,6 +58,7 @@ import {
   mergePingTasksById,
   nodesToComparisonNodes,
   normalizeComparisonPingTaskId,
+  parseComparisonMetricKeys,
   prepareComparisonTrendData,
   sortComparisonRankingRows,
   trimComparisonSeriesToRange,
@@ -118,20 +119,6 @@ function parseSelectedTaskIds(value: string | null) {
         ),
       ).sort((left, right) => left - right)
     : [];
-}
-
-function parseSelectedMetricKeys(value: string | null, fallback: ComparisonMetricKey) {
-  const parsed = value
-    ? Array.from(
-        new Set(
-          value
-            .split(",")
-            .map((item) => item.trim())
-            .filter(isComparisonMetricKey),
-        ),
-      )
-    : [];
-  return parsed.length > 0 ? parsed : [fallback];
 }
 
 function normalizeViewForMetricMode(view: CompareView, multiMetricMode: boolean): CompareView {
@@ -1055,7 +1042,7 @@ export function Compare() {
   const initialMetric = isComparisonMetricKey(metricParam)
     ? metricParam
     : DEFAULT_METRIC;
-  const initialMetricKeys = parseSelectedMetricKeys(searchParams.get("metrics"), initialMetric);
+  const initialMetricKeys = parseComparisonMetricKeys(searchParams.get("metrics"), initialMetric);
   const initialHasPingMetric = initialMetricKeys.some((key) => getComparisonMetric(key).source === "ping");
   const initialHours = Number.parseInt(searchParams.get("hours") || "", 10);
   const initialView = normalizeViewForMetricMode(
