@@ -1340,6 +1340,104 @@ export function buildComparisonMarkdown(
   return lines.join("\n");
 }
 
+export function buildMultiMetricComparisonCsv(analysis: ComparisonMultiMetricAnalysis) {
+  const metricColumns = analysis.metricKeys.flatMap((metricKey) => {
+    const metric = getComparisonMetric(metricKey);
+    return [
+      `${metric.shortLabel}_primary`,
+      `${metric.shortLabel}_average`,
+      `${metric.shortLabel}_p95`,
+      `${metric.shortLabel}_max`,
+      `${metric.shortLabel}_latest`,
+      `${metric.shortLabel}_risk`,
+      `${metric.shortLabel}_tags`,
+    ];
+  });
+  const headers = [
+    "name",
+    "uuid",
+    "group",
+    "region",
+    "overall_score",
+    "alert_count",
+    "samples",
+    "worst_metric",
+    ...metricColumns,
+  ];
+  const lines = [
+    headers.join(","),
+    ...analysis.rows.map((row) => {
+      const metricValues = analysis.metricKeys.flatMap((metricKey) => {
+        const cell = row.cells[metricKey];
+        return [
+          rawValue(cell?.primaryValue),
+          rawValue(cell?.stats.average),
+          rawValue(cell?.stats.p95),
+          rawValue(cell?.stats.max),
+          rawValue(cell?.stats.latest),
+          rawValue(cell?.riskScore),
+          cell?.tags.join(" ") ?? "",
+        ];
+      });
+      return [
+        row.name,
+        row.uuid,
+        row.group,
+        row.region,
+        rawValue(row.overallScore),
+        row.alertCount,
+        row.sampleCount,
+        row.worstCell?.metric.shortLabel ?? "",
+        ...metricValues,
+      ]
+        .map(csvEscape)
+        .join(",");
+    }),
+  ];
+  return lines.join("\n");
+}
+
+export function buildMultiMetricComparisonMarkdown(analysis: ComparisonMultiMetricAnalysis) {
+  const metricHeaders = analysis.metricKeys.map((metricKey) => getComparisonMetric(metricKey).shortLabel);
+  const lines = [
+    "## VPS 多指标对比",
+    "",
+    [
+      "| VPS",
+      "综合风险",
+      "异常指标",
+      "样本",
+      "最差指标",
+      ...metricHeaders,
+    ].join(" | ") + " |",
+    [
+      "| ---",
+      "---:",
+      "---:",
+      "---:",
+      "---",
+      ...metricHeaders.map(() => "---:"),
+    ].join(" | ") + " |",
+    ...analysis.rows.map((row) => {
+      const metricValues = analysis.metricKeys.map((metricKey) => {
+        const cell = row.cells[metricKey];
+        if (!cell) return "--";
+        const score = cell.riskScore != null ? Math.round(cell.riskScore) : "--";
+        return `${formatComparisonValue(metricKey, cell.primaryValue)} / ${score}`;
+      });
+      return [
+        row.name,
+        row.overallScore != null ? Math.round(row.overallScore) : "--",
+        row.alertCount,
+        row.sampleCount,
+        row.worstCell?.metric.shortLabel ?? "--",
+        ...metricValues,
+      ].join(" | ");
+    }).map((line) => `| ${line} |`),
+  ];
+  return lines.join("\n");
+}
+
 export function nodesToComparisonNodes(nodes: NodeInfo[]): ComparisonNode[] {
   return nodes.map((node) => ({
     uuid: node.uuid,

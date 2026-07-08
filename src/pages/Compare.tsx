@@ -45,6 +45,8 @@ import {
   buildComparisonRanking,
   buildComparisonSeries,
   buildMultiMetricComparisonAnalysis,
+  buildMultiMetricComparisonCsv,
+  buildMultiMetricComparisonMarkdown,
   buildPingTaskComparisonSeries,
   buildPingTaskVpsComparisonSeries,
   COMPARISON_METRICS,
@@ -810,6 +812,166 @@ function MultiMetricInspector({
   );
 }
 
+type MultiMetricRankingSortKey =
+  | "name"
+  | "overall"
+  | "alerts"
+  | "samples"
+  | `metric:${ComparisonMetricKey}`;
+
+function compareNullableSortValues(
+  left: number | null | undefined,
+  right: number | null | undefined,
+) {
+  const leftValid = typeof left === "number" && Number.isFinite(left);
+  const rightValid = typeof right === "number" && Number.isFinite(right);
+  if (!leftValid && !rightValid) return 0;
+  if (!leftValid) return 1;
+  if (!rightValid) return -1;
+  return left - right;
+}
+
+function hasSortableNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function compareMultiMetricSortValue(
+  row: ComparisonMultiMetricAnalysis["rows"][number],
+  key: MultiMetricRankingSortKey,
+) {
+  if (key === "name") return row.name;
+  if (key === "overall") return row.overallScore;
+  if (key === "alerts") return row.alertCount;
+  if (key === "samples") return row.sampleCount;
+  const metricKey = key.replace("metric:", "") as ComparisonMetricKey;
+  return row.cells[metricKey]?.riskScore ?? null;
+}
+
+function MultiMetricRankingTable({
+  analysis,
+  metricKeys,
+}: {
+  analysis: ComparisonMultiMetricAnalysis;
+  metricKeys: ComparisonMetricKey[];
+}) {
+  const [sort, setSort] = useState<{
+    key: MultiMetricRankingSortKey;
+    direction: ComparisonSortDirection;
+  }>({ key: "overall", direction: "desc" });
+  const sortedRows = useMemo(() => {
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return [...analysis.rows].sort((left, right) => {
+      const leftValue = compareMultiMetricSortValue(left, sort.key);
+      const rightValue = compareMultiMetricSortValue(right, sort.key);
+      if (typeof leftValue === "string" || typeof rightValue === "string") {
+        return String(leftValue ?? "").localeCompare(String(rightValue ?? ""), "zh-CN", {
+          numeric: true,
+          sensitivity: "base",
+        }) * direction;
+      }
+      const leftValid = hasSortableNumber(leftValue);
+      const rightValid = hasSortableNumber(rightValue);
+      if (leftValid !== rightValid) return leftValid ? -1 : 1;
+      const primary = compareNullableSortValues(leftValue, rightValue);
+      if (primary !== 0) return primary * direction;
+      return left.name.localeCompare(right.name, "zh-CN", { numeric: true, sensitivity: "base" });
+    });
+  }, [analysis.rows, sort.direction, sort.key]);
+
+  const toggleSort = (key: MultiMetricRankingSortKey) => {
+    setSort((current) => ({
+      key,
+      direction:
+        current.key === key
+          ? current.direction === "asc"
+            ? "desc"
+            : "asc"
+          : key === "name"
+            ? "asc"
+            : "desc",
+    }));
+  };
+
+  const renderSortIcon = (key: MultiMetricRankingSortKey) => {
+    if (sort.key !== key) return <ArrowUpDown size={12} />;
+    return sort.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+  };
+
+  return (
+    <div className="compare-ranking-table-wrap is-multi">
+      <table className="compare-ranking-table compare-multi-ranking-table">
+        <thead>
+          <tr>
+            {[
+              ["name", "VPS"],
+              ["overall", "综合"],
+              ["alerts", "异常"],
+              ["samples", "样本"],
+            ].map(([key, label]) => (
+              <th key={key}>
+                <button
+                  type="button"
+                  className="compare-ranking-sort-button"
+                  data-active={sort.key === key ? "true" : "false"}
+                  onClick={() => toggleSort(key as MultiMetricRankingSortKey)}
+                >
+                  <span>{label}</span>
+                  {renderSortIcon(key as MultiMetricRankingSortKey)}
+                </button>
+              </th>
+            ))}
+            {metricKeys.map((metricKey) => {
+              const metric = getComparisonMetric(metricKey);
+              const key = `metric:${metricKey}` as MultiMetricRankingSortKey;
+              return (
+                <th key={metricKey}>
+                  <button
+                    type="button"
+                    className="compare-ranking-sort-button"
+                    data-active={sort.key === key ? "true" : "false"}
+                    onClick={() => toggleSort(key)}
+                    title={`按${metric.label}风险排序`}
+                  >
+                    <span>{metric.shortLabel}</span>
+                    {renderSortIcon(key)}
+                  </button>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row) => (
+            <tr key={row.uuid}>
+              <td>
+                <Link to={`/instance/${rowInstanceUuid(row.uuid)}`} className="compare-ranking-name">
+                  {row.name}
+                </Link>
+                <small>{row.group || row.region ? [row.group, row.region].filter(Boolean).join(" / ") : "未分组"}</small>
+              </td>
+              <td>{row.overallScore != null ? Math.round(row.overallScore) : "--"}</td>
+              <td>{row.alertCount}</td>
+              <td>{row.sampleCount}</td>
+              {metricKeys.map((metricKey) => {
+                const cell = row.cells[metricKey];
+                return (
+                  <td key={`${row.uuid}-${metricKey}`} data-tone={cell?.riskTone ?? "none"}>
+                    <strong>{cell ? formatComparisonValue(metricKey, cell.primaryValue) : "--"}</strong>
+                    <small>
+                      风险 {cell?.riskScore != null ? Math.round(cell.riskScore) : "--"}
+                      {cell?.tags.length ? ` · ${cell.tags.join(" ")}` : ""}
+                    </small>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MultiMetricResults({
   analysis,
   metricKeys,
@@ -847,7 +1009,7 @@ function MultiMetricResults({
     <div className="compare-multi-results" data-view={view}>
       <MultiMetricInsightCards analysis={analysis} />
       {view === "ranking" ? (
-        <div className="compare-multi-empty">多指标排行表会在下一步接入动态列和导出。</div>
+        <MultiMetricRankingTable analysis={analysis} metricKeys={metricKeys} />
       ) : (
         <div className="compare-multi-layout">
           <MultiMetricMatrix
@@ -1263,6 +1425,7 @@ export function Compare() {
   const strongest = rankingRows[0];
   const pingTaskExportToken =
     taskScopedPingMode && selectedPingTaskId != null ? `task-${selectedPingTaskId}-` : "";
+  const hasExportRows = multiMetricMode ? multiAnalysis.rows.length > 0 : rankingRows.length > 0;
 
   const commitSelected = (next: string[]) => {
     const unique = Array.from(new Set(next));
@@ -1430,7 +1593,9 @@ export function Compare() {
   };
 
   const copyMarkdown = async () => {
-    const markdown = buildComparisonMarkdown(rankingRows, metricKey);
+    const markdown = multiMetricMode
+      ? buildMultiMetricComparisonMarkdown(multiAnalysis)
+      : buildComparisonMarkdown(rankingRows, metricKey);
     await navigator.clipboard.writeText(
       taskScopedPingMode ? `Ping 任务范围: ${selectedPingTaskLabel}\n\n${markdown}` : markdown,
     );
@@ -1438,8 +1603,11 @@ export function Compare() {
   };
 
   const exportCsv = () => {
-    const csv = buildComparisonCsv(rankingRows, metricKey);
-    downloadText(`vps-compare-${metricKey}-${pingTaskExportToken}${exportRangeToken}.csv`, csv, "text/csv;charset=utf-8");
+    const csv = multiMetricMode
+      ? buildMultiMetricComparisonCsv(multiAnalysis)
+      : buildComparisonCsv(rankingRows, metricKey);
+    const metricToken = multiMetricMode ? `multi-${selectedMetricKeys.join("+")}` : metricKey;
+    downloadText(`vps-compare-${metricToken}-${pingTaskExportToken}${exportRangeToken}.csv`, csv, "text/csv;charset=utf-8");
     setExportStatus("CSV 已下载");
   };
 
@@ -1766,7 +1934,7 @@ export function Compare() {
               type="button"
               className="compare-action-button"
               onClick={() => void copyMarkdown()}
-              disabled={rankingRows.length === 0}
+              disabled={!hasExportRows}
             >
               <Copy size={14} />
               Markdown
@@ -1775,7 +1943,7 @@ export function Compare() {
               type="button"
               className="compare-action-button"
               onClick={exportCsv}
-              disabled={rankingRows.length === 0}
+              disabled={!hasExportRows}
             >
               <Download size={14} />
               CSV
@@ -1817,15 +1985,37 @@ export function Compare() {
 
       <section className="compare-ranking-preview">
         <header>
-          <h2>区间排行</h2>
+          <h2>{multiMetricMode ? "综合风险排行" : "区间排行"}</h2>
           <p>
-            {taskScopedPingMode
+            {multiMetricMode
+              ? "按选中指标的综合风险排序，适合快速定位最需要处理的 VPS。"
+              : taskScopedPingMode
               ? "按同一 Ping 任务内的 P95 和平均值排序。"
               : "按 P95 和平均值排序，适合快速定位压力最大的 VPS。"}
           </p>
         </header>
         <div className="compare-rank-cards">
-          {rankingRows.length > 0 ? (
+          {multiMetricMode && multiAnalysis.rows.length > 0 ? (
+            multiAnalysis.rows.slice(0, 4).map((row, index) => (
+              <Link
+                key={row.uuid}
+                to={`/instance/${rowInstanceUuid(row.uuid)}`}
+                className="compare-rank-card"
+                style={{ "--rank": index + 1 } as CSSProperties}
+              >
+                <span>#{index + 1}</span>
+                <strong>{row.name}</strong>
+                <small>
+                  <ArrowUp size={11} />
+                  综合 {row.overallScore != null ? Math.round(row.overallScore) : "--"}
+                </small>
+                <small>
+                  <ArrowDown size={11} />
+                  {row.worstCell ? `${row.worstCell.metric.shortLabel} ${formatComparisonValue(row.worstCell.metric.key, row.worstCell.primaryValue)}` : "等待数据"}
+                </small>
+              </Link>
+            ))
+          ) : !multiMetricMode && rankingRows.length > 0 ? (
             rankingRows.slice(0, 4).map((row, index) => (
               <Link
                 key={row.uuid}

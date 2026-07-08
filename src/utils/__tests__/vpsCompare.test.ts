@@ -5,6 +5,8 @@ import {
   buildComparisonRanking,
   buildComparisonSeries,
   buildMultiMetricComparisonAnalysis,
+  buildMultiMetricComparisonCsv,
+  buildMultiMetricComparisonMarkdown,
   buildPingTaskVpsCompareUrl,
   buildPingTaskComparisonSeries,
   buildPingTaskVpsComparisonSeries,
@@ -211,6 +213,22 @@ describe("buildMultiMetricComparisonAnalysis", () => {
 
     expect(analysis.rows[0].cells.ping_latency?.stats.average).toBe(40);
     expect(analysis.rows[0].cells.ping_loss?.stats.average).toBe(50);
+  });
+
+  it("exports multi-metric ranking as csv and markdown", () => {
+    const analysis = buildMultiMetricComparisonAnalysis({
+      metricKeys: ["cpu", "ram"],
+      nodes: [nodes[0]],
+      loadRecordsByMetric: {
+        cpu: { a: [loadRecord({ client: "a", time: 1000, cpu: 70 })] },
+        ram: { a: [loadRecord({ client: "a", time: 1000, ram: 768, ram_total: 1024 })] },
+      },
+    });
+
+    expect(buildMultiMetricComparisonCsv(analysis)).toContain("CPU_primary");
+    expect(buildMultiMetricComparisonCsv(analysis)).toContain("alpha");
+    expect(buildMultiMetricComparisonMarkdown(analysis)).toContain("VPS 多指标对比");
+    expect(buildMultiMetricComparisonMarkdown(analysis)).toContain("70% / 70");
   });
 });
 

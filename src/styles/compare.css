@@ -668,6 +668,64 @@
   font-weight: 760;
 }
 
+.compare-ranking-table-wrap.is-multi {
+  border-radius: 16px;
+}
+
+.compare-multi-ranking-table {
+  min-width: 920px;
+}
+
+.compare-multi-ranking-table td:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.compare-multi-ranking-table td:first-child small {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.compare-multi-ranking-table td[data-tone] {
+  border-left: 3px solid color-mix(in srgb, var(--risk-color, var(--border-strong)) 62%, transparent);
+  background: color-mix(in srgb, var(--risk-color, var(--accent-500)) 6%, transparent);
+}
+
+.compare-multi-ranking-table td[data-tone="critical"] {
+  --risk-color: var(--status-danger);
+}
+
+.compare-multi-ranking-table td[data-tone="warning"] {
+  --risk-color: var(--status-warning);
+}
+
+.compare-multi-ranking-table td[data-tone="notice"] {
+  --risk-color: var(--accent-500);
+}
+
+.compare-multi-ranking-table td[data-tone="good"] {
+  --risk-color: var(--status-success);
+}
+
+.compare-multi-ranking-table td strong,
+.compare-multi-ranking-table td small {
+  display: block;
+}
+
+.compare-multi-ranking-table td strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.compare-multi-ranking-table td small {
+  margin-top: 3px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 620;
+}
+
 .compare-multi-results {
   display: grid;
   gap: 12px;
