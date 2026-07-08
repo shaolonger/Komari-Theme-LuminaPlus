@@ -53,10 +53,10 @@
 
 ## 5. komari 后端支撑
 
-- [ ] 在 `/Users/shaolong/Code/personal/komari` 中为 VPS 增加结构化多维标签存储或轻量配置接口。
-- [ ] 提供 admin API：读取、批量更新、按 UUID 更新 VPS facets。
-- [ ] 保证旧 `group`、`provider`、`business_role`、`tags` 字段仍可作为默认标签来源。
-- [ ] 增加 Go 测试覆盖 normalize、保存、读取和非法 payload。
+- [x] 在 `/Users/shaolong/Code/personal/komari` 中为 VPS 增加结构化多维标签存储或轻量配置接口。
+- [x] 提供 admin API：读取、批量更新、按 UUID 更新 VPS facets。
+- [x] 保证旧 `group`、`provider`、`business_role`、`tags` 字段仍可作为默认标签来源。
+- [x] 增加 Go 测试覆盖 normalize、保存、读取和非法 payload。
 
 验收：
 
