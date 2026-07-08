@@ -93,6 +93,55 @@ export interface ComparisonRankingRow extends ComparisonStats {
   region: string;
 }
 
+export type ComparisonRiskTone = "none" | "good" | "notice" | "warning" | "critical";
+
+export interface ComparisonMultiMetricCell {
+  metric: ComparisonMetricDefinition;
+  stats: ComparisonStats;
+  points: ComparisonPoint[];
+  riskScore: number | null;
+  riskTone: ComparisonRiskTone;
+  primaryValue: number | null;
+  tags: string[];
+}
+
+export interface ComparisonMultiMetricRow {
+  uuid: string;
+  name: string;
+  group: string;
+  region: string;
+  cells: Partial<Record<ComparisonMetricKey, ComparisonMultiMetricCell>>;
+  overallScore: number | null;
+  alertCount: number;
+  sampleCount: number;
+  worstCell: ComparisonMultiMetricCell | null;
+}
+
+export interface ComparisonMultiMetricInsight {
+  tone: ComparisonRiskTone;
+  label: string;
+  title: string;
+  detail: string;
+  uuid?: string;
+  metricKey?: ComparisonMetricKey;
+}
+
+export interface ComparisonMultiMetricAnalysis {
+  metricKeys: ComparisonMetricKey[];
+  seriesByMetric: Partial<Record<ComparisonMetricKey, ComparisonSeries[]>>;
+  rows: ComparisonMultiMetricRow[];
+  insights: ComparisonMultiMetricInsight[];
+}
+
+export interface ComparisonMultiMetricInput {
+  metricKeys: ComparisonMetricKey[];
+  nodes: ComparisonNode[];
+  loadRecordsByMetric?: Partial<Record<ComparisonMetricKey, ComparisonLoadRecords>>;
+  pingRecords?: PingRecord[];
+  pingTaskId?: number | null;
+  range?: { start?: number | null; end?: number | null };
+}
+
 export type ComparisonRankingSortKey =
   | "name"
   | "group"
@@ -213,6 +262,11 @@ const COMPARISON_BUCKET_STEPS = [
   43_200,
   86_400,
 ] as const;
+
+function clamp(value: number, min = 0, max = 100) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
 
 export function getComparisonMetric(key: ComparisonMetricKey) {
   const metric = METRIC_BY_KEY.get(key);
@@ -610,6 +664,290 @@ export function buildComparisonSeries({
   return metric.source === "load"
     ? buildLoadSeries(metric, nodes, loadRecords)
     : buildPingSeries(metric, nodes, pingRecords);
+}
+
+function uniqueMetricKeys(metricKeys: ComparisonMetricKey[]) {
+  const out: ComparisonMetricKey[] = [];
+  const seen = new Set<ComparisonMetricKey>();
+  for (const key of metricKeys) {
+    if (!METRIC_BY_KEY.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function buildSeriesForMultiMetric({
+  metricKey,
+  nodes,
+  loadRecordsByMetric,
+  pingRecords,
+  pingTaskId,
+}: {
+  metricKey: ComparisonMetricKey;
+  nodes: ComparisonNode[];
+  loadRecordsByMetric: Partial<Record<ComparisonMetricKey, ComparisonLoadRecords>>;
+  pingRecords: PingRecord[];
+  pingTaskId?: number | null;
+}) {
+  const metric = getComparisonMetric(metricKey);
+  if (metric.source === "ping" && pingTaskId != null) {
+    return buildPingTaskVpsComparisonSeries({
+      metricKey,
+      nodes,
+      records: pingRecords,
+      taskId: pingTaskId,
+    });
+  }
+
+  return buildComparisonSeries({
+    metricKey,
+    nodes,
+    loadRecords: loadRecordsByMetric[metricKey] ?? {},
+    pingRecords,
+  });
+}
+
+function primaryStatValue(stats: ComparisonStats) {
+  return stats.p95 ?? stats.average ?? stats.latest ?? stats.max ?? null;
+}
+
+function relativePrimaryMax(rows: ComparisonRankingRow[]) {
+  return Math.max(
+    0,
+    ...rows
+      .map((row) => primaryStatValue(row))
+      .filter((value): value is number => value != null && Number.isFinite(value)),
+  );
+}
+
+function scoreLatencyRisk(value: number) {
+  if (value <= 80) return clamp(value / 8);
+  if (value <= 200) return clamp(10 + ((value - 80) / 120) * 25);
+  if (value <= 500) return clamp(35 + ((value - 200) / 300) * 35);
+  if (value <= 1000) return clamp(70 + ((value - 500) / 500) * 20);
+  return clamp(90 + ((value - 1000) / 1000) * 10);
+}
+
+function scoreMetricRisk(
+  metricKey: ComparisonMetricKey,
+  stats: ComparisonStats,
+  metricPrimaryMax: number,
+) {
+  const value = primaryStatValue(stats);
+  if (value == null || !Number.isFinite(value)) return null;
+
+  switch (metricKey) {
+    case "cpu":
+    case "ram":
+    case "disk":
+      return clamp(value);
+    case "ping_loss":
+      return clamp(value * 4);
+    case "ping_latency":
+      return scoreLatencyRisk(value);
+    case "load":
+      return clamp(value * 25);
+    case "net_in":
+    case "net_out":
+    case "connections":
+      return metricPrimaryMax > 0 ? clamp((value / metricPrimaryMax) * 100) : null;
+    default:
+      return clamp(value);
+  }
+}
+
+function riskTone(score: number | null): ComparisonRiskTone {
+  if (score == null || !Number.isFinite(score)) return "none";
+  if (score >= 75) return "critical";
+  if (score >= 55) return "warning";
+  if (score >= 30) return "notice";
+  return "good";
+}
+
+function cellTags({
+  metricKey,
+  stats,
+  riskScore,
+  maxSamples,
+}: {
+  metricKey: ComparisonMetricKey;
+  stats: ComparisonStats;
+  riskScore: number | null;
+  maxSamples: number;
+}) {
+  const tags: string[] = [];
+  if (stats.samples === 0) return ["无样本"];
+  if (maxSamples > 0 && stats.samples < Math.max(3, maxSamples * 0.45)) tags.push("样本少");
+  if (metricKey === "ping_loss" && (stats.p95 ?? stats.average ?? 0) > 0) tags.push("丢包");
+
+  const averageValue = stats.average ?? 0;
+  const maxValue = stats.max ?? 0;
+  if (averageValue > 0 && maxValue > averageValue * 1.8) tags.push("峰");
+  if (stats.p95 != null && stats.average != null && stats.p95 > stats.average * 1.35) tags.push("抖");
+  if (riskScore != null && riskScore >= 75) tags.push("高风险");
+  if (stats.latest != null && stats.max != null && stats.latest >= stats.max * 0.92 && riskScore != null && riskScore >= 55) {
+    tags.push("最新高");
+  }
+
+  return Array.from(new Set(tags)).slice(0, 3);
+}
+
+function compareMultiRows(left: ComparisonMultiMetricRow, right: ComparisonMultiMetricRow) {
+  const scoreDiff = compareNullableNumbers(right.overallScore, left.overallScore);
+  if (scoreDiff !== 0) return scoreDiff;
+  if (right.alertCount !== left.alertCount) return right.alertCount - left.alertCount;
+  return compareRankingText(left.name, right.name) || left.uuid.localeCompare(right.uuid);
+}
+
+function strongestCell(row: ComparisonMultiMetricRow) {
+  return Object.values(row.cells).reduce<ComparisonMultiMetricCell | null>((strongest, cell) => {
+    if (!cell) return strongest;
+    if (!strongest) return cell;
+    return (cell.riskScore ?? -1) > (strongest.riskScore ?? -1) ? cell : strongest;
+  }, null);
+}
+
+function buildMultiMetricInsights(rows: ComparisonMultiMetricRow[]) {
+  const rowsWithScore = rows.filter((row) => row.overallScore != null);
+  const worst = rowsWithScore[0];
+  const best = [...rowsWithScore].reverse()[0];
+  const mostAlerts = [...rowsWithScore].sort((left, right) =>
+    right.alertCount - left.alertCount || compareMultiRows(left, right),
+  )[0];
+  const sampleRisk = rows.find((row) =>
+    Object.values(row.cells).some((cell) => cell?.tags.includes("样本少") || cell?.tags.includes("无样本")),
+  );
+
+  const insights: ComparisonMultiMetricInsight[] = [];
+  if (worst?.worstCell) {
+    insights.push({
+      tone: worst.worstCell.riskTone,
+      label: "综合最差",
+      title: worst.name,
+      detail: `${worst.worstCell.metric.shortLabel} 拉高风险，综合分 ${Math.round(worst.overallScore ?? 0)}`,
+      uuid: worst.uuid,
+      metricKey: worst.worstCell.metric.key,
+    });
+  }
+  if (best && best !== worst) {
+    insights.push({
+      tone: "good",
+      label: "综合最佳",
+      title: best.name,
+      detail: `综合分 ${Math.round(best.overallScore ?? 0)}，选中指标整体更稳`,
+      uuid: best.uuid,
+      metricKey: best.worstCell?.metric.key,
+    });
+  }
+  if (mostAlerts && mostAlerts.alertCount > 0) {
+    insights.push({
+      tone: mostAlerts.alertCount >= 3 ? "critical" : "warning",
+      label: "异常最多",
+      title: mostAlerts.name,
+      detail: `${mostAlerts.alertCount} 个指标进入 warning/critical 区间`,
+      uuid: mostAlerts.uuid,
+      metricKey: mostAlerts.worstCell?.metric.key,
+    });
+  }
+  if (sampleRisk) {
+    insights.push({
+      tone: "notice",
+      label: "数据质量",
+      title: sampleRisk.name,
+      detail: "部分指标样本偏少，排序可信度需要结合原始趋势确认",
+      uuid: sampleRisk.uuid,
+    });
+  }
+  return insights.slice(0, 4);
+}
+
+export function buildMultiMetricComparisonAnalysis({
+  metricKeys,
+  nodes,
+  loadRecordsByMetric = {},
+  pingRecords = [],
+  pingTaskId = null,
+  range,
+}: ComparisonMultiMetricInput): ComparisonMultiMetricAnalysis {
+  const normalizedMetricKeys = uniqueMetricKeys(metricKeys);
+  const seriesByMetric: Partial<Record<ComparisonMetricKey, ComparisonSeries[]>> = {};
+  const rankingByMetric = new Map<ComparisonMetricKey, ComparisonRankingRow[]>();
+
+  for (const metricKey of normalizedMetricKeys) {
+    const rawSeries = buildSeriesForMultiMetric({
+      metricKey,
+      nodes,
+      loadRecordsByMetric,
+      pingRecords,
+      pingTaskId,
+    });
+    const series = trimComparisonSeriesToRange(rawSeries, range);
+    seriesByMetric[metricKey] = series;
+    rankingByMetric.set(metricKey, buildComparisonRanking(series));
+  }
+
+  const maxSamplesByMetric = new Map<ComparisonMetricKey, number>();
+  const primaryMaxByMetric = new Map<ComparisonMetricKey, number>();
+  for (const metricKey of normalizedMetricKeys) {
+    const ranking = rankingByMetric.get(metricKey) ?? [];
+    maxSamplesByMetric.set(metricKey, Math.max(0, ...ranking.map((row) => row.samples)));
+    primaryMaxByMetric.set(metricKey, relativePrimaryMax(ranking));
+  }
+
+  const rows = nodes.map<ComparisonMultiMetricRow>((node) => {
+    const cells: Partial<Record<ComparisonMetricKey, ComparisonMultiMetricCell>> = {};
+    for (const metricKey of normalizedMetricKeys) {
+      const metric = getComparisonMetric(metricKey);
+      const series = (seriesByMetric[metricKey] ?? []).find((item) => item.uuid === node.uuid);
+      const stats = getComparisonStats(series?.points ?? []);
+      const riskScore = scoreMetricRisk(metricKey, stats, primaryMaxByMetric.get(metricKey) ?? 0);
+      const cell: ComparisonMultiMetricCell = {
+        metric,
+        stats,
+        points: series?.points ?? [],
+        riskScore,
+        riskTone: riskTone(riskScore),
+        primaryValue: primaryStatValue(stats),
+        tags: cellTags({
+          metricKey,
+          stats,
+          riskScore,
+          maxSamples: maxSamplesByMetric.get(metricKey) ?? 0,
+        }),
+      };
+      cells[metricKey] = cell;
+    }
+
+    const scoredCells = Object.values(cells).filter(
+      (cell): cell is ComparisonMultiMetricCell =>
+        Boolean(cell) && cell.riskScore != null && Number.isFinite(cell.riskScore),
+    );
+    const overallScore =
+      scoredCells.length > 0
+        ? scoredCells.reduce((total, cell) => total + Number(cell.riskScore), 0) / scoredCells.length
+        : null;
+    const row: ComparisonMultiMetricRow = {
+      uuid: node.uuid,
+      name: node.name || node.uuid,
+      group: String(node.group || ""),
+      region: String(node.region || ""),
+      cells,
+      overallScore,
+      alertCount: scoredCells.filter((cell) => (cell.riskScore ?? 0) >= 55).length,
+      sampleCount: Object.values(cells).reduce((total, cell) => total + (cell?.stats.samples ?? 0), 0),
+      worstCell: null,
+    };
+    row.worstCell = strongestCell(row);
+    return row;
+  }).sort(compareMultiRows);
+
+  return {
+    metricKeys: normalizedMetricKeys,
+    seriesByMetric,
+    rows,
+    insights: buildMultiMetricInsights(rows),
+  };
 }
 
 function filterComparisonPoints(

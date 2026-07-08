@@ -4,6 +4,7 @@ import {
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
+  buildMultiMetricComparisonAnalysis,
   buildPingTaskVpsCompareUrl,
   buildPingTaskComparisonSeries,
   buildPingTaskVpsComparisonSeries,
@@ -166,6 +167,50 @@ describe("buildComparisonSeries", () => {
     expect(series.map((item) => item.uuid)).toEqual(["a", "b"]);
     expect(series.map((item) => item.points[0]?.value)).toEqual([80, 10]);
     expect(filterPingRecordsByTask(pingRecords, 1).map((record) => record.value)).toEqual([20, 30]);
+  });
+});
+
+describe("buildMultiMetricComparisonAnalysis", () => {
+  it("builds a ranked VPS x metric matrix from load and ping metrics", () => {
+    const analysis = buildMultiMetricComparisonAnalysis({
+      metricKeys: ["cpu", "ping_loss"],
+      nodes,
+      loadRecordsByMetric: {
+        cpu: {
+          a: [loadRecord({ client: "a", time: 1000, cpu: 20 })],
+          b: [loadRecord({ client: "b", time: 1000, cpu: 82 })],
+        },
+      },
+      pingRecords: [
+        { client: "a", task_id: 1, time: 1000, value: 20 },
+        { client: "b", task_id: 1, time: 1000, value: 0 },
+        { client: "b", task_id: 2, time: 1000, value: 30 },
+      ],
+    });
+
+    expect(analysis.metricKeys).toEqual(["cpu", "ping_loss"]);
+    expect(analysis.rows.map((row) => row.uuid)).toEqual(["b", "a"]);
+    expect(analysis.rows[0].cells.cpu?.riskTone).toBe("critical");
+    expect(analysis.rows[0].cells.ping_loss?.stats.p95).toBe(50);
+    expect(analysis.rows[0].cells.ping_loss?.tags).toContain("丢包");
+    expect(analysis.rows[0].worstCell?.metric.key).toBe("ping_loss");
+    expect(analysis.insights[0]?.label).toBe("综合最差");
+  });
+
+  it("filters ping records by task in multi-metric mode", () => {
+    const analysis = buildMultiMetricComparisonAnalysis({
+      metricKeys: ["ping_latency", "ping_loss"],
+      nodes: nodes.slice(0, 1),
+      pingTaskId: 2,
+      pingRecords: [
+        { client: "a", task_id: 1, time: 1000, value: 500 },
+        { client: "a", task_id: 2, time: 1000, value: 0 },
+        { client: "a", task_id: 2, time: 2000, value: 40 },
+      ],
+    });
+
+    expect(analysis.rows[0].cells.ping_latency?.stats.average).toBe(40);
+    expect(analysis.rows[0].cells.ping_loss?.stats.average).toBe(50);
   });
 });
 
