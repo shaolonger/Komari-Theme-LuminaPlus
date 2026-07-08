@@ -16,7 +16,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 ## Tasks
 
 - [x] Add tested comparison utilities for filtering Ping records by one task, building task-aware compare URLs, and deriving task-bound VPS selections.
-- [ ] Extend `/compare` with Ping-task mode controls, URL state, task-filtered trend/ranking data, and clear summary copy.
+- [x] Extend `/compare` with Ping-task mode controls, URL state, task-filtered trend/ranking data, and clear summary copy.
 - [ ] Add responsive styling for the task selector and task-aware selected VPS hints.
 - [ ] Add task-level comparison entry points from homepage Ping source rows and theme Ping binding management.
 - [ ] Run targeted tests, typecheck, build, and browser smoke checks; then mark this TODO complete.

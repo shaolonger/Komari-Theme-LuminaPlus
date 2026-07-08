@@ -43,12 +43,15 @@ import {
   buildComparisonRanking,
   buildComparisonSeries,
   buildPingTaskComparisonSeries,
+  buildPingTaskVpsComparisonSeries,
   COMPARISON_METRICS,
   formatComparisonValue,
   getComparisonRequestHours,
   getComparisonMetric,
+  getPingTaskBoundNodeUuids,
   isValidComparisonCustomRange,
   nodesToComparisonNodes,
+  normalizeComparisonPingTaskId,
   prepareComparisonTrendData,
   trimComparisonSeriesToRange,
   type ComparisonMetricKey,
@@ -179,6 +182,8 @@ function updateParams(
     rangeMode?: CompareRangeMode;
     from?: number | null;
     to?: number | null;
+    pingTask?: number | null;
+    pingTasks?: number[] | null;
   },
 ) {
   const next = new URLSearchParams(base);
@@ -205,7 +210,33 @@ function updateParams(
     if (patch.to != null) next.set("to", String(Math.floor(patch.to)));
     else next.delete("to");
   }
+  if (patch.pingTask !== undefined) {
+    if (patch.pingTask != null) next.set("pingTask", String(patch.pingTask));
+    else next.delete("pingTask");
+  }
+  if (patch.pingTasks !== undefined) {
+    if (patch.pingTasks && patch.pingTasks.length > 0) {
+      next.set("pingTasks", patch.pingTasks.join(","));
+    } else {
+      next.delete("pingTasks");
+    }
+  }
   return next;
+}
+
+function taskFallbackName(taskId: number) {
+  return `任务 #${taskId}`;
+}
+
+function pingTaskDisplayName(
+  taskId: number | null | undefined,
+  taskName?: string,
+  group?: string,
+) {
+  if (taskId == null) return "全部 Ping 任务";
+  const name = taskName?.trim() || taskFallbackName(taskId);
+  const groupLabel = group?.trim();
+  return groupLabel ? `${groupLabel} / ${name}` : name;
 }
 
 function ComparisonTrendChart({
@@ -462,19 +493,25 @@ export function Compare() {
   const initialMetric = isComparisonMetricKey(metricParam)
     ? metricParam
     : DEFAULT_METRIC;
+  const initialMetricDefinition = getComparisonMetric(initialMetric);
   const initialHours = Number.parseInt(searchParams.get("hours") || "", 10);
   const initialView = isCompareView(viewParam) ? viewParam : "trend";
   const initialRangeMode = isCompareRangeMode(rangeParam) ? rangeParam : "preset";
   const initialFrom = parseUrlSeconds(searchParams.get("from"));
   const initialTo = parseUrlSeconds(searchParams.get("to"));
+  const initialPingTaskId =
+    initialMetricDefinition.source === "ping"
+      ? normalizeComparisonPingTaskId(searchParams.get("pingTask"))
+      : null;
   const initialCustomEnd = initialTo ?? Math.floor(Date.now() / 1000);
   const initialCustomStart = initialFrom ?? initialCustomEnd - Math.max(1, Number.isFinite(initialHours) ? initialHours : DEFAULT_HOURS) * 3_600;
   const [selectedUuids, setSelectedUuids] = useState(() =>
     parseSelectedNodes(searchParams.get("nodes")),
   );
-  const [selectedPingTaskIds] = useState(() =>
+  const [selectedPingTaskIds, setSelectedPingTaskIds] = useState(() =>
     parseSelectedTaskIds(searchParams.get("pingTasks")),
   );
+  const [selectedPingTaskId, setSelectedPingTaskId] = useState<number | null>(initialPingTaskId);
   const [metricKey, setMetricKey] = useState<ComparisonMetricKey>(initialMetric);
   const [hours, setHours] = useState(Number.isFinite(initialHours) && initialHours > 0 ? initialHours : DEFAULT_HOURS);
   const [view, setView] = useState<CompareView>(initialView);
@@ -518,8 +555,12 @@ export function Compare() {
   const metric = getComparisonMetric(metricKey);
   const selectedKey = selectedNodes.map((node) => node.uuid).join(",");
   const compareNodes = useMemo(() => nodesToComparisonNodes(selectedNodes), [selectedNodes]);
+  const taskScopedPingMode = metric.source === "ping" && selectedPingTaskId != null;
   const singleNodePingTaskMode =
-    metric.source === "ping" && compareNodes.length === 1 && selectedPingTaskIds.length > 0;
+    metric.source === "ping" &&
+    !taskScopedPingMode &&
+    compareNodes.length === 1 &&
+    selectedPingTaskIds.length > 0;
   const loadRanges = useMemo(
     () => buildLoadTimeRangeOptions(config?.record_preserve_time).filter((range) => range.value > 0),
     [config?.record_preserve_time],
@@ -570,6 +611,15 @@ export function Compare() {
     if (!query) return nodeOptions;
     return nodeOptions.filter((node) => compareSearchText(node).includes(query));
   }, [nodeOptions, nodeSearch]);
+  const selectedPingTaskBoundUuids = useMemo(
+    () =>
+      getPingTaskBoundNodeUuids(
+        themeSettings.homepagePingBindings,
+        selectedPingTaskId,
+        visibleNodeUuids,
+      ),
+    [selectedPingTaskId, themeSettings.homepagePingBindings, visibleNodeUuids],
+  );
 
   const canQuery = selectedNodes.length > 0;
   const canFetch = canQuery && rangeIsUsable;
@@ -596,8 +646,70 @@ export function Compare() {
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
+  const taskById = useMemo(() => {
+    return new Map((pingQuery.data?.tasks ?? []).map((task) => [task.id, task]));
+  }, [pingQuery.data?.tasks]);
+  const pingTaskOptions = useMemo(() => {
+    const ids = new Set<number>();
+    for (const taskId of Object.keys(themeSettings.homepagePingBindings)) {
+      const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+      if (normalizedTaskId != null) ids.add(normalizedTaskId);
+    }
+    for (const task of pingQuery.data?.tasks ?? []) {
+      ids.add(task.id);
+    }
+    if (selectedPingTaskId != null) ids.add(selectedPingTaskId);
+
+    return Array.from(ids)
+      .sort((left, right) => left - right)
+      .map((taskId) => {
+        const task = taskById.get(taskId);
+        const boundUuids = getPingTaskBoundNodeUuids(
+          themeSettings.homepagePingBindings,
+          taskId,
+          visibleNodeUuids,
+        );
+        const pieces = [
+          task?.target?.trim(),
+          task?.interval ? `${task.interval}s` : "",
+          boundUuids.length > 0 ? `${boundUuids.length} 台绑定 VPS` : "",
+        ].filter(Boolean);
+        return {
+          id: taskId,
+          label: pingTaskDisplayName(
+            taskId,
+            task?.name,
+            themeSettings.homepagePingTaskGroups[String(taskId)],
+          ),
+          meta: pieces.join(" · ") || `ID ${taskId}`,
+          boundUuids,
+        };
+      });
+  }, [
+    pingQuery.data?.tasks,
+    selectedPingTaskId,
+    taskById,
+    themeSettings.homepagePingBindings,
+    themeSettings.homepagePingTaskGroups,
+    visibleNodeUuids,
+  ]);
+  const selectedPingTask = selectedPingTaskId == null ? undefined : taskById.get(selectedPingTaskId);
+  const selectedPingTaskLabel = pingTaskDisplayName(
+    selectedPingTaskId,
+    selectedPingTask?.name,
+    selectedPingTaskId == null ? "" : themeSettings.homepagePingTaskGroups[String(selectedPingTaskId)],
+  );
   const rawSeries = useMemo(
     () => {
+      if (taskScopedPingMode) {
+        return buildPingTaskVpsComparisonSeries({
+          metricKey,
+          nodes: compareNodes,
+          records: pingQuery.data?.records ?? [],
+          taskId: selectedPingTaskId,
+        });
+      }
+
       if (singleNodePingTaskMode && compareNodes[0]) {
         return buildPingTaskComparisonSeries({
           metricKey,
@@ -621,8 +733,10 @@ export function Compare() {
       metricKey,
       pingQuery.data?.records,
       pingQuery.data?.tasks,
+      selectedPingTaskId,
       selectedPingTaskIds,
       singleNodePingTaskMode,
+      taskScopedPingMode,
     ],
   );
   const series = useMemo(
@@ -641,6 +755,8 @@ export function Compare() {
   const queryError = metric.source === "load" ? loadQuery.error : pingQuery.error;
   const totalSamples = rankingRows.reduce((total, row) => total + row.samples, 0);
   const strongest = rankingRows[0];
+  const pingTaskExportToken =
+    taskScopedPingMode && selectedPingTaskId != null ? `task-${selectedPingTaskId}-` : "";
 
   const commitSelected = (next: string[]) => {
     const unique = Array.from(new Set(next));
@@ -651,6 +767,10 @@ export function Compare() {
   const commitMetric = (next: ComparisonMetricKey) => {
     setMetricKey(next);
     const nextMetric = getComparisonMetric(next);
+    if (nextMetric.source !== "ping") {
+      setSelectedPingTaskId(null);
+      setSelectedPingTaskIds([]);
+    }
     const nextRanges = nextMetric.source === "ping" ? pingRanges : loadRanges;
     const nextHours = nextRanges.some((range) => range.value === hours)
       ? hours
@@ -660,12 +780,63 @@ export function Compare() {
       updateParams(
         searchParams,
         activeRangeMode === "preset"
-          ? { metric: next, hours: nextHours, rangeMode: "preset" }
-          : { metric: next, rangeMode: "custom", from: customStartSeconds, to: customEndSeconds },
+          ? {
+              metric: next,
+              hours: nextHours,
+              rangeMode: "preset",
+              ...(nextMetric.source !== "ping" ? { pingTask: null, pingTasks: null } : {}),
+            }
+          : {
+              metric: next,
+              rangeMode: "custom",
+              from: customStartSeconds,
+              to: customEndSeconds,
+              ...(nextMetric.source !== "ping" ? { pingTask: null, pingTasks: null } : {}),
+            },
       ),
       { replace: true },
     );
   };
+
+  const commitPingTask = (taskId: number | null) => {
+    const normalizedTaskId = normalizeComparisonPingTaskId(taskId);
+    const boundUuids =
+      normalizedTaskId == null
+        ? []
+        : getPingTaskBoundNodeUuids(
+            themeSettings.homepagePingBindings,
+            normalizedTaskId,
+            visibleNodeUuids,
+          );
+    const nextUuids = normalizedTaskId != null && boundUuids.length > 0 ? boundUuids : selectedUuids;
+
+    setSelectedPingTaskId(normalizedTaskId);
+    setSelectedPingTaskIds([]);
+    if (nextUuids !== selectedUuids) {
+      setSelectedUuids(nextUuids);
+    }
+    setSearchParams(
+      updateParams(searchParams, {
+        nodes: nextUuids,
+        pingTask: normalizedTaskId,
+        pingTasks: null,
+      }),
+      { replace: true },
+    );
+  };
+
+  useEffect(() => {
+    if (!taskScopedPingMode || searchParams.has("nodes") || selectedUuids.length > 0) return;
+    if (selectedPingTaskBoundUuids.length === 0) return;
+    setSelectedUuids(selectedPingTaskBoundUuids);
+    setSearchParams(updateParams(searchParams, { nodes: selectedPingTaskBoundUuids }), { replace: true });
+  }, [
+    searchParams,
+    selectedPingTaskBoundUuids,
+    selectedUuids.length,
+    setSearchParams,
+    taskScopedPingMode,
+  ]);
 
   const commitHours = (next: number) => {
     setRangeMode("preset");
@@ -722,13 +893,15 @@ export function Compare() {
 
   const copyMarkdown = async () => {
     const markdown = buildComparisonMarkdown(rankingRows, metricKey);
-    await navigator.clipboard.writeText(markdown);
+    await navigator.clipboard.writeText(
+      taskScopedPingMode ? `Ping 任务范围: ${selectedPingTaskLabel}\n\n${markdown}` : markdown,
+    );
     setExportStatus("Markdown 已复制");
   };
 
   const exportCsv = () => {
     const csv = buildComparisonCsv(rankingRows, metricKey);
-    downloadText(`vps-compare-${metricKey}-${exportRangeToken}.csv`, csv, "text/csv;charset=utf-8");
+    downloadText(`vps-compare-${metricKey}-${pingTaskExportToken}${exportRangeToken}.csv`, csv, "text/csv;charset=utf-8");
     setExportStatus("CSV 已下载");
   };
 
@@ -772,7 +945,11 @@ export function Compare() {
                 </button>
               ))
             ) : (
-              <span>选择 1 台查看趋势，选择多台进行对比</span>
+              <span>
+                {taskScopedPingMode
+                  ? `选择 VPS 比较「${selectedPingTaskLabel}」`
+                  : "选择 1 台查看趋势，选择多台进行对比"}
+              </span>
             )}
           </div>
         </div>
@@ -878,11 +1055,62 @@ export function Compare() {
         </div>
       </section>
 
+      {metric.source === "ping" && (
+        <section className="compare-ping-task-panel" aria-label="Ping 任务范围">
+          <div className="compare-ping-task-head">
+            <div>
+              <span>Ping 任务范围</span>
+              <strong>{taskScopedPingMode ? selectedPingTaskLabel : "全部任务聚合"}</strong>
+            </div>
+            <div className="compare-segmented" aria-label="选择 Ping 对比范围">
+              <button
+                type="button"
+                data-active={!taskScopedPingMode ? "true" : "false"}
+                onClick={() => commitPingTask(null)}
+              >
+                全部任务
+              </button>
+              <button
+                type="button"
+                data-active={taskScopedPingMode ? "true" : "false"}
+                disabled={pingTaskOptions.length === 0 && selectedPingTaskId == null}
+                onClick={() => commitPingTask(selectedPingTaskId ?? pingTaskOptions[0]?.id ?? null)}
+              >
+                同一任务
+              </button>
+            </div>
+          </div>
+          {pingTaskOptions.length > 0 && (
+            <div className="compare-ping-task-options">
+              {pingTaskOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="compare-ping-task-option"
+                  data-active={selectedPingTaskId === option.id ? "true" : "false"}
+                  onClick={() => commitPingTask(option.id)}
+                  title={option.meta}
+                >
+                  <strong>{option.label}</strong>
+                  <small>{option.meta}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="compare-summary-grid">
         <div className="compare-summary-card">
           <span>已选 VPS</span>
           <strong>{selectedNodes.length}</strong>
-          <small>{selectedNodes.length <= 1 ? "单台可查看" : "多台对比中"}</small>
+          <small>
+            {taskScopedPingMode
+              ? `任务绑定 ${selectedPingTaskBoundUuids.length} 台`
+              : selectedNodes.length <= 1
+                ? "单台可查看"
+                : "多台对比中"}
+          </small>
         </div>
         <div className="compare-summary-card">
           <span>时间范围</span>
@@ -904,12 +1132,16 @@ export function Compare() {
       <section className="compare-stage">
         <header className="compare-stage-head">
           <div>
-            <h2>{metric.label}</h2>
+            <h2>{taskScopedPingMode ? `${metric.label} · ${selectedPingTaskLabel}` : metric.label}</h2>
             <p>
               {selectedNodes.length === 0
-                ? "选择 VPS 后查看历史趋势。"
+                ? taskScopedPingMode
+                  ? `选择 VPS 后比较「${selectedPingTaskLabel}」。`
+                  : "选择 VPS 后查看历史趋势。"
                 : singleNodePingTaskMode
                   ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${selectedPingTaskIds.length} 个 Ping 任务趋势。`
+                  : taskScopedPingMode
+                    ? `正在比较 Ping 任务「${selectedPingTaskLabel}」下 ${selectedNodes.length} 台 VPS 的 ${metric.label}。`
                   : selectedNodes.length === 1
                   ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${metric.label}。`
                   : `正在比较 ${selectedNodes.length} 台 VPS 的 ${metric.label}。`}
@@ -968,7 +1200,11 @@ export function Compare() {
       <section className="compare-ranking-preview">
         <header>
           <h2>区间排行</h2>
-          <p>按 P95 和平均值排序，适合快速定位压力最大的 VPS。</p>
+          <p>
+            {taskScopedPingMode
+              ? "按同一 Ping 任务内的 P95 和平均值排序。"
+              : "按 P95 和平均值排序，适合快速定位压力最大的 VPS。"}
+          </p>
         </header>
         <div className="compare-rank-cards">
           {rankingRows.length > 0 ? (
