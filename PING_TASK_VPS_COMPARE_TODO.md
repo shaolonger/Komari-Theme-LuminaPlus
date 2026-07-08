@@ -20,7 +20,7 @@ Context recovery note: if LLM context compaction happens, resume from this file.
 - [x] Add responsive styling for the task selector and task-aware selected VPS hints.
 - [x] Add task-level comparison entry points from homepage Ping source rows and theme Ping binding management.
 - [x] Run targeted tests, typecheck, build, and browser smoke checks; then mark this TODO complete.
-- [ ] Bump version, package the theme, tag, push to GitHub, and create a GitHub release.
+- [x] Bump version, package the theme, tag, push to GitHub, and create a GitHub release.
 
 ## Acceptance Criteria
 
