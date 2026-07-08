@@ -44,6 +44,7 @@ import {
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
+  buildMultiMetricComparisonAnalysis,
   buildPingTaskComparisonSeries,
   buildPingTaskVpsComparisonSeries,
   COMPARISON_METRICS,
@@ -74,7 +75,7 @@ import type { NodeInfo, PingTask } from "@/types/komari";
 
 const DEFAULT_METRIC: ComparisonMetricKey = "cpu";
 const DEFAULT_HOURS = 4;
-type CompareView = "trend" | "ranking";
+type CompareView = "trend" | "ranking" | "insights" | "matrix";
 type CompareRangeMode = "preset" | "custom";
 
 function isComparisonMetricKey(value: string | null): value is ComparisonMetricKey {
@@ -82,7 +83,7 @@ function isComparisonMetricKey(value: string | null): value is ComparisonMetricK
 }
 
 function isCompareView(value: string | null): value is CompareView {
-  return value === "trend" || value === "ranking";
+  return value === "trend" || value === "ranking" || value === "insights" || value === "matrix";
 }
 
 function isCompareRangeMode(value: string | null): value is CompareRangeMode {
@@ -112,6 +113,27 @@ function parseSelectedTaskIds(value: string | null) {
         ),
       ).sort((left, right) => left - right)
     : [];
+}
+
+function parseSelectedMetricKeys(value: string | null, fallback: ComparisonMetricKey) {
+  const parsed = value
+    ? Array.from(
+        new Set(
+          value
+            .split(",")
+            .map((item) => item.trim())
+            .filter(isComparisonMetricKey),
+        ),
+      )
+    : [];
+  return parsed.length > 0 ? parsed : [fallback];
+}
+
+function normalizeViewForMetricMode(view: CompareView, multiMetricMode: boolean): CompareView {
+  if (multiMetricMode) {
+    return view === "insights" || view === "matrix" || view === "ranking" ? view : "matrix";
+  }
+  return view === "ranking" ? "ranking" : "trend";
 }
 
 function formatRangeDuration(hours: number) {
@@ -152,14 +174,6 @@ function formatNodeMeta(node: NodeInfo) {
   return parts.length ? parts.join(" / ") : "未分组";
 }
 
-function getSelectedMetricLoadType(metricKey: ComparisonMetricKey) {
-  const metric = getComparisonMetric(metricKey);
-  if (metric.source !== "load" || !metric.loadType) {
-    throw new Error(`Metric ${metricKey} does not use load records`);
-  }
-  return metric.loadType;
-}
-
 function formatAxisValue(metricKey: ComparisonMetricKey, value: number) {
   if (value === 0) return "";
   return formatComparisonValue(metricKey, value);
@@ -183,6 +197,7 @@ function updateParams(
   patch: {
     nodes?: string[];
     metric?: ComparisonMetricKey;
+    metrics?: ComparisonMetricKey[] | null;
     hours?: number;
     view?: CompareView;
     rangeMode?: CompareRangeMode;
@@ -198,6 +213,12 @@ function updateParams(
     else next.delete("nodes");
   }
   if (patch.metric) next.set("metric", patch.metric);
+  if (patch.metrics !== undefined) {
+    const metrics = patch.metrics ? Array.from(new Set(patch.metrics)) : [];
+    if (metrics.length > 0) next.set("metric", metrics[0]);
+    if (metrics.length > 1) next.set("metrics", metrics.join(","));
+    else next.delete("metrics");
+  }
   if (patch.hours != null) next.set("hours", String(patch.hours));
   if (patch.view) next.set("tab", patch.view);
   if (patch.rangeMode) {
@@ -557,14 +578,18 @@ export function Compare() {
   const initialMetric = isComparisonMetricKey(metricParam)
     ? metricParam
     : DEFAULT_METRIC;
-  const initialMetricDefinition = getComparisonMetric(initialMetric);
+  const initialMetricKeys = parseSelectedMetricKeys(searchParams.get("metrics"), initialMetric);
+  const initialHasPingMetric = initialMetricKeys.some((key) => getComparisonMetric(key).source === "ping");
   const initialHours = Number.parseInt(searchParams.get("hours") || "", 10);
-  const initialView = isCompareView(viewParam) ? viewParam : "trend";
+  const initialView = normalizeViewForMetricMode(
+    isCompareView(viewParam) ? viewParam : "trend",
+    initialMetricKeys.length > 1,
+  );
   const initialRangeMode = isCompareRangeMode(rangeParam) ? rangeParam : "preset";
   const initialFrom = parseUrlSeconds(searchParams.get("from"));
   const initialTo = parseUrlSeconds(searchParams.get("to"));
   const initialPingTaskId =
-    initialMetricDefinition.source === "ping"
+    initialHasPingMetric
       ? normalizeComparisonPingTaskId(searchParams.get("pingTask"))
       : null;
   const initialCustomEnd = initialTo ?? Math.floor(Date.now() / 1000);
@@ -576,7 +601,7 @@ export function Compare() {
     parseSelectedTaskIds(searchParams.get("pingTasks")),
   );
   const [selectedPingTaskId, setSelectedPingTaskId] = useState<number | null>(initialPingTaskId);
-  const [metricKey, setMetricKey] = useState<ComparisonMetricKey>(initialMetric);
+  const [selectedMetricKeys, setSelectedMetricKeys] = useState<ComparisonMetricKey[]>(() => initialMetricKeys);
   const [hours, setHours] = useState(Number.isFinite(initialHours) && initialHours > 0 ? initialHours : DEFAULT_HOURS);
   const [view, setView] = useState<CompareView>(initialView);
   const [rangeMode, setRangeMode] = useState<CompareRangeMode>(initialRangeMode);
@@ -616,11 +641,32 @@ export function Compare() {
     () => nodeOptions.filter((node) => selectedUuidSet.has(node.uuid)),
     [nodeOptions, selectedUuidSet],
   );
+  const selectedMetrics = useMemo(
+    () => selectedMetricKeys.map((key) => getComparisonMetric(key)),
+    [selectedMetricKeys],
+  );
+  const multiMetricMode = selectedMetricKeys.length > 1;
+  const metricKey = selectedMetricKeys[0] ?? DEFAULT_METRIC;
   const metric = getComparisonMetric(metricKey);
+  const hasPingMetrics = selectedMetrics.some((item) => item.source === "ping");
+  const hasLoadMetrics = selectedMetrics.some((item) => item.source === "load");
+  const selectedLoadTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          selectedMetrics
+            .map((item) => (item.source === "load" ? item.loadType : null))
+            .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+        ),
+      ).sort(),
+    [selectedMetrics],
+  );
+  const activeView = normalizeViewForMetricMode(view, multiMetricMode);
   const selectedKey = selectedNodes.map((node) => node.uuid).join(",");
   const compareNodes = useMemo(() => nodesToComparisonNodes(selectedNodes), [selectedNodes]);
-  const taskScopedPingMode = metric.source === "ping" && selectedPingTaskId != null;
+  const taskScopedPingMode = hasPingMetrics && selectedPingTaskId != null;
   const singleNodePingTaskMode =
+    !multiMetricMode &&
     metric.source === "ping" &&
     !taskScopedPingMode &&
     compareNodes.length === 1 &&
@@ -633,7 +679,7 @@ export function Compare() {
     () => buildPingTimeRangeOptions(config?.ping_record_preserve_time).filter((range) => range.value > 0),
     [config?.ping_record_preserve_time],
   );
-  const rangeOptions = metric.source === "ping" ? pingRanges : loadRanges;
+  const rangeOptions = hasPingMetrics ? pingRanges : loadRanges;
   const activeHours = rangeOptions.some((range) => range.value === hours)
     ? hours
     : rangeOptions[0]?.value ?? DEFAULT_HOURS;
@@ -642,9 +688,15 @@ export function Compare() {
   const customRangeValid = isValidComparisonCustomRange(customStartSeconds, customEndSeconds);
   const activeRangeMode = rangeMode === "custom" ? "custom" : "preset";
   const rangeIsUsable = activeRangeMode !== "custom" || customRangeValid;
-  const maxRangeHours = metric.source === "ping"
-    ? config?.ping_record_preserve_time
-    : config?.record_preserve_time;
+  const maxRangeHours =
+    hasPingMetrics && hasLoadMetrics
+      ? Math.min(
+          config?.ping_record_preserve_time ?? Number.POSITIVE_INFINITY,
+          config?.record_preserve_time ?? Number.POSITIVE_INFINITY,
+        )
+      : hasPingMetrics
+        ? config?.ping_record_preserve_time
+        : config?.record_preserve_time;
   const requestHours = getComparisonRequestHours({
     presetHours: activeHours,
     customStart: activeRangeMode === "custom" ? customStartSeconds : null,
@@ -700,14 +752,28 @@ export function Compare() {
   const canQuery = selectedNodes.length > 0;
   const canFetch = canQuery && rangeIsUsable;
   const loadQuery = useQuery({
-    queryKey: ["compare", "load", selectedKey, requestHours, metricKey, activeRangeMode, customStartSeconds, customEndSeconds],
-    queryFn: () =>
-      getComparisonLoadRecords({
-        uuids: selectedNodes.map((node) => node.uuid),
-        hours: requestHours,
-        loadType: getSelectedMetricLoadType(metricKey),
-      }),
-    enabled: canFetch && metric.source === "load",
+    queryKey: ["compare", "load", selectedKey, requestHours, selectedLoadTypes.join(","), activeRangeMode, customStartSeconds, customEndSeconds],
+    queryFn: async () => {
+      const recordsByType = new Map(
+        await Promise.all(
+          selectedLoadTypes.map(async (loadType) => [
+            loadType,
+            await getComparisonLoadRecords({
+              uuids: selectedNodes.map((node) => node.uuid),
+              hours: requestHours,
+              loadType,
+            }),
+          ] as const),
+        ),
+      );
+      const recordsByMetric: Partial<Record<ComparisonMetricKey, Awaited<ReturnType<typeof getComparisonLoadRecords>>>> = {};
+      for (const item of selectedMetrics) {
+        if (item.source !== "load" || !item.loadType) continue;
+        recordsByMetric[item.key] = recordsByType.get(item.loadType) ?? {};
+      }
+      return recordsByMetric;
+    },
+    enabled: canFetch && hasLoadMetrics,
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
@@ -718,7 +784,7 @@ export function Compare() {
         uuids: selectedNodes.map((node) => node.uuid),
         hours: requestHours,
       }),
-    enabled: canFetch && metric.source === "ping",
+    enabled: canFetch && hasPingMetrics,
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
@@ -736,7 +802,7 @@ export function Compare() {
       return Array.from(mergePingTasksById([catalogTasks]).values())
         .sort((left, right) => left.id - right.id);
     },
-    enabled: metric.source === "ping" && pingTaskCatalogIds.length > 0,
+    enabled: hasPingMetrics && pingTaskCatalogIds.length > 0,
     staleTime: 300_000,
     refetchOnWindowFocus: false,
   });
@@ -818,7 +884,7 @@ export function Compare() {
       return buildComparisonSeries({
         metricKey,
         nodes: compareNodes,
-        loadRecords: loadQuery.data ?? {},
+        loadRecords: loadQuery.data?.[metricKey] ?? {},
         pingRecords: pingQuery.data?.records ?? [],
       });
     },
@@ -835,6 +901,31 @@ export function Compare() {
       taskScopedPingMode,
     ],
   );
+  const multiAnalysis = useMemo(
+    () =>
+      buildMultiMetricComparisonAnalysis({
+        metricKeys: selectedMetricKeys,
+        nodes: compareNodes,
+        loadRecordsByMetric: loadQuery.data ?? {},
+        pingRecords: pingQuery.data?.records ?? [],
+        pingTaskId: selectedPingTaskId,
+        range:
+          activeRangeMode === "custom" && customRangeValid
+            ? { start: customStartSeconds, end: customEndSeconds }
+            : undefined,
+      }),
+    [
+      activeRangeMode,
+      compareNodes,
+      customEndSeconds,
+      customRangeValid,
+      customStartSeconds,
+      loadQuery.data,
+      pingQuery.data?.records,
+      selectedMetricKeys,
+      selectedPingTaskId,
+    ],
+  );
   const series = useMemo(
     () =>
       activeRangeMode === "custom" && customRangeValid
@@ -846,9 +937,13 @@ export function Compare() {
     [activeRangeMode, customEndSeconds, customRangeValid, customStartSeconds, rawSeries],
   );
   const rankingRows = useMemo(() => buildComparisonRanking(series), [series]);
-  const isLoading = metric.source === "load" ? loadQuery.isLoading : pingQuery.isLoading;
-  const isFetching = metric.source === "load" ? loadQuery.isFetching : pingQuery.isFetching;
-  const queryError = metric.source === "load" ? loadQuery.error : pingQuery.error;
+  const isLoading =
+    (hasLoadMetrics && loadQuery.isLoading) ||
+    (hasPingMetrics && pingQuery.isLoading);
+  const isFetching =
+    (hasLoadMetrics && loadQuery.isFetching) ||
+    (hasPingMetrics && pingQuery.isFetching);
+  const queryError = loadQuery.error ?? pingQuery.error;
   const totalSamples = rankingRows.reduce((total, row) => total + row.samples, 0);
   const strongest = rankingRows[0];
   const pingTaskExportToken =
@@ -860,38 +955,69 @@ export function Compare() {
     setSearchParams(updateParams(searchParams, { nodes: unique }), { replace: true });
   };
 
-  const commitMetric = (next: ComparisonMetricKey) => {
-    setMetricKey(next);
-    const nextMetric = getComparisonMetric(next);
-    if (nextMetric.source !== "ping") {
+  const commitMetricSelection = (nextKeys: ComparisonMetricKey[]) => {
+    const normalized = Array.from(new Set(nextKeys)).filter(isComparisonMetricKey);
+    const safeKeys = normalized.length > 0 ? normalized : [DEFAULT_METRIC];
+    setSelectedMetricKeys(safeKeys);
+    const nextMetrics = safeKeys.map((key) => getComparisonMetric(key));
+    const nextHasPing = nextMetrics.some((item) => item.source === "ping");
+    if (!nextHasPing) {
       setSelectedPingTaskId(null);
       setSelectedPingTaskIds([]);
     }
-    const nextRanges = nextMetric.source === "ping" ? pingRanges : loadRanges;
+    const nextRanges = nextHasPing ? pingRanges : loadRanges;
     const nextHours = nextRanges.some((range) => range.value === hours)
       ? hours
       : nextRanges[0]?.value ?? DEFAULT_HOURS;
     if (activeRangeMode === "preset") setHours(nextHours);
+    const nextView = normalizeViewForMetricMode(view, safeKeys.length > 1);
+    setView(nextView);
     setSearchParams(
       updateParams(
         searchParams,
         activeRangeMode === "preset"
           ? {
-              metric: next,
+              metrics: safeKeys,
               hours: nextHours,
+              view: nextView,
               rangeMode: "preset",
-              ...(nextMetric.source !== "ping" ? { pingTask: null, pingTasks: null } : {}),
+              ...(!nextHasPing ? { pingTask: null, pingTasks: null } : {}),
             }
           : {
-              metric: next,
+              metrics: safeKeys,
+              view: nextView,
               rangeMode: "custom",
               from: customStartSeconds,
               to: customEndSeconds,
-              ...(nextMetric.source !== "ping" ? { pingTask: null, pingTasks: null } : {}),
+              ...(!nextHasPing ? { pingTask: null, pingTasks: null } : {}),
             },
       ),
       { replace: true },
     );
+  };
+
+  const commitMetric = (next: ComparisonMetricKey) => {
+    commitMetricSelection([next]);
+  };
+
+  const toggleMetric = (next: ComparisonMetricKey) => {
+    if (!multiMetricMode) {
+      commitMetricSelection(metricKey === next ? [next] : [metricKey, next]);
+      return;
+    }
+    const exists = selectedMetricKeys.includes(next);
+    const nextKeys = exists
+      ? selectedMetricKeys.filter((item) => item !== next)
+      : [...selectedMetricKeys, next];
+    commitMetricSelection(nextKeys.length > 0 ? nextKeys : [next]);
+  };
+
+  const commitMetricMode = (multi: boolean) => {
+    if (multi) {
+      commitMetricSelection(selectedMetricKeys.length > 1 ? selectedMetricKeys : [metricKey, "ram"]);
+      return;
+    }
+    commitMetricSelection([metricKey]);
   };
 
   const commitPingTask = (taskId: number | null) => {
@@ -977,14 +1103,15 @@ export function Compare() {
   };
 
   const commitView = (next: CompareView) => {
-    setView(next);
-    setSearchParams(updateParams(searchParams, { view: next }), { replace: true });
+    const normalized = normalizeViewForMetricMode(next, multiMetricMode);
+    setView(normalized);
+    setSearchParams(updateParams(searchParams, { view: normalized }), { replace: true });
   };
 
   const refresh = () => {
     if (!canFetch) return;
-    if (metric.source === "load") void loadQuery.refetch();
-    else void pingQuery.refetch();
+    if (hasLoadMetrics) void loadQuery.refetch();
+    if (hasPingMetrics) void pingQuery.refetch();
   };
 
   const copyMarkdown = async () => {
@@ -1078,17 +1205,38 @@ export function Compare() {
       </section>
 
       <section className="compare-toolbar">
+        <div className="compare-segmented" aria-label="选择指标模式">
+          <button
+            type="button"
+            data-active={!multiMetricMode ? "true" : "false"}
+            onClick={() => commitMetricMode(false)}
+          >
+            单指标
+          </button>
+          <button
+            type="button"
+            data-active={multiMetricMode ? "true" : "false"}
+            onClick={() => commitMetricMode(true)}
+          >
+            多指标
+          </button>
+        </div>
         <div className="compare-segmented is-metrics" aria-label="选择指标">
-          {COMPARISON_METRICS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              data-active={metricKey === item.key ? "true" : "false"}
-              onClick={() => commitMetric(item.key)}
-            >
-              {item.shortLabel}
-            </button>
-          ))}
+          {COMPARISON_METRICS.map((item) => {
+            const selected = selectedMetricKeys.includes(item.key);
+            return (
+              <button
+                key={item.key}
+                type="button"
+                data-active={selected ? "true" : "false"}
+                onClick={() => (multiMetricMode ? toggleMetric(item.key) : commitMetric(item.key))}
+                title={multiMetricMode ? "多指标模式下点击可勾选或取消" : item.label}
+              >
+                {multiMetricMode && selected && <Check size={12} />}
+                {item.shortLabel}
+              </button>
+            );
+          })}
         </div>
         <div className="compare-range-control">
           <div className="compare-segmented" aria-label="选择时间区间">
@@ -1131,27 +1279,56 @@ export function Compare() {
             </div>
           )}
         </div>
-        <div className="compare-segmented" aria-label="选择视图">
-          <button
-            type="button"
-            data-active={view === "trend" ? "true" : "false"}
-            onClick={() => commitView("trend")}
-          >
-            <LineChart size={14} />
-            趋势
-          </button>
-          <button
-            type="button"
-            data-active={view === "ranking" ? "true" : "false"}
-            onClick={() => commitView("ranking")}
-          >
-            <BarChart3 size={14} />
-            排行
-          </button>
-        </div>
+        {multiMetricMode ? (
+          <div className="compare-segmented" aria-label="选择多指标视图">
+            <button
+              type="button"
+              data-active={activeView === "insights" ? "true" : "false"}
+              onClick={() => commitView("insights")}
+            >
+              <LineChart size={14} />
+              洞察
+            </button>
+            <button
+              type="button"
+              data-active={activeView === "matrix" ? "true" : "false"}
+              onClick={() => commitView("matrix")}
+            >
+              <BarChart3 size={14} />
+              矩阵
+            </button>
+            <button
+              type="button"
+              data-active={activeView === "ranking" ? "true" : "false"}
+              onClick={() => commitView("ranking")}
+            >
+              <BarChart3 size={14} />
+              排行
+            </button>
+          </div>
+        ) : (
+          <div className="compare-segmented" aria-label="选择视图">
+            <button
+              type="button"
+              data-active={activeView === "trend" ? "true" : "false"}
+              onClick={() => commitView("trend")}
+            >
+              <LineChart size={14} />
+              趋势
+            </button>
+            <button
+              type="button"
+              data-active={activeView === "ranking" ? "true" : "false"}
+              onClick={() => commitView("ranking")}
+            >
+              <BarChart3 size={14} />
+              排行
+            </button>
+          </div>
+        )}
       </section>
 
-      {metric.source === "ping" && (
+      {hasPingMetrics && (
         <section className="compare-ping-task-panel" aria-label="Ping 任务范围">
           <div className="compare-ping-task-head">
             <div>
@@ -1211,29 +1388,51 @@ export function Compare() {
         <div className="compare-summary-card">
           <span>时间范围</span>
           <strong>{activeRangeMode === "custom" ? "自定义" : activeRangeLabel}</strong>
-          <small>{activeRangeMode === "custom" && customRangeValid ? activeRangeLabel : metric.label}</small>
+          <small>
+            {activeRangeMode === "custom" && customRangeValid
+              ? activeRangeLabel
+              : multiMetricMode
+                ? `${selectedMetricKeys.length} 个指标`
+                : metric.label}
+          </small>
         </div>
         <div className="compare-summary-card">
           <span>样本量</span>
-          <strong>{totalSamples}</strong>
-          <small>{isFetching ? "刷新中" : metric.shortLabel}</small>
+          <strong>{multiMetricMode ? multiAnalysis.rows.reduce((total, row) => total + row.sampleCount, 0) : totalSamples}</strong>
+          <small>{isFetching ? "刷新中" : multiMetricMode ? "多指标" : metric.shortLabel}</small>
         </div>
         <div className="compare-summary-card">
           <span>压力最高</span>
-          <strong>{strongest?.name ?? "--"}</strong>
-          <small>{strongest ? `P95 ${formatComparisonValue(metricKey, strongest.p95)}` : "等待数据"}</small>
+          <strong>{multiMetricMode ? multiAnalysis.rows[0]?.name ?? "--" : strongest?.name ?? "--"}</strong>
+          <small>
+            {multiMetricMode
+              ? multiAnalysis.rows[0]?.worstCell
+                ? `${multiAnalysis.rows[0].worstCell.metric.shortLabel} 风险 ${Math.round(multiAnalysis.rows[0].worstCell.riskScore ?? 0)}`
+                : "等待数据"
+              : strongest
+                ? `P95 ${formatComparisonValue(metricKey, strongest.p95)}`
+                : "等待数据"}
+          </small>
         </div>
       </section>
 
       <section className="compare-stage">
         <header className="compare-stage-head">
           <div>
-            <h2>{taskScopedPingMode ? `${metric.label} · ${selectedPingTaskLabel}` : metric.label}</h2>
+            <h2>
+              {multiMetricMode
+                ? `多指标分析 · ${selectedMetricKeys.length} 项`
+                : taskScopedPingMode
+                  ? `${metric.label} · ${selectedPingTaskLabel}`
+                  : metric.label}
+            </h2>
             <p>
               {selectedNodes.length === 0
                 ? taskScopedPingMode
                   ? `选择 VPS 后比较「${selectedPingTaskLabel}」。`
                   : "选择 VPS 后查看历史趋势。"
+                : multiMetricMode
+                  ? `正在分析 ${selectedNodes.length} 台 VPS 的 ${selectedMetricKeys.length} 个指标。`
                 : singleNodePingTaskMode
                   ? `正在查看 ${nodeLabel(selectedNodes[0])} 的 ${selectedPingTaskIds.length} 个 Ping 任务趋势。`
                   : taskScopedPingMode
@@ -1277,7 +1476,7 @@ export function Compare() {
           <div className="compare-error">结束时间需要晚于开始时间</div>
         )}
         {exportStatus && <div className="compare-export-status">{exportStatus}</div>}
-        {view === "trend" ? (
+        {!multiMetricMode && activeView === "trend" ? (
           <ComparisonTrendChart
             metricKey={metricKey}
             hours={displayRangeHours}
@@ -1288,8 +1487,10 @@ export function Compare() {
             rangeEnd={activeRangeMode === "custom" && customRangeValid ? customEndSeconds : null}
             displayTimeZone={displayTimeZone}
           />
-        ) : (
+        ) : !multiMetricMode ? (
           <RankingTable metricKey={metricKey} rows={rankingRows} selectedCount={selectedNodes.length} />
+        ) : (
+          <div className="compare-chart-empty">多指标结果视图正在准备渲染</div>
         )}
       </section>
 
