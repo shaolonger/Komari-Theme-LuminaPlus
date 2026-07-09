@@ -167,9 +167,16 @@ describe("getPingHealth", () => {
       getPingHealth({
         hasPingBinding: true,
         capabilityPing: true,
-        ping: ping({ loss: 21 }),
-      }).state,
-    ).toBe("critical");
+        ping: ping({ loss: 21.345 }),
+      }),
+    ).toMatchObject({ state: "critical", detail: "丢包 21.35%" });
+    expect(
+      getPingHealth({
+        hasPingBinding: true,
+        capabilityPing: true,
+        ping: ping({ lastValue: 300.345 }),
+      }),
+    ).toMatchObject({ state: "warning", detail: "300.35 ms" });
   });
 });
 

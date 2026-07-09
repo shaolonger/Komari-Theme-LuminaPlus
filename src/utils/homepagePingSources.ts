@@ -1,4 +1,5 @@
 import type { PingOverviewItem, PingOverviewTaskSummary } from "@/types/komari";
+import { formatLatency, formatLatencyValue, formatMetricNumber, formatPacketLoss } from "@/utils/format";
 import type { HomepagePingTaskGroups } from "@/utils/homepagePingSettings";
 
 export interface HomepagePingSourceRow {
@@ -56,21 +57,19 @@ function lossDotCount(value: number | null) {
 }
 
 function latencyLabel(value: number | null) {
-  return value != null ? `${Math.round(value)} ms` : "无有效延迟";
+  return value != null ? formatLatency(value) : "无有效延迟";
 }
 
 function latencyShortLabel(value: number | null) {
-  return value != null ? String(Math.round(value)) : "—";
+  return value != null ? formatLatencyValue(value) : "—";
 }
 
 function lossLabel(value: number | null) {
-  return value != null ? `${value.toFixed(1)}%` : "未知";
+  return value != null ? formatPacketLoss(value) : "未知";
 }
 
 function lossShortLabel(value: number | null) {
-  if (value == null) return "—";
-  if (value >= 10) return value.toFixed(0);
-  return value.toFixed(1);
+  return value != null ? formatMetricNumber(value) : "—";
 }
 
 function sourceTitle(row: {

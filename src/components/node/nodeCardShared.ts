@@ -2,6 +2,7 @@
 // 名和布局,所以 markup 不共享——只共享逻辑和文案,否则改一处另一处会漂移。
 
 import type { PingOverviewItem, PingOverviewTaskSummary } from "@/types/komari";
+import { formatLatency, formatPacketLoss } from "@/utils/format";
 
 /** 卡片标签行的完整 tag 列表 tooltip(两种卡片布局共用同一文案)。 */
 export function joinTagTitle(tags: { label: string }[]) {
@@ -22,8 +23,8 @@ export function pingEmptyLabels(hasHomepagePingBinding: boolean): { title: strin
 function formatPingTaskSummary(summary: PingOverviewTaskSummary) {
   const pieces = [summary.name];
   if (summary.target) pieces.push(summary.target);
-  const latency = summary.lastValue != null ? `${Math.round(summary.lastValue)}ms` : "无有效延迟";
-  const loss = summary.loss != null ? `丢包 ${summary.loss.toFixed(1)}%` : "丢包未知";
+  const latency = summary.lastValue != null ? formatLatency(summary.lastValue) : "无有效延迟";
+  const loss = summary.loss != null ? `丢包 ${formatPacketLoss(summary.loss)}` : "丢包未知";
   return `${pieces.join(" / ")} (${latency}，${loss})`;
 }
 

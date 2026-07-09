@@ -22,6 +22,7 @@ import {
 } from "./chartData";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { isLostPingSample, isValidPingLatency } from "@/utils/pingSamples";
+import { formatLatency, formatMetricNumber, formatPacketLoss } from "@/utils/format";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import type { PingRecord } from "@/types/komari";
@@ -241,7 +242,7 @@ export function PingChart({
           })
           .map(({ label, raw, color }) => ({
             label,
-            value: raw == null ? "—" : `${raw.toFixed(1)} ms`,
+            value: raw == null ? "—" : formatLatency(raw),
             color,
           })),
     });
@@ -266,7 +267,7 @@ export function PingChart({
           grid: { stroke: grid, width: 1 },
           ticks: { stroke: grid },
           size: 54,
-          values: (_self, splits) => splits.map((value) => (value === 0 ? "" : `${Math.round(value)} ms`)),
+          values: (_self, splits) => splits.map((value) => (value === 0 ? "" : formatLatency(value))),
         },
       ],
       series: [
@@ -437,9 +438,9 @@ export function PingChart({
               style={{ borderColor: visible ? task.color : "var(--border-subtle)" }}
               title={[
                 taskLabels.get(task.id) ?? `任务 #${task.id}`,
-                `当前 ${task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"} | 均值 ${task.avg != null ? `${task.avg.toFixed(1)} ms` : "—"} | 丢包 ${task.loss.toFixed(1)}%`,
-                `p99 ${task.p99 != null ? `${task.p99.toFixed(0)} ms` : "—"} | 抖动 ${task.volatility != null ? task.volatility.toFixed(2) : "—"}`,
-                `min ${task.min != null ? `${task.min.toFixed(0)} ms` : "—"} | max ${task.max != null ? `${task.max.toFixed(0)} ms` : "—"} | 样本 ${task.total ?? 0} | 间隔 ${task.interval}s`,
+                `当前 ${formatLatency(task.latest)} | 均值 ${formatLatency(task.avg)} | 丢包 ${formatPacketLoss(task.loss)}`,
+                `p99 ${formatLatency(task.p99)} | 抖动 ${formatMetricNumber(task.volatility)}`,
+                `min ${formatLatency(task.min)} | max ${formatLatency(task.max)} | 样本 ${task.total ?? 0} | 间隔 ${task.interval}s`,
               ].join("\n")}
             >
               <span className="instance-ping-task-dot" style={{ background: task.color }} aria-hidden />
@@ -448,13 +449,13 @@ export function PingChart({
                 className="instance-ping-task-primary"
                 style={{ color: task.latest != null ? latencyHeatColor(task.latest) : "var(--text-tertiary)" }}
               >
-                {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
+                {formatLatency(task.latest)}
               </span>
               <span
                 className="instance-ping-task-loss"
                 style={{ color: task.loss > 0 ? lossHeatColor(task.loss) : "var(--text-tertiary)" }}
               >
-                {task.loss.toFixed(1)}%
+                {formatPacketLoss(task.loss)}
               </span>
             </button>
           );

@@ -10,7 +10,7 @@ import type {
   Fleet3DQuality,
   Fleet3DRendererMode,
 } from "@/utils/fleet3d";
-import { formatByteRateLabel } from "@/utils/format";
+import { formatByteRateLabel, formatLatency } from "@/utils/format";
 
 interface MarqueeRect {
   left: number;
@@ -845,7 +845,7 @@ function buildHoverCard(node: Fleet3DNode, point: { x: number; y: number }, rect
     risk: RISK_LABELS[node.risk.tone],
     resource: `${Math.round(node.visual.resourcePeakRatio * 100)}%`,
     traffic: formatByteRateLabel(node.netRate),
-    ping: node.ping.latency == null ? "无样本" : `${Math.round(node.ping.latency)} ms`,
+    ping: node.ping.latency == null ? "无样本" : formatLatency(node.ping.latency),
     summary: node.visual.summary,
   };
 }

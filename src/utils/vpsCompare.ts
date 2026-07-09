@@ -1,6 +1,6 @@
 import type { ComparisonLoadRecords, ComparisonLoadType } from "@/services/api";
 import type { LoadRecord, NodeInfo, PingRecord, PingTask } from "@/types/komari";
-import { formatTrafficRateLabel, trimFixed } from "@/utils/format";
+import { formatLatency, formatPacketLoss, formatTrafficRateLabel, trimFixed } from "@/utils/format";
 import {
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
@@ -1276,9 +1276,10 @@ export function formatComparisonValue(
   if (value == null || !Number.isFinite(value)) return "--";
   const metric = getComparisonMetric(metricKey);
   if (metric.axisKind === "network") return formatTrafficRateLabel(value);
+  if (metric.key === "ping_loss") return formatPacketLoss(value);
   if (metric.axisKind === "percent") return `${trimFixed(value, value >= 10 ? 1 : 2)}%`;
   if (metric.axisKind === "count") return `${Math.round(value)}`;
-  if (metric.axisKind === "latency") return `${Math.round(value)} ms`;
+  if (metric.axisKind === "latency") return formatLatency(value);
   if (metric.key === "load") return trimFixed(value, 2);
   return trimFixed(value, 2);
 }

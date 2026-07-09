@@ -1,6 +1,6 @@
 import type { NodeInfo, PingOverviewItem } from "@/types/komari";
 import { formatRenewalPrice } from "@/utils/billing";
-import { getExpireDaysRemaining } from "@/utils/format";
+import { formatLatency, formatPacketLoss, getExpireDaysRemaining } from "@/utils/format";
 import { computeTrafficUsed, resolveTrafficUsage } from "@/utils/traffic";
 import { getVpsOperationalRisks, strongestRiskSeverity, type VpsRisk } from "@/utils/vpsRisk";
 
@@ -194,21 +194,21 @@ export function getPingHealth({
   }
   const loss = ping.loss ?? 0;
   if (loss >= 20) {
-    return { state: "critical", label: "高丢包", detail: `丢包 ${loss.toFixed(1)}%` };
+    return { state: "critical", label: "高丢包", detail: `丢包 ${formatPacketLoss(loss)}` };
   }
   if (loss >= 5) {
-    return { state: "warning", label: "丢包偏高", detail: `丢包 ${loss.toFixed(1)}%` };
+    return { state: "warning", label: "丢包偏高", detail: `丢包 ${formatPacketLoss(loss)}` };
   }
   if (ping.lastValue != null && ping.lastValue >= 1000) {
-    return { state: "critical", label: "高延迟", detail: `${ping.lastValue.toFixed(0)} ms` };
+    return { state: "critical", label: "高延迟", detail: formatLatency(ping.lastValue) };
   }
   if (ping.lastValue != null && ping.lastValue >= 300) {
-    return { state: "warning", label: "延迟偏高", detail: `${ping.lastValue.toFixed(0)} ms` };
+    return { state: "warning", label: "延迟偏高", detail: formatLatency(ping.lastValue) };
   }
   return {
     state: "ok",
     label: "正常",
-    detail: ping.lastValue != null ? `${ping.lastValue.toFixed(0)} ms` : "样本正常",
+    detail: ping.lastValue != null ? formatLatency(ping.lastValue) : "样本正常",
   };
 }
 

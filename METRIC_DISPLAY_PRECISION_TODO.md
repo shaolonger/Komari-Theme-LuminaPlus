@@ -26,9 +26,9 @@
 
 ## 3. 延迟与丢包统一
 
-- [ ] VPS 详情页 Ping 图表 tooltip、任务卡片、统计文本统一使用新 formatter。
-- [ ] 首页大卡片/小卡片的 Ping 聚合展示、hover tooltip、矩阵源详情统一使用新 formatter。
-- [ ] VPS 对比页的 Ping 指标继续显示两位，并改为共用同一 formatter。
+- [x] VPS 详情页 Ping 图表 tooltip、任务卡片、统计文本统一使用新 formatter。
+- [x] 首页大卡片/小卡片的 Ping 聚合展示、hover tooltip、矩阵源详情统一使用新 formatter。
+- [x] VPS 对比页的 Ping 指标继续显示两位，并改为共用同一 formatter。
 
 验收：
 

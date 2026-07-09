@@ -24,6 +24,8 @@ import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   formatBytes,
+  formatLatencyValue,
+  formatMetricNumber,
   trimFixed,
 } from "@/utils/format";
 import {
@@ -657,7 +659,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
           icon={<Clock3 size={12} />}
           label="延迟"
           sourceTitle={pingAggregate.title}
-          value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
+          value={ping.lastValue != null ? formatLatencyValue(ping.lastValue) : emptyText}
           unit={ping.lastValue != null ? "ms" : undefined}
           color={latencyColor}
         >
@@ -672,7 +674,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
           icon={<Unplug size={12} />}
           label="丢包"
           sourceTitle={pingAggregate.title}
-          value={ping.loss != null ? ping.loss.toFixed(1) : emptyText}
+          value={ping.loss != null ? formatMetricNumber(ping.loss) : emptyText}
           unit={ping.loss != null ? "%" : undefined}
           color={lossColor}
         >

@@ -26,4 +26,13 @@ describe("ping bucket time labels", () => {
       "08:00 - 09:00 · 失败",
     );
   });
+
+  it("formats latency and packet loss with consistent two-decimal precision", () => {
+    expect(formatHealthBucketTooltip(bucket({ value: 42.345 }), "latency", "UTC")).toBe(
+      "00:00 - 01:00 · 42.35 ms",
+    );
+    expect(formatHealthBucketTooltip(bucket({ loss: 12.345, lost: 1, total: 8 }), "loss", "UTC")).toBe(
+      "00:00 - 01:00 · 12.35% · 1/8",
+    );
+  });
 });

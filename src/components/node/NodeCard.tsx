@@ -19,7 +19,7 @@ import {
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import { formatBytes } from "@/utils/format";
+import { formatBytes, formatLatencyValue, formatMetricNumber } from "@/utils/format";
 import {
   buildHomepagePingCompareUrl,
   buildHomepagePingSourceRows,
@@ -425,7 +425,7 @@ const NodeHealthSection = memo(function NodeHealthSection({
           <span className="server-health-value tabular" style={{ color: latencyColor }}>
             {ping.lastValue != null ? (
               <>
-                {Math.round(ping.lastValue)}
+                {formatLatencyValue(ping.lastValue)}
                 <span className="server-health-unit">ms</span>
               </>
             ) : (
@@ -467,7 +467,7 @@ const NodeHealthSection = memo(function NodeHealthSection({
           <span className="server-health-value tabular" style={{ color: lossColor }}>
             {ping.loss != null ? (
               <>
-                {ping.loss.toFixed(1)}
+                {formatMetricNumber(ping.loss)}
                 <span className="server-health-unit">%</span>
               </>
             ) : (

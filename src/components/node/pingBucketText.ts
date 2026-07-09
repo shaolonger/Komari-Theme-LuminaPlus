@@ -1,5 +1,5 @@
 import type { PingOverviewBucket } from "@/types/komari";
-import { trimFixed } from "@/utils/format";
+import { formatLatency, formatPacketLoss } from "@/utils/format";
 import { formatClockTime, type DisplayTimeZone } from "@/utils/timeDisplay";
 
 export function formatPingBucketWindow(
@@ -17,7 +17,7 @@ export function formatPingBucketWindow(
 
 export function formatLatencyBucketSummary(bucket: PingOverviewBucket | null) {
   if (!bucket) return "—";
-  if (bucket.value != null) return `${trimFixed(bucket.value, 1)} ms`;
+  if (bucket.value != null) return formatLatency(bucket.value);
   return bucket.total > 0 ? "失败" : "无样本";
 }
 
@@ -27,7 +27,7 @@ export function formatLossBucketSummary(
 ) {
   if (!bucket) return "—";
   if (bucket.total <= 0 || bucket.loss == null) return "无样本";
-  return `${trimFixed(bucket.loss, 1)}%${separator}${bucket.lost}/${bucket.total}`;
+  return `${formatPacketLoss(bucket.loss)}${separator}${bucket.lost}/${bucket.total}`;
 }
 
 export function formatHealthBucketTooltip(

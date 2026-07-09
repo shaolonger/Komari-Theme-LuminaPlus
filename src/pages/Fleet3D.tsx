@@ -41,7 +41,7 @@ import {
   type Fleet3DRendererCapability,
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
-import { formatBytes, formatByteRateLabel } from "@/utils/format";
+import { formatBytes, formatByteRateLabel, formatLatency, formatPacketLoss } from "@/utils/format";
 import {
   formatDisplayDateTime,
   getZonedDateTimeParts,
@@ -144,13 +144,13 @@ function snapshotFileName(displayTimeZone: DisplayTimeZone) {
 function formatPingLatency(node: Fleet3DNode) {
   if (!node.ping.assigned) return "未绑定";
   if (node.ping.latency == null) return "等待样本";
-  return `${node.ping.latency.toFixed(0)} ms`;
+  return formatLatency(node.ping.latency);
 }
 
 function formatPingLoss(node: Fleet3DNode) {
   if (!node.ping.assigned) return "未绑定";
   if (node.ping.loss == null) return "—";
-  return `${node.ping.loss.toFixed(1)}%`;
+  return formatPacketLoss(node.ping.loss);
 }
 
 function StatPill({

@@ -445,6 +445,8 @@ describe("comparison export helpers", () => {
     ];
 
     expect(formatComparisonValue("cpu", 12.3456)).toBe("12.3%");
+    expect(formatComparisonValue("ping_latency", 12.3456)).toBe("12.35 ms");
+    expect(formatComparisonValue("ping_loss", 0.3456)).toBe("0.35%");
     expect(buildComparisonCsv(rows, "cpu")).toContain('"alpha, one"');
     expect(buildComparisonMarkdown(rows, "cpu")).toContain("VPS 对比 - CPU 使用率");
   });
