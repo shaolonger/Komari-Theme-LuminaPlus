@@ -16,11 +16,78 @@ export interface TrafficRateDisplay {
   bitsPerSec: number;
 }
 
+export interface MetricFormatOptions {
+  digits?: number;
+  fallback?: string;
+  unit?: string;
+  requirePositive?: boolean;
+}
+
 export function trimFixed(value: number, digits: number): string {
   return value
     .toFixed(digits)
     .replace(/\.0+$/, "")
     .replace(/(\.\d*?[1-9])0+$/, "$1");
+}
+
+export function isFiniteMetric(value: number | undefined | null): value is number {
+  return value != null && Number.isFinite(value);
+}
+
+function roundMetricValue(value: number, digits: number) {
+  const factor = 10 ** digits;
+  const sign = Math.sign(value) || 1;
+  return (sign * Math.round((Math.abs(value) + Number.EPSILON) * factor)) / factor;
+}
+
+export function formatMetricNumber(
+  value: number | undefined | null,
+  {
+    digits = 2,
+    fallback = "—",
+    unit = "",
+    requirePositive = false,
+  }: MetricFormatOptions = {},
+) {
+  if (!isFiniteMetric(value) || (requirePositive && value <= 0)) return fallback;
+  const metricValue = value;
+  const formatted = roundMetricValue(metricValue, digits).toFixed(digits);
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+export function formatMetricPercent(
+  value: number | undefined | null,
+  options: Omit<MetricFormatOptions, "unit"> = {},
+) {
+  return formatMetricNumber(value, { ...options, unit: "%" }).replace(" %", "%");
+}
+
+export function formatLatency(
+  value: number | undefined | null,
+  options: Omit<MetricFormatOptions, "unit" | "requirePositive"> = {},
+) {
+  return formatMetricNumber(value, { ...options, unit: "ms", requirePositive: true });
+}
+
+export function formatLatencyValue(
+  value: number | undefined | null,
+  options: Omit<MetricFormatOptions, "unit" | "requirePositive"> = {},
+) {
+  return formatMetricNumber(value, { ...options, requirePositive: true });
+}
+
+export function formatPacketLoss(
+  value: number | undefined | null,
+  options: Omit<MetricFormatOptions, "unit"> = {},
+) {
+  return formatMetricPercent(value, options);
+}
+
+export function formatLoadValue(
+  value: number | undefined | null,
+  options: MetricFormatOptions = {},
+) {
+  return formatMetricNumber(value, options);
 }
 
 export function joinDisplayParts(parts: Array<string | null | undefined>) {

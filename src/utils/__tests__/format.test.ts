@@ -4,6 +4,12 @@ import {
   formatByteRate,
   formatByteRateLabel,
   formatExpireDays,
+  formatLatency,
+  formatLatencyValue,
+  formatLoadValue,
+  formatMetricNumber,
+  formatMetricPercent,
+  formatPacketLoss,
   formatTrafficRate,
   formatTrafficRateLabel,
   getExpireDaysRemaining,
@@ -14,6 +20,38 @@ import {
 const KB = 1024;
 const MB = 1024 * 1024;
 const GB = 1024 * 1024 * 1024;
+
+describe("metric precision formatters", () => {
+  it("formats continuous metric values with two decimals and rounds", () => {
+    expect(formatMetricNumber(12.345)).toBe("12.35");
+    expect(formatMetricNumber(12.344)).toBe("12.34");
+    expect(formatMetricNumber(0)).toBe("0.00");
+    expect(formatMetricNumber(-1.235)).toBe("-1.24");
+  });
+
+  it("uses fallback for missing or non-finite values", () => {
+    expect(formatMetricNumber(null)).toBe("—");
+    expect(formatMetricNumber(undefined)).toBe("—");
+    expect(formatMetricNumber(Number.NaN)).toBe("—");
+    expect(formatMetricNumber(Number.POSITIVE_INFINITY)).toBe("—");
+    expect(formatMetricNumber(null, { fallback: "无数据" })).toBe("无数据");
+  });
+
+  it("formats percent, latency, packet loss and load consistently", () => {
+    expect(formatMetricPercent(8.675)).toBe("8.68%");
+    expect(formatPacketLoss(0)).toBe("0.00%");
+    expect(formatPacketLoss(2.345)).toBe("2.35%");
+    expect(formatLatency(23.456)).toBe("23.46 ms");
+    expect(formatLatencyValue(23.456)).toBe("23.46");
+    expect(formatLoadValue(1.005)).toBe("1.01");
+  });
+
+  it("treats non-positive latency as invalid but allows zero percent", () => {
+    expect(formatLatency(0)).toBe("—");
+    expect(formatLatency(-1)).toBe("—");
+    expect(formatPacketLoss(0)).toBe("0.00%");
+  });
+});
 
 describe("formatBytes", () => {
   it("returns '0 B' for empty / non-positive / non-finite input", () => {
