@@ -5,7 +5,14 @@ import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
 import { useHomepagePingOverview, usePingMini } from "@/hooks/usePingMini";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { getAdminClients } from "@/services/api";
-import { formatBytes, formatExpireDays, formatUptimeDays, trimFixed } from "@/utils/format";
+import {
+  formatBytes,
+  formatExpireDays,
+  formatLoadValue,
+  formatMetricPercent,
+  formatUptimeDays,
+  trimFixed,
+} from "@/utils/format";
 import { formatRenewalPrice } from "@/utils/billing";
 import { formatDisplayDateTime } from "@/utils/timeDisplay";
 import {
@@ -191,7 +198,7 @@ export function InstanceDetails({
       ? "不限"
       : workbenchNode.traffic.status === "exhausted"
         ? "已耗尽"
-        : `${Math.round(workbenchNode.traffic.fraction * 100)}%`;
+        : formatMetricPercent(workbenchNode.traffic.fraction * 100);
   const trafficDecisionDetail =
     workbenchNode.traffic.status === "unlimited"
       ? "未设置流量上限"
@@ -259,7 +266,7 @@ export function InstanceDetails({
           <InfoRow label="磁盘" value={`${formatBytes(metrics.diskUsed)} / ${formatBytes(metrics.diskTotal)}`} />
           <InfoRow
             label="负载"
-            value={`${metrics.load1.toFixed(2)} | ${metrics.load5.toFixed(2)} | ${metrics.load15.toFixed(2)}`}
+            value={`${formatLoadValue(metrics.load1)} | ${formatLoadValue(metrics.load5)} | ${formatLoadValue(metrics.load15)}`}
           />
           <InfoRow
             label="运行时长"

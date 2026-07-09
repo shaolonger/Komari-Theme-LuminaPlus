@@ -25,7 +25,9 @@ import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   formatBytes,
   formatLatencyValue,
+  formatLoadValue,
   formatMetricNumber,
+  formatMetricPercent,
   trimFixed,
 } from "@/utils/format";
 import {
@@ -69,9 +71,7 @@ function clamp01(value: number) {
 }
 
 function formatCompactPercent(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0%";
-  if (value >= 10) return `${Math.round(value)}%`;
-  return `${trimFixed(value, 1)}%`;
+  return Number.isFinite(value) ? formatMetricPercent(value) : "0.00%";
 }
 
 function CompactGauge({
@@ -467,8 +467,8 @@ function CompactNodeVitals({
       <CompactGauge
         icon={<Gauge size={12} />}
         label="负载"
-        value={node.load1.toFixed(2)}
-        detail={`${node.load5.toFixed(2)} / ${node.load15.toFixed(2)}`}
+        value={formatLoadValue(node.load1)}
+        detail={`${formatLoadValue(node.load5)} / ${formatLoadValue(node.load15)}`}
         fraction={loadFraction}
         color="var(--progress-network)"
       />

@@ -19,7 +19,12 @@ import {
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import { formatBytes, formatLatencyValue, formatMetricNumber } from "@/utils/format";
+import {
+  formatBytes,
+  formatLatencyValue,
+  formatLoadValue,
+  formatMetricNumber,
+} from "@/utils/format";
 import {
   buildHomepagePingCompareUrl,
   buildHomepagePingSourceRows,
@@ -245,7 +250,7 @@ function NodeMetricSection({
       <MetricBar
         icon={<Cpu size={13} strokeWidth={2} />}
         label="CPU"
-        valueText={node.cpuPct.toFixed(2)}
+        valueText={formatMetricNumber(node.cpuPct)}
         unit="%"
         detailText={`${node.cpu_cores || 0} 核`}
         fraction={node.cpuPct / 100}
@@ -255,7 +260,7 @@ function NodeMetricSection({
       <MetricBar
         icon={<MemoryStick size={13} strokeWidth={2} />}
         label="内存"
-        valueText={node.ramPct.toFixed(2)}
+        valueText={formatMetricNumber(node.ramPct)}
         unit="%"
         detailText={`${formatBytes(node.ramUsed)} / ${formatBytes(node.ramTotal)}`}
         fraction={node.ramPct / 100}
@@ -265,7 +270,7 @@ function NodeMetricSection({
       <MetricBar
         icon={<HardDrive size={13} strokeWidth={2} />}
         label="磁盘"
-        valueText={node.diskPct.toFixed(1)}
+        valueText={formatMetricNumber(node.diskPct)}
         unit="%"
         detailText={`${formatBytes(node.diskUsed)} / ${formatBytes(node.diskTotal)}`}
         fraction={node.diskPct / 100}
@@ -275,7 +280,7 @@ function NodeMetricSection({
       <MetricBar
         icon={<Gauge size={13} strokeWidth={2} />}
         label="负载"
-        valueText={node.load1.toFixed(2)}
+        valueText={formatLoadValue(node.load1)}
         fraction={loadFraction}
         redrawKey={redrawKey}
         paint={{

@@ -237,7 +237,7 @@ describe("buildFleet3DModel", () => {
     expect(visual.trafficTone).toBe("critical");
     expect(visual.expiryTone).toBe("critical");
     expect(visual.badges).toEqual(expect.arrayContaining(["risk", "traffic", "expiry"]));
-    expect(visual.summary).toContain("资源 96%");
+    expect(visual.summary).toContain("资源 96.00%");
   });
 });
 

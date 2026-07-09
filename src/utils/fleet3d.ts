@@ -1,7 +1,7 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
 import type { NodeInfo, PingOverviewItem } from "@/types/komari";
 import type { ComparisonLoadRecords } from "@/services/api";
-import { getExpireDaysRemaining } from "@/utils/format";
+import { formatMetricPercent, getExpireDaysRemaining } from "@/utils/format";
 import {
   getConfigCompleteness,
   getTrafficForecast,
@@ -408,10 +408,10 @@ function visualRiskColor(tone: Fleet3DRiskTone) {
 }
 
 function buildVisualSummary(node: Fleet3DVisualNodeInput) {
-  const pressure = Math.round(Math.max(node.cpuPct, node.ramPct, node.diskPct));
-  const traffic = Math.round(node.trafficFraction * 100);
+  const pressure = formatMetricPercent(Math.max(node.cpuPct, node.ramPct, node.diskPct));
+  const traffic = formatMetricPercent(node.trafficFraction * 100);
   const expiry = node.expireDays == null ? "未设到期" : `${node.expireDays} 天到期`;
-  return `${STATUS_LABELS_FALLBACK[node.status]} · 资源 ${pressure}% · 流量 ${traffic}% · ${expiry}`;
+  return `${STATUS_LABELS_FALLBACK[node.status]} · 资源 ${pressure} · 流量 ${traffic} · ${expiry}`;
 }
 
 export function encodeFleet3DNodeVisual(node: Fleet3DVisualNodeInput): Fleet3DVisualEncoding {

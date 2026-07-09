@@ -41,7 +41,13 @@ import {
   type Fleet3DRendererCapability,
   type Fleet3DStatus,
 } from "@/utils/fleet3d";
-import { formatBytes, formatByteRateLabel, formatLatency, formatPacketLoss } from "@/utils/format";
+import {
+  formatBytes,
+  formatByteRateLabel,
+  formatLatency,
+  formatMetricPercent,
+  formatPacketLoss,
+} from "@/utils/format";
 import {
   formatDisplayDateTime,
   getZonedDateTimeParts,
@@ -231,7 +237,7 @@ function Inspector({
         </div>
         <div>
           <dt>资料完整度</dt>
-          <dd>{Math.round(node.risk.completenessRatio * 100)}%</dd>
+          <dd>{formatMetricPercent(node.risk.completenessRatio * 100)}</dd>
         </div>
         <div>
           <dt>回放压力</dt>

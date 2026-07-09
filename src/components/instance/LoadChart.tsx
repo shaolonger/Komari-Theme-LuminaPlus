@@ -19,7 +19,13 @@ import {
   fillMissingMetricPoints,
   interpolateMetricGaps,
 } from "./chartData";
-import { formatBytes, formatTrafficRateLabel } from "@/utils/format";
+import {
+  formatBytes,
+  formatLoadValue,
+  formatMetricNumber,
+  formatMetricPercent,
+  formatTrafficRateLabel,
+} from "@/utils/format";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import type { NodeMetrics } from "@/types/komari";
@@ -133,16 +139,13 @@ function pointFromNode(node: NodeMetrics): ChartPoint {
 function formatTooltipValue(key: string, value: number | null | undefined, unit: string) {
   if (value == null || !Number.isFinite(value)) return "—";
   if (key === "netIn" || key === "netOut") return formatTrafficRateLabel(value);
-  if (unit === "%") return `${value.toFixed(2)}%`;
+  if (unit === "%") return formatMetricPercent(value);
   if (key === "process" || key === "connections" || key === "udp") return `${Math.round(value)}`;
-  return value.toFixed(2);
+  return key === "load" ? formatLoadValue(value) : formatMetricNumber(value);
 }
 
-function formatPercentAxisValue(value: number, min: number, max: number) {
-  const span = Math.abs(max - min);
-  if (span < 0.5) return `${value.toFixed(2)}%`;
-  if (span < 5) return `${value.toFixed(1)}%`;
-  return `${Math.round(value)}%`;
+function formatPercentAxisValue(value: number) {
+  return formatMetricPercent(value);
 }
 
 function formatNetworkAxisValue(value: number) {
@@ -150,9 +153,7 @@ function formatNetworkAxisValue(value: number) {
   return formatTrafficRateLabel(value);
 }
 
-function formatCountAxisValue(value: number, min: number, max: number) {
-  const span = Math.abs(max - min);
-  if (span < 10) return value.toFixed(1);
+function formatCountAxisValue(value: number) {
   return `${Math.round(value)}`;
 }
 
@@ -203,15 +204,13 @@ function buildBaseOptions({
         grid: { stroke: grid, width: 1 },
         ticks: { stroke: grid },
         size: axisSize,
-        values: (self, splits) => {
-          const min = Number(self.scales.y.min ?? 0);
-          const max = Number(self.scales.y.max ?? 0);
+        values: (_self, splits) => {
           return splits.map((value) => {
             if (value === 0 && axisKind !== "percent") return "";
             if (axisKind === "network") return formatNetworkAxisValue(value);
-            if (axisKind === "percent") return formatPercentAxisValue(value, min, max);
-            if (axisKind === "count") return formatCountAxisValue(value, min, max);
-            return value === 0 ? "" : `${Math.round(value)}${unit}`;
+            if (axisKind === "percent") return formatPercentAxisValue(value);
+            if (axisKind === "count") return formatCountAxisValue(value);
+            return value === 0 ? "" : formatMetricNumber(value, { unit });
           });
         },
       },
@@ -532,8 +531,8 @@ export function LoadChart({
           uuid={uuid}
           value={
             isRealtime && node
-              ? `${node.cpuPct.toFixed(2)}%`
-              : `${(points[points.length - 1]?.cpu ?? 0).toFixed(2)}%`
+              ? formatMetricPercent(node.cpuPct)
+              : formatMetricPercent(points[points.length - 1]?.cpu ?? 0)
           }
           note="使用率"
           points={points}
@@ -669,9 +668,9 @@ export function LoadChart({
           }
           note={
             isRealtime && node
-              ? `负载 ${node.load1.toFixed(2)} | ${node.load5.toFixed(2)} | ${node.load15.toFixed(2)}`
+              ? `负载 ${formatLoadValue(node.load1)} | ${formatLoadValue(node.load5)} | ${formatLoadValue(node.load15)}`
               : data?.records.length
-                ? `负载 ${(data.records[data.records.length - 1]?.load ?? 0).toFixed(2)}`
+                ? `负载 ${formatLoadValue(data.records[data.records.length - 1]?.load ?? 0)}`
                 : "—"
           }
           points={points}

@@ -237,7 +237,7 @@ describe("buildMultiMetricComparisonAnalysis", () => {
     expect(buildMultiMetricComparisonCsv(analysis)).toContain("CPU_primary");
     expect(buildMultiMetricComparisonCsv(analysis)).toContain("alpha");
     expect(buildMultiMetricComparisonMarkdown(analysis)).toContain("VPS 多指标对比");
-    expect(buildMultiMetricComparisonMarkdown(analysis)).toContain("70% / 70");
+    expect(buildMultiMetricComparisonMarkdown(analysis)).toContain("70.00% / 70");
   });
 });
 
@@ -444,7 +444,7 @@ describe("comparison export helpers", () => {
       },
     ];
 
-    expect(formatComparisonValue("cpu", 12.3456)).toBe("12.3%");
+    expect(formatComparisonValue("cpu", 12.3456)).toBe("12.35%");
     expect(formatComparisonValue("ping_latency", 12.3456)).toBe("12.35 ms");
     expect(formatComparisonValue("ping_loss", 0.3456)).toBe("0.35%");
     expect(buildComparisonCsv(rows, "cpu")).toContain('"alpha, one"');

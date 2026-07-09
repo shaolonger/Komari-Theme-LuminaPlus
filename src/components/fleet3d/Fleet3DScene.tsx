@@ -10,7 +10,7 @@ import type {
   Fleet3DQuality,
   Fleet3DRendererMode,
 } from "@/utils/fleet3d";
-import { formatByteRateLabel, formatLatency } from "@/utils/format";
+import { formatByteRateLabel, formatLatency, formatMetricPercent } from "@/utils/format";
 
 interface MarqueeRect {
   left: number;
@@ -29,7 +29,7 @@ interface SceneLabel {
   tone: "online" | "offline" | "unknown" | "warning" | "critical";
   selected: boolean;
   inCompare: boolean;
-  resource: number;
+  resource: string;
   traffic: number;
 }
 
@@ -805,7 +805,7 @@ function buildSceneLabels(runtime: SceneRuntime, latest: LatestSceneState): Scen
       tone: nodeTone(item.node),
       selected: item.selected,
       inCompare: item.inCompare,
-      resource: Math.round(item.node.visual.resourcePeakRatio * 100),
+      resource: formatMetricPercent(item.node.visual.resourcePeakRatio * 100),
       traffic: Math.round(item.node.visual.trafficPressure * 100),
     });
   }
@@ -843,7 +843,7 @@ function buildHoverCard(node: Fleet3DNode, point: { x: number; y: number }, rect
     tone: nodeTone(node),
     status: STATUS_LABELS[node.status],
     risk: RISK_LABELS[node.risk.tone],
-    resource: `${Math.round(node.visual.resourcePeakRatio * 100)}%`,
+    resource: formatMetricPercent(node.visual.resourcePeakRatio * 100),
     traffic: formatByteRateLabel(node.netRate),
     ping: node.ping.latency == null ? "无样本" : formatLatency(node.ping.latency),
     summary: node.visual.summary,
@@ -1427,7 +1427,7 @@ export function Fleet3DScene({
           >
             <span className="fleet3d-node-label-dot" />
             <strong>{label.name}</strong>
-            <small>{label.resource}%</small>
+            <small>{label.resource}</small>
           </div>
         ))}
       </div>

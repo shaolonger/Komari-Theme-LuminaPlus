@@ -20,7 +20,7 @@ describe("pingTaskAggregateLabels", () => {
       }),
     ).toEqual({
       badge: null,
-      title: "Google / 8.8.8.8 (42ms，丢包 0.0%)",
+      title: "Google / 8.8.8.8 (42.00 ms，丢包 0.00%)",
     });
   });
 
