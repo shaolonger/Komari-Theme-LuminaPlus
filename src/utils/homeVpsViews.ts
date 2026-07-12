@@ -16,6 +16,7 @@ export interface HomeSavedView {
   filters: HomeFacetFilters;
   groupBy: string;
   sortKey: string;
+  sorts: VpsListSortCondition[];
 }
 
 export interface HomeFacetNodeSource {
@@ -198,6 +199,7 @@ export function normalizeHomeSavedViews(
       filters,
       groupBy: groupBy && dimensionIds.has(groupBy) ? groupBy : HOME_FACET_LEGACY_GROUP,
       sortKey,
+      sorts: normalizeVpsListSorts(item.sorts, sortKey),
     });
   }
 
@@ -311,3 +313,7 @@ export function getHomeFacetSearchText(node: HomeFacetNodeSource, facets: HomeFa
     .filter(Boolean)
     .join(" ");
 }
+import {
+  normalizeVpsListSorts,
+  type VpsListSortCondition,
+} from "@/utils/vpsListSort";

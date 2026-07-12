@@ -97,6 +97,14 @@ import {
   type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
 import {
+  DEFAULT_VPS_LIST_SORTS,
+  VPS_LIST_SORT_KEYS,
+  VPS_LIST_SORT_LABELS,
+  recommendedVpsListSortDirection,
+  type VpsListSortCondition,
+  type VpsListSortKey,
+} from "@/utils/vpsListSort";
+import {
   DISPLAY_TIME_ZONE_PRESETS,
   SYSTEM_DISPLAY_TIME_ZONE,
   describeDisplayTimeZone,
@@ -159,6 +167,97 @@ const HOME_VIEW_SORT_OPTIONS = [
   { value: "name", label: "名称" },
 ];
 const DEFAULT_HOME_FACET_IDS = new Set(DEFAULT_HOME_FACET_DIMENSIONS.map((dimension) => dimension.id));
+
+function SavedViewSortEditor({
+  viewName,
+  sorts,
+  onChange,
+}: {
+  viewName: string;
+  sorts: VpsListSortCondition[];
+  onChange: (sorts: VpsListSortCondition[]) => void;
+}) {
+  const addCondition = () => {
+    const used = new Set(sorts.map((condition) => condition.key));
+    const key = VPS_LIST_SORT_KEYS.find((candidate) => !used.has(candidate));
+    if (!key) return;
+    onChange([...sorts, { key, direction: recommendedVpsListSortDirection(key) }]);
+  };
+  const updateCondition = (index: number, patch: Partial<VpsListSortCondition>) => {
+    const next = sorts.map((condition, conditionIndex) =>
+      conditionIndex === index ? { ...condition, ...patch } : condition,
+    );
+    if (new Set(next.map((condition) => condition.key)).size !== next.length) return;
+    onChange(next);
+  };
+  const moveCondition = (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= sorts.length) return;
+    const next = [...sorts];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+  const removeCondition = (index: number) => {
+    const next = sorts.filter((_, conditionIndex) => conditionIndex !== index);
+    onChange(next.length > 0 ? next : DEFAULT_VPS_LIST_SORTS.map((item) => ({ ...item })));
+  };
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-[var(--hairline)] bg-[var(--surface-sunken)] px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-semibold text-[var(--text-primary)]">列表多级排序</div>
+          <div className="mt-0.5 text-[10px] text-[var(--text-tertiary)]">按编号依次比较；首页列表会恢复这里的完整条件。</div>
+        </div>
+        <button
+          type="button"
+          className="theme-manage-button is-compact"
+          onClick={addCondition}
+          disabled={sorts.length >= VPS_LIST_SORT_KEYS.length}
+        >
+          <Plus size={12} />
+          添加条件
+        </button>
+      </div>
+      <div className="mt-2 grid gap-2">
+        {sorts.map((condition, index) => (
+          <div key={condition.key} className="grid grid-cols-[24px_minmax(0,1fr)_88px_auto] items-center gap-2">
+            <span className="grid h-6 w-6 place-items-center rounded-[7px] bg-[color-mix(in_srgb,var(--progress-cpu)_12%,transparent)] text-[10px] font-bold text-[var(--progress-cpu)]">{index + 1}</span>
+            <select
+              value={condition.key}
+              onChange={(event) => {
+                const key = event.target.value as VpsListSortKey;
+                updateCondition(index, { key, direction: recommendedVpsListSortDirection(key) });
+              }}
+              className="surface-inset min-w-0 px-2 py-1.5 text-[11px] outline-none"
+              aria-label={`${viewName} 的第 ${index + 1} 个排序字段`}
+            >
+              {VPS_LIST_SORT_KEYS.map((key) => (
+                <option key={key} value={key} disabled={sorts.some((item, itemIndex) => itemIndex !== index && item.key === key)}>
+                  {VPS_LIST_SORT_LABELS[key]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={condition.direction}
+              onChange={(event) => updateCondition(index, { direction: event.target.value as "asc" | "desc" })}
+              className="surface-inset px-2 py-1.5 text-[11px] outline-none"
+              aria-label={`${viewName} 的第 ${index + 1} 个排序方向`}
+            >
+              <option value="asc">升序</option>
+              <option value="desc">降序</option>
+            </select>
+            <span className="flex items-center gap-1">
+              <button type="button" className="theme-manage-button is-compact !min-h-7 !px-2" disabled={index === 0} onClick={() => moveCondition(index, -1)} aria-label={`提高 ${VPS_LIST_SORT_LABELS[condition.key]} 优先级`}><ChevronUp size={12} /></button>
+              <button type="button" className="theme-manage-button is-compact !min-h-7 !px-2" disabled={index === sorts.length - 1} onClick={() => moveCondition(index, 1)} aria-label={`降低 ${VPS_LIST_SORT_LABELS[condition.key]} 优先级`}><ChevronDown size={12} /></button>
+              <button type="button" className="theme-manage-button is-compact is-danger !min-h-7 !px-2" onClick={() => removeCondition(index)} aria-label={`移除 ${VPS_LIST_SORT_LABELS[condition.key]}`}><Trash2 size={12} /></button>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const OVERVIEW_RATING_LABEL_FIELDS: Array<{
   key: OverviewRatingKind;
@@ -888,6 +987,7 @@ export function ThemeManage() {
             filters: {},
             groupBy: normalizedDraftHomeDefaultFacetDimension,
             sortKey: "weight",
+            sorts: DEFAULT_VPS_LIST_SORTS,
           },
         ],
         normalizedDraftFacetDimensions,
@@ -1811,6 +1911,11 @@ export function ThemeManage() {
 	                      <span>删除</span>
 	                    </button>
 	                  </div>
+	                  <SavedViewSortEditor
+	                    viewName={view.name}
+	                    sorts={view.sorts}
+	                    onChange={(sorts) => updateSavedView(view.id, { sorts })}
+	                  />
 	                  <div className="mt-3 grid gap-2 md:grid-cols-2">
 	                    <label className="flex min-w-0 flex-col gap-1.5">
 	                      <span className="text-[11px] font-medium text-[var(--text-tertiary)]">

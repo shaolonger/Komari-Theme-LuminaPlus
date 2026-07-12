@@ -192,7 +192,30 @@ describe("home saved views", () => {
         },
         groupBy: HOME_FACET_LINE,
         sortKey: "risk",
+        sorts: [{ key: "risk", direction: "desc" }],
       },
+    ]);
+  });
+
+  it("keeps valid multi-field sorts and drops duplicate or invalid conditions", () => {
+    expect(
+      normalizeHomeSavedViews([
+        {
+          id: "pressure",
+          name: "压力优先",
+          groupBy: "legacyGroup",
+          sortKey: "weight",
+          sorts: [
+            { key: "status", direction: "desc" },
+            { key: "trafficUsage", direction: "desc" },
+            { key: "status", direction: "asc" },
+            { key: "bad", direction: "asc" },
+          ],
+        },
+      ])[0]?.sorts,
+    ).toEqual([
+      { key: "status", direction: "desc" },
+      { key: "trafficUsage", direction: "desc" },
     ]);
   });
 });

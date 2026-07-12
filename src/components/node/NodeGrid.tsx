@@ -1114,6 +1114,7 @@ export function NodeGrid() {
       if (WORKBENCH_SORT_OPTIONS.some((option) => option.value === view.sortKey)) {
         setWorkbenchSort(view.sortKey as WorkbenchSortKey);
       }
+      setListSorts(view.sorts.map((condition) => ({ ...condition })));
     },
     [themeSettings.homeSavedViews],
   );
