@@ -1151,7 +1151,10 @@ export function NodeGrid() {
     themeSettings.homeDefaultFacetDimension,
     visibleFacetDimensions,
   ]);
-  const selectedFacetValues = facetFilters[selectedFacetDimension] ?? [];
+  const selectedFacetValues = useMemo(
+    () => facetFilters[selectedFacetDimension] ?? [],
+    [facetFilters, selectedFacetDimension],
+  );
   const optionFacetFilters = useMemo(
     () => clearFacetFilter(facetFilters, selectedFacetDimension),
     [facetFilters, selectedFacetDimension],
@@ -1343,6 +1346,8 @@ export function NodeGrid() {
   );
   const handleListSort = useCallback((key: VpsListSortKey, additive: boolean) => {
     setActiveSavedViewId("");
+    setListInteractionActive(false);
+    frozenListOrderRef.current = "";
     setListSorts((current) => toggleVpsListSort(current, key, additive));
   }, []);
   const changeListSortDirection = (index: number) => {
