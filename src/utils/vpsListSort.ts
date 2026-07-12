@@ -144,6 +144,17 @@ export const VPS_LIST_SORT_LABELS: Record<VpsListSortKey, string> = {
   completeness: "资料完整度",
 };
 
+export const VPS_LIST_SORT_GROUPS: Array<{
+  label: string;
+  keys: VpsListSortKey[];
+}> = [
+  { label: "基础", keys: ["status", "name", "group", "region", "provider", "weight"] },
+  { label: "资源", keys: ["cpu", "memory", "disk", "load"] },
+  { label: "网络", keys: ["upload", "download", "trafficUsed", "trafficRemaining", "trafficUsage", "trafficLimit"] },
+  { label: "质量", keys: ["latency", "loss"] },
+  { label: "运维", keys: ["uptime", "updatedAt", "expiry", "expireDays", "price", "risk", "completeness"] },
+];
+
 export function recommendedVpsListSortDirection(
   key: VpsListSortKey,
 ): VpsListSortDirection {

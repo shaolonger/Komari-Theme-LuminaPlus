@@ -1040,10 +1040,12 @@ function demoSummary(partial: Partial<HomeNodeSummary> & Pick<HomeNodeSummary, "
     cpuPct: 0,
     ramPct: 0,
     diskPct: 0,
+    load1: 0,
     trafficUp: 0,
     trafficDown: 0,
     netUp: 0,
     netDown: 0,
+    uptime: 0,
     updatedAt: Date.now(),
     ...rest,
   };

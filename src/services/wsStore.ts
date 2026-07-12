@@ -26,10 +26,12 @@ export interface HomeNodeSummary {
   cpuPct: number;
   ramPct: number;
   diskPct: number;
+  load1: number;
   trafficUp: number;
   trafficDown: number;
   netUp: number;
   netDown: number;
+  uptime: number;
   updatedAt: number;
 }
 
@@ -1026,10 +1028,12 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
         cpuPct: metrics?.cpuPct ?? 0,
         ramPct: metrics?.ramPct ?? 0,
         diskPct: metrics?.diskPct ?? 0,
+        load1: metrics?.load1 ?? 0,
         trafficUp: metrics?.trafficUp ?? 0,
         trafficDown: metrics?.trafficDown ?? 0,
         netUp: metrics?.netUp ?? 0,
         netDown: metrics?.netDown ?? 0,
+        uptime: metrics?.uptime ?? 0,
         updatedAt: metrics?.updatedAt ?? 0,
       };
     })
@@ -1050,10 +1054,12 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
         prev.cpuPct === item.cpuPct &&
         prev.ramPct === item.ramPct &&
         prev.diskPct === item.diskPct &&
+        prev.load1 === item.load1 &&
         prev.trafficUp === item.trafficUp &&
         prev.trafficDown === item.trafficDown &&
         prev.netUp === item.netUp &&
         prev.netDown === item.netDown &&
+        prev.uptime === item.uptime &&
         prev.updatedAt === item.updatedAt
       );
     })

@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   CircleDollarSign,
+  ListFilter,
   ListChecks,
   Network,
   Search,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
-import { useHomepagePingOverview } from "@/hooks/usePingMini";
+import { useHomepagePingOverview, usePingMiniMap } from "@/hooks/usePingMini";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { useViewMode } from "@/hooks/useViewMode";
 import { getAdminClients } from "@/services/api";
@@ -24,8 +25,10 @@ import {
   formatBytes,
   formatByteRate,
   formatByteRateLabel,
+  resolveExpireTimestamp,
   trimFixed,
 } from "@/utils/format";
+import { formatRenewalPrice } from "@/utils/billing";
 import { calculateCostSummary, formatCnyMoney, getExchangeRates } from "@/utils/cost";
 import { speedRateColor } from "@/utils/metricTone";
 import {
@@ -64,11 +67,20 @@ import {
   type VpsWorkbenchNode,
   type WorkbenchSortKey,
 } from "@/utils/vpsWorkbench";
+import {
+  DEFAULT_VPS_LIST_SORTS,
+  sortVpsListNodes,
+  toggleVpsListSort,
+  type VpsListSortableNode,
+  type VpsListSortCondition,
+  type VpsListSortKey,
+} from "@/utils/vpsListSort";
 import { Spinner } from "@/components/ui/Spinner";
 import { CompactNodeCard } from "./CompactNodeCard";
 import { CostSummary } from "./CostSummary";
 import { NodeCard } from "./NodeCard";
 import { NodeList } from "./NodeList";
+import { VpsListSortPanel } from "./VpsListSortPanel";
 
 // 把多个 uuid 拼成单个签名串作为 memo key。逗号安全:uuid 是标准 UUID
 // ([0-9a-f-]),永远不含逗号。
@@ -860,6 +872,12 @@ export function NodeGrid() {
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<HomeRiskFilter>("all");
   const [nodeSearch, setNodeSearch] = useState("");
   const [workbenchSort, setWorkbenchSort] = useState<WorkbenchSortKey>("weight");
+  const [listSorts, setListSorts] = useState<VpsListSortCondition[]>(() =>
+    DEFAULT_VPS_LIST_SORTS.map((condition) => ({ ...condition })),
+  );
+  const [listSortPanelOpen, setListSortPanelOpen] = useState(false);
+  const [listInteractionActive, setListInteractionActive] = useState(false);
+  const frozenListOrderRef = useRef("");
   const [workbenchOpen, setWorkbenchOpen] = useState(readStoredWorkbenchOpen);
   const [costSummaryOpen, setCostSummaryOpen] = useState(false);
   const seededHomeViewRef = useRef(false);
@@ -876,6 +894,11 @@ export function NodeGrid() {
     () => nodes.filter((node) => me?.logged_in === true || !node.hidden),
     [me?.logged_in, nodes],
   );
+  const visibleNodeUuids = useMemo(
+    () => visibleNodes.map((node) => node.uuid),
+    [visibleNodes],
+  );
+  const pingByUuid = usePingMiniMap(visibleNodeUuids);
   const overview = useMemo<HomeOverview>(() => {
     let onlineNodes = 0;
     let offlineNodes = 0;
@@ -946,11 +969,12 @@ export function NodeGrid() {
           netDown: node.netDown,
           hasPingBinding: selectedPingTaskByClient.has(node.uuid),
           includeAgentVersion,
+          ping: pingByUuid.get(node.uuid),
         }),
       );
     }
     return next;
-  }, [includeAgentVersion, selectedPingTaskByClient, visibleNodes, workbenchMetaByUuid]);
+  }, [includeAgentVersion, pingByUuid, selectedPingTaskByClient, visibleNodes, workbenchMetaByUuid]);
   const workbenchNodes = useMemo(
     () => Array.from(workbenchNodesByUuid.values()),
     [workbenchNodesByUuid],
@@ -1195,6 +1219,62 @@ export function NodeGrid() {
         : searchFiltered.filter((node) =>
             riskMatchesFilter(risksByUuid.get(node.uuid), selectedRiskFilter),
           );
+
+    if (mode === "list") {
+      const nodeByUuid = new Map(riskFiltered.map((node) => [node.uuid, node]));
+      const sortableNodes = riskFiltered
+        .map((node): VpsListSortableNode | null => {
+          const meta = workbenchMetaByUuid.get(node.uuid);
+          const workbenchNode = workbenchNodesByUuid.get(node.uuid);
+          if (!meta || !workbenchNode) return null;
+          const ping = pingByUuid.get(node.uuid);
+          const hasTrafficLimit = meta.traffic_limit > 0;
+          const priceLabel = formatRenewalPrice(meta);
+          return {
+            uuid: node.uuid,
+            weight: node.weight,
+            online: node.online,
+            name: meta.name.trim() || node.uuid,
+            group: String(meta.group ?? "").trim(),
+            region: String(meta.region ?? "").trim(),
+            provider: String(meta.provider ?? "").trim(),
+            cpu: node.cpuPct,
+            memory: node.ramPct,
+            disk: node.diskPct,
+            load: node.load1,
+            upload: node.netUp,
+            download: node.netDown,
+            trafficUsed: workbenchNode.traffic.used,
+            trafficRemaining: hasTrafficLimit ? workbenchNode.traffic.remaining : null,
+            trafficUsage: hasTrafficLimit ? workbenchNode.traffic.fraction : null,
+            trafficLimit: hasTrafficLimit ? workbenchNode.traffic.limit : null,
+            latency: ping?.lastValue ?? null,
+            loss: ping?.loss ?? null,
+            uptime: node.uptime,
+            updatedAt: node.updatedAt > 0 ? node.updatedAt : null,
+            expiry: resolveExpireTimestamp(meta.expired_at),
+            expireDays: workbenchNode.expireDays,
+            price: priceLabel == null ? null : Math.max(0, meta.price),
+            risk:
+              workbenchNode.riskSeverity === "critical"
+                ? 2
+                : workbenchNode.riskSeverity === "warning"
+                  ? 1
+                  : 0,
+            completeness: workbenchNode.completeness.ratio,
+          };
+        })
+        .filter((node): node is VpsListSortableNode => Boolean(node));
+      const matchedUuidSet = new Set(sortableNodes.map((node) => node.uuid));
+      const sorted = sortVpsListNodes(sortableNodes, listSorts)
+        .map((node) => nodeByUuid.get(node.uuid))
+        .filter((node): node is HomeNodeSummary => Boolean(node));
+      return [
+        ...sorted,
+        ...riskFiltered.filter((node) => !matchedUuidSet.has(node.uuid)),
+      ];
+    }
+
     const moveOfflineBack = themeSettings.isReady && themeSettings.moveOfflineNodesBack;
 
     if (workbenchSort === "weight") {
@@ -1227,6 +1307,9 @@ export function NodeGrid() {
     themeSettings.isReady,
     themeSettings.moveOfflineNodesBack,
     workbenchMetaByUuid,
+    mode,
+    listSorts,
+    pingByUuid,
   ]);
 
   useEffect(() => {
@@ -1245,6 +1328,55 @@ export function NodeGrid() {
     () => filteredNodes.map((node) => node.uuid).join(UUID_KEY_SEPARATOR),
     [filteredNodes],
   );
+  const handleListInteractionChange = useCallback(
+    (active: boolean) => {
+      if (active) {
+        if (!listInteractionActive) frozenListOrderRef.current = uuidsKey;
+        setListInteractionActive(true);
+        return;
+      }
+      setListInteractionActive(false);
+      frozenListOrderRef.current = "";
+    },
+    [listInteractionActive, uuidsKey],
+  );
+  const handleListSort = useCallback((key: VpsListSortKey, additive: boolean) => {
+    setActiveSavedViewId("");
+    setListSorts((current) => toggleVpsListSort(current, key, additive));
+  }, []);
+  const changeListSortDirection = (index: number) => {
+    setActiveSavedViewId("");
+    setListSorts((current) =>
+      current.map((condition, conditionIndex) =>
+        conditionIndex === index
+          ? { ...condition, direction: condition.direction === "asc" ? "desc" : "asc" }
+          : condition,
+      ),
+    );
+  };
+  const moveListSort = (index: number, delta: -1 | 1) => {
+    setActiveSavedViewId("");
+    setListSorts((current) => {
+      const target = index + delta;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+  const removeListSort = (index: number) => {
+    setActiveSavedViewId("");
+    setListSorts((current) => {
+      const next = current.filter((_, conditionIndex) => conditionIndex !== index);
+      return next.length > 0
+        ? next
+        : DEFAULT_VPS_LIST_SORTS.map((condition) => ({ ...condition }));
+    });
+  };
+  const resetListSorts = () => {
+    setActiveSavedViewId("");
+    setListSorts(DEFAULT_VPS_LIST_SORTS.map((condition) => ({ ...condition })));
+  };
   const cards = useMemo(() => {
     const uuids = uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : [];
     return uuids.map((uuid) => (
@@ -1253,10 +1385,16 @@ export function NodeGrid() {
       </div>
     ));
   }, [uuidsKey, mode]);
-  const listUuids = useMemo(
-    () => (uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : []),
-    [uuidsKey],
-  );
+  const listUuids = useMemo(() => {
+    const liveUuids = uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : [];
+    if (!listInteractionActive || !frozenListOrderRef.current) return liveUuids;
+    const liveUuidSet = new Set(liveUuids);
+    const frozenUuids = frozenListOrderRef.current
+      .split(UUID_KEY_SEPARATOR)
+      .filter((uuid) => liveUuidSet.has(uuid));
+    const frozenUuidSet = new Set(frozenUuids);
+    return [...frozenUuids, ...liveUuids.filter((uuid) => !frozenUuidSet.has(uuid))];
+  }, [listInteractionActive, uuidsKey]);
   const compareHref = useMemo(() => {
     const seed = filteredNodes.slice(0, HOME_COMPARE_SEED_COUNT).map((node) => node.uuid);
     if (seed.length < 2) return "/compare";
@@ -1446,23 +1584,36 @@ export function NodeGrid() {
 	            </select>
 	          </label>
 	        )}
-	        <label className="home-workbench-sort">
-	          <ArrowUpDown size={15} aria-hidden="true" />
-	          <select
-	            value={workbenchSort}
-	            onChange={(event) => {
-	              setActiveSavedViewId("");
-	              setWorkbenchSort(event.target.value as WorkbenchSortKey);
-	            }}
-	            aria-label="排序 VPS"
+	        {mode === "list" ? (
+	          <button
+	            type="button"
+	            className="home-select-button"
+	            data-active={listSortPanelOpen ? "true" : "false"}
+	            aria-expanded={listSortPanelOpen}
+	            onClick={() => setListSortPanelOpen((value) => !value)}
 	          >
-            {WORKBENCH_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-	            ))}
-	          </select>
-	        </label>
+	            <ListFilter size={15} aria-hidden="true" />
+	            排序 {listSorts.length}
+	          </button>
+	        ) : (
+	          <label className="home-workbench-sort">
+	            <ArrowUpDown size={15} aria-hidden="true" />
+	            <select
+	              value={workbenchSort}
+	              onChange={(event) => {
+	                setActiveSavedViewId("");
+	                setWorkbenchSort(event.target.value as WorkbenchSortKey);
+	              }}
+	              aria-label="排序 VPS"
+	            >
+              {WORKBENCH_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+	              ))}
+	            </select>
+	          </label>
+	        )}
 	        <button
 	          type="button"
 	          className="home-select-button"
@@ -1486,6 +1637,17 @@ export function NodeGrid() {
 	          onSelectFilter={setSelectedRiskFilter}
 	        />
 	      </div>
+	      {mode === "list" && listSortPanelOpen && (
+	        <VpsListSortPanel
+	          sorts={listSorts}
+	          onToggle={(key) => handleListSort(key, true)}
+	          onChangeDirection={changeListSortDirection}
+	          onMove={moveListSort}
+	          onRemove={removeListSort}
+	          onReset={resetListSorts}
+	          onClose={() => setListSortPanelOpen(false)}
+	        />
+	      )}
 	      {nodeSelectorOpen && (
 	        <NodeSelectionPanel
 	          nodes={workbenchNodes}
@@ -1526,7 +1688,12 @@ export function NodeGrid() {
 	      )}
       {listUuids.length > 0 ? (
         mode === "list" ? (
-          <NodeList uuids={listUuids} />
+          <NodeList
+            uuids={listUuids}
+            sorts={listSorts}
+            onSort={handleListSort}
+            onInteractionChange={handleListInteractionChange}
+          />
         ) : (
           <div className={gridClassName} style={{ gridTemplateColumns: gridColumns }}>{cards}</div>
         )

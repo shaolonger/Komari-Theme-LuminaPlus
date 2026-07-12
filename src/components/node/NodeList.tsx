@@ -1,11 +1,71 @@
-import { memo, type CSSProperties } from "react";
+import { memo, type CSSProperties, type FocusEvent } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowUp, CalendarDays, ChevronRight, Clock3, Database, Unplug } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, Database, Unplug } from "lucide-react";
 import { clsx } from "clsx";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { formatLoadValue, formatMetricPercent } from "@/utils/format";
 import { Flag } from "@/components/ui/Flag";
 import { OsLogo } from "@/components/ui/OsLogo";
+import {
+  VPS_LIST_SORT_LABELS,
+  type VpsListSortCondition,
+  type VpsListSortKey,
+} from "@/utils/vpsListSort";
+
+const DIRECT_SORT_GROUPS: Array<Array<{ key: VpsListSortKey; label: string }>> = [
+  [{ key: "status", label: "状态" }, { key: "name", label: "名称" }],
+  [{ key: "cpu", label: "CPU" }, { key: "memory", label: "内存" }, { key: "disk", label: "磁盘" }, { key: "load", label: "负载" }],
+  [{ key: "upload", label: "上传" }, { key: "download", label: "下载" }],
+  [{ key: "trafficUsage", label: "流量" }],
+  [{ key: "latency", label: "延迟" }, { key: "loss", label: "丢包" }],
+  [{ key: "uptime", label: "在线" }, { key: "expiry", label: "到期" }, { key: "price", label: "费用" }],
+];
+
+function SortHeaderButton({
+  sortKey,
+  label,
+  sorts,
+  onSort,
+}: {
+  sortKey: VpsListSortKey;
+  label: string;
+  sorts: VpsListSortCondition[];
+  onSort: (key: VpsListSortKey, additive: boolean) => void;
+}) {
+  const index = sorts.findIndex((condition) => condition.key === sortKey);
+  const condition = index >= 0 ? sorts[index] : null;
+  const directionLabel = condition?.direction === "asc" ? "升序" : condition ? "降序" : "未排序";
+  return (
+    <button
+      type="button"
+      className="node-list-sort-head-button"
+      data-active={condition ? "true" : "false"}
+      aria-label={`${VPS_LIST_SORT_LABELS[sortKey]}，${directionLabel}${condition ? `，优先级 ${index + 1}` : ""}`}
+      title={`按${VPS_LIST_SORT_LABELS[sortKey]}排序；Shift 点击追加多级排序`}
+      onClick={(event) => onSort(sortKey, event.shiftKey)}
+    >
+      <span>{label}</span>
+      {condition?.direction === "asc" ? <ChevronUp size={11} /> : condition?.direction === "desc" ? <ChevronDown size={11} /> : null}
+      {condition && sorts.length > 1 && <sup>{index + 1}</sup>}
+    </button>
+  );
+}
+
+function SortHeaderGroup({
+  children,
+  sorts,
+  onSort,
+}: {
+  children: Array<{ key: VpsListSortKey; label: string }>;
+  sorts: VpsListSortCondition[];
+  onSort: (key: VpsListSortKey, additive: boolean) => void;
+}) {
+  return (
+    <span className="node-list-sort-head-group" role="columnheader">
+      {children.map((item) => <SortHeaderButton key={item.key} sortKey={item.key} label={item.label} sorts={sorts} onSort={onSort} />)}
+    </span>
+  );
+}
 
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
@@ -119,16 +179,35 @@ function NodeListRow({ uuid }: { uuid: string }) {
 
 const MemoNodeListRow = memo(NodeListRow);
 
-export function NodeList({ uuids }: { uuids: string[] }) {
+export function NodeList({
+  uuids,
+  sorts,
+  onSort,
+  onInteractionChange,
+}: {
+  uuids: string[];
+  sorts: VpsListSortCondition[];
+  onSort: (key: VpsListSortKey, additive: boolean) => void;
+  onInteractionChange: (active: boolean) => void;
+}) {
+  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) onInteractionChange(false);
+  };
   return (
-    <div className="node-list" role="table" aria-label="VPS 列表">
+    <div
+      className="node-list"
+      role="table"
+      aria-label="VPS 列表"
+      onPointerEnter={() => onInteractionChange(true)}
+      onPointerLeave={() => onInteractionChange(false)}
+      onFocusCapture={() => onInteractionChange(true)}
+      onBlurCapture={handleBlur}
+      onTouchStart={() => onInteractionChange(true)}
+      onTouchEnd={() => onInteractionChange(false)}
+      onTouchCancel={() => onInteractionChange(false)}
+    >
       <div className="node-list-head" role="row">
-        <span role="columnheader">VPS</span>
-        <span role="columnheader">资源</span>
-        <span role="columnheader">实时网络</span>
-        <span role="columnheader">流量额度</span>
-        <span role="columnheader">Ping / 丢包</span>
-        <span role="columnheader">运行 / 到期</span>
+        {DIRECT_SORT_GROUPS.map((group, index) => <SortHeaderGroup key={index} sorts={sorts} onSort={onSort}>{group}</SortHeaderGroup>)}
         <span aria-hidden />
       </div>
       <div className="node-list-body" role="rowgroup">
