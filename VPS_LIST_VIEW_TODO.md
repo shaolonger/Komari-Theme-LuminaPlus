@@ -90,8 +90,8 @@
 
 ## 7. 发布
 
-- [ ] 更新主题版本号和 release notes。
-- [ ] 执行 release 打包并核对 zip、preview 与 manifest 版本。
+- [x] 更新主题版本号和 release notes。
+- [x] 执行 release 打包并核对 zip、preview 与 manifest 版本。
 - [ ] 标记全部 TODO 完成并提交发布变更。
 - [ ] 创建新 tag，推送提交和 tag 到 GitHub。
 - [ ] 使用 `gh` 创建 GitHub Release 并上传发布产物。
