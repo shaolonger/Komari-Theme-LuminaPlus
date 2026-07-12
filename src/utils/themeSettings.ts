@@ -41,7 +41,7 @@ import {
 } from "@/utils/timeDisplay";
 
 export type Appearance = "system" | "light" | "dark";
-export type NodeViewMode = "large" | "compact";
+export type NodeViewMode = "large" | "compact" | "list";
 
 export interface ResolvedThemeSettings {
   defaultAppearance: Appearance;
@@ -141,7 +141,7 @@ function normalizeAppearance(
 }
 
 export function isNodeViewMode(value: unknown): value is NodeViewMode {
-  return value === "large" || value === "compact";
+  return value === "large" || value === "compact" || value === "list";
 }
 
 function normalizeNodeViewMode(

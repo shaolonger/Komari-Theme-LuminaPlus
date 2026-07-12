@@ -8,6 +8,12 @@ describe("normalizeThemeSettings", () => {
     expect(normalizeThemeSettings({ desktopNodeViewMode: "large" }).desktopNodeViewMode).toBe(
       "large",
     );
+    expect(
+      normalizeThemeSettings({ desktopNodeViewMode: "list", mobileNodeViewMode: "list" }),
+    ).toMatchObject({ desktopNodeViewMode: "list", mobileNodeViewMode: "list" });
+    expect(
+      normalizeThemeSettings({ desktopNodeViewMode: "table" as never }).desktopNodeViewMode,
+    ).toBe("compact");
   });
 
   it("defaults overview ratings on unless explicitly disabled", () => {

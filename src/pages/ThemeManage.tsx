@@ -10,6 +10,7 @@ import {
 	  Globe2,
 	  LayoutTemplate,
 	  LayoutGrid,
+	  List,
 	  ListFilter,
 	  Moon,
 	  Plus,
@@ -128,6 +129,7 @@ const DISPLAY_TIME_ZONE_LABELS: Record<string, string> = {
 const NODE_VIEW_MODE_OPTIONS = [
   { value: "large", label: "大卡片", icon: LayoutGrid },
   { value: "compact", label: "小卡片", icon: Rows3 },
+  { value: "list", label: "列表", icon: List },
 ] as const;
 const PING_AGGREGATION_OPTIONS: Array<{
   value: HomepagePingAggregationStrategy;

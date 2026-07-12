@@ -178,17 +178,12 @@ export function useViewMode() {
     [state.device, defaultMode],
   );
 
-  const toggleMode = useCallback(() => {
-    setMode(mode === "compact" ? "large" : "compact");
-  }, [mode, setMode]);
-
   return {
     device: state.device,
     mode,
     defaultMode,
     isOverridden: state.override != null,
     setMode,
-    toggleMode,
   };
 }
 

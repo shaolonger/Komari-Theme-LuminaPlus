@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, Monitor, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, List, Monitor, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useViewMode } from "@/hooks/useViewMode";
@@ -14,6 +14,12 @@ const APPEARANCE_OPTIONS = [
   { value: "dark", icon: Moon, label: "深色" },
 ] as const;
 
+const VIEW_OPTIONS = [
+  { value: "large", icon: LayoutGrid, label: "大卡片" },
+  { value: "compact", icon: Rows3, label: "小卡片" },
+  { value: "list", icon: List, label: "列表" },
+] as const;
+
 export function FloatingControls() {
   const [searchParams] = useSearchParams();
   // 在任何 node-store hook 跑之前先读路由:theme-manage 视图这里什么都不渲染,否则下面的 useNodeStoreStatus 会白启动实时节点轮询又立刻丢弃
@@ -25,7 +31,7 @@ export function FloatingControls() {
 
 function FloatingControlsInner() {
   const { appearance, setAppearance } = usePreferences();
-  const { mode, toggleMode } = useViewMode();
+  const { mode, setMode } = useViewMode();
   const { data: me } = useAuth();
   const themeSettings = useThemeSettings();
   const { failureStreak } = useNodeStoreStatus();
@@ -36,7 +42,6 @@ function FloatingControlsInner() {
   const showSyncWarning = failureStreak >= 2;
   const hiddenTabIndex = collapsed ? -1 : undefined;
   const ToggleIcon = collapsed ? ChevronLeft : ChevronRight;
-  const ViewIcon = mode === "compact" ? LayoutGrid : Rows3;
 
   return (
     <div
@@ -74,20 +79,25 @@ function FloatingControlsInner() {
                     </button>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleMode}
-                  aria-label="紧凑视图"
-                  aria-pressed={mode === "compact"}
-                  title={mode === "compact" ? "临时切换到大视图" : "临时切换到小视图"}
-                  tabIndex={hiddenTabIndex}
-                  className={clsx(
-                    "control-button grid h-9 w-9 place-items-center",
-                    mode === "compact" && "control-toggle is-active",
-                  )}
-                >
-                  <ViewIcon size={16} />
-                </button>
+                <div className="control-group" role="group" aria-label="节点视图">
+                  {VIEW_OPTIONS.map(({ value, icon: Icon, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setMode(value)}
+                      aria-label={label}
+                      aria-pressed={mode === value}
+                      title={`临时切换到${label}`}
+                      tabIndex={hiddenTabIndex}
+                      className={clsx(
+                        "control-button control-toggle grid h-9 w-9 place-items-center",
+                        mode === value && "is-active",
+                      )}
+                    >
+                      <Icon size={16} />
+                    </button>
+                  ))}
+                </div>
               </>
             )}
             {showThemeManage && (

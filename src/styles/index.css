@@ -7,6 +7,7 @@
 @import "./fleet-3d.css";
 @import "./node-card.css";
 @import "./compact-node-card.css";
+@import "./node-list.css";
 @import "./os-logo.css";
 
 @theme {

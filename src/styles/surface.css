@@ -47,6 +47,7 @@ body::after {
    低于玻璃阈值时设置。把开销较大的 backdrop-filter 关在这道门后,默认的纯色主题就不必为它付出代价。 */
 [data-bg-glass] .server-card,
 [data-bg-glass] .compact-node-card,
+[data-bg-glass] .node-list,
 [data-bg-glass] .instance-panel,
 [data-bg-glass] .overview-card,
 [data-bg-glass] .home-group-tabs {

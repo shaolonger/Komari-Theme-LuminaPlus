@@ -68,6 +68,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { CompactNodeCard } from "./CompactNodeCard";
 import { CostSummary } from "./CostSummary";
 import { NodeCard } from "./NodeCard";
+import { NodeList } from "./NodeList";
 
 // 把多个 uuid 拼成单个签名串作为 memo key。逗号安全:uuid 是标准 UUID
 // ([0-9a-f-]),永远不含逗号。
@@ -1252,6 +1253,10 @@ export function NodeGrid() {
       </div>
     ));
   }, [uuidsKey, mode]);
+  const listUuids = useMemo(
+    () => (uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : []),
+    [uuidsKey],
+  );
   const compareHref = useMemo(() => {
     const seed = filteredNodes.slice(0, HOME_COMPARE_SEED_COUNT).map((node) => node.uuid);
     if (seed.length < 2) return "/compare";
@@ -1264,9 +1269,11 @@ export function NodeGrid() {
     facetOptions.length > 0;
   // 筛选标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
   // 边缘和第一张卡片对齐。
-  const gridClassName = mode === "compact" ? "grid gap-3" : "grid gap-4 xl:gap-5";
+  const gridClassName = mode === "compact" || mode === "list" ? "grid gap-3" : "grid gap-4 xl:gap-5";
   const gridColumns =
-    mode === "compact"
+    mode === "list"
+      ? "1fr"
+      : mode === "compact"
       ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))"
       : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))";
   const activeSavedViewName = activeSavedView?.name ?? "";
@@ -1517,13 +1524,15 @@ export function NodeGrid() {
 	          />
 	        </div>
 	      )}
-      <div className={gridClassName} style={{ gridTemplateColumns: gridColumns }}>
-        {cards.length > 0 ? (
-          cards
+      {listUuids.length > 0 ? (
+        mode === "list" ? (
+          <NodeList uuids={listUuids} />
         ) : (
-          <div className="home-filter-empty">当前筛选下没有匹配的 VPS</div>
-        )}
-      </div>
+          <div className={gridClassName} style={{ gridTemplateColumns: gridColumns }}>{cards}</div>
+        )
+      ) : (
+        <div className="home-filter-empty">当前筛选下没有匹配的 VPS</div>
+      )}
     </>
   );
 }
