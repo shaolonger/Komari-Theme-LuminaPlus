@@ -12,13 +12,24 @@ import {
   type VpsListSortKey,
 } from "@/utils/vpsListSort";
 
-const DIRECT_SORT_GROUPS: Array<Array<{ key: VpsListSortKey; label: string }>> = [
-  [{ key: "status", label: "状态" }, { key: "name", label: "名称" }],
-  [{ key: "cpu", label: "CPU" }, { key: "memory", label: "内存" }, { key: "disk", label: "磁盘" }, { key: "load", label: "负载" }],
-  [{ key: "upload", label: "上传" }, { key: "download", label: "下载" }],
-  [{ key: "trafficUsage", label: "流量" }],
-  [{ key: "latency", label: "延迟" }, { key: "loss", label: "丢包" }],
-  [{ key: "uptime", label: "在线" }, { key: "expiry", label: "到期" }, { key: "price", label: "费用" }],
+const PRIMARY_SORT_FIELDS: Array<{ key: VpsListSortKey; label: string }> = [
+  { key: "status", label: "状态" },
+  { key: "name", label: "名称" },
+  { key: "cpu", label: "CPU" },
+  { key: "memory", label: "内存" },
+  { key: "disk", label: "磁盘" },
+  { key: "load", label: "负载" },
+  { key: "upload", label: "上传" },
+  { key: "download", label: "下载" },
+  { key: "trafficUsage", label: "流量" },
+];
+
+const SECONDARY_SORT_FIELDS: Array<{ key: VpsListSortKey; label: string }> = [
+  { key: "latency", label: "延迟" },
+  { key: "loss", label: "丢包" },
+  { key: "uptime", label: "在线" },
+  { key: "expiry", label: "到期" },
+  { key: "price", label: "费用" },
 ];
 
 function SortHeaderButton({
@@ -51,41 +62,27 @@ function SortHeaderButton({
   );
 }
 
-function SortHeaderGroup({
-  children,
-  sorts,
-  onSort,
-}: {
-  children: Array<{ key: VpsListSortKey; label: string }>;
-  sorts: VpsListSortCondition[];
-  onSort: (key: VpsListSortKey, additive: boolean) => void;
-}) {
-  return (
-    <span className="node-list-sort-head-group" role="columnheader">
-      {children.map((item) => <SortHeaderButton key={item.key} sortKey={item.key} label={item.label} sorts={sorts} onSort={onSort} />)}
-    </span>
-  );
-}
-
 function clampPercent(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, value));
 }
 
 function ResourceMetric({
+  kind,
   label,
   value,
   fraction,
   color,
 }: {
+  kind: "cpu" | "memory" | "disk" | "load";
   label: string;
   value: string;
   fraction: number;
   color: string;
 }) {
   return (
-    <span
-      className="node-list-resource"
+    <div
+      className={`node-list-cell node-list-resource is-${kind}`}
       style={{
         "--node-list-meter": `${clampPercent(fraction * 100)}%`,
         "--node-list-meter-color": color,
@@ -95,7 +92,7 @@ function ResourceMetric({
       <span>{label}</span>
       <strong>{value}</strong>
       <i aria-hidden />
-    </span>
+    </div>
   );
 }
 
@@ -131,8 +128,10 @@ function NodeListRow({ uuid }: { uuid: string }) {
 
   return (
     <div className={clsx("node-list-row", isOffline && "is-offline")} role="row">
-      <div className="node-list-cell node-list-node" role="cell">
+      <div className="node-list-cell node-list-status-cell" role="cell">
         <span className="node-list-status" data-online={node.online === true ? "true" : node.online === false ? "false" : "pending"} title={node.online === true ? "在线" : node.online === false ? "离线" : "等待上报"} />
+      </div>
+      <div className="node-list-cell node-list-node" role="cell">
         <Flag region={node.region} size={15} />
         <span className="node-list-identity">
           <Link to={`/instance/${node.uuid}`} title={node.name}>{node.name}</Link>
@@ -141,33 +140,48 @@ function NodeListRow({ uuid }: { uuid: string }) {
         <OsLogo value={node.os} size={16} />
       </div>
 
-      <div className="node-list-cell node-list-resources" role="cell" aria-label="资源状态">
-        <ResourceMetric label="CPU" value={formatMetricPercent(node.cpuPct)} fraction={node.cpuPct / 100} color="var(--progress-cpu)" />
-        <ResourceMetric label="内存" value={formatMetricPercent(node.ramPct)} fraction={node.ramPct / 100} color="var(--progress-memory)" />
-        <ResourceMetric label="磁盘" value={formatMetricPercent(node.diskPct)} fraction={node.diskPct / 100} color="var(--progress-disk)" />
-        <ResourceMetric label="负载" value={formatLoadValue(node.load1)} fraction={loadFraction} color="var(--progress-network)" />
+      <ResourceMetric kind="cpu" label="CPU" value={formatMetricPercent(node.cpuPct)} fraction={node.cpuPct / 100} color="var(--progress-cpu)" />
+      <ResourceMetric kind="memory" label="内存" value={formatMetricPercent(node.ramPct)} fraction={node.ramPct / 100} color="var(--progress-memory)" />
+      <ResourceMetric kind="disk" label="磁盘" value={formatMetricPercent(node.diskPct)} fraction={node.diskPct / 100} color="var(--progress-disk)" />
+      <ResourceMetric kind="load" label="负载" value={formatLoadValue(node.load1)} fraction={loadFraction} color="var(--progress-network)" />
+
+      <div className="node-list-cell node-list-speed is-upload" role="cell" aria-label="上传速度">
+        <ArrowUp size={11} aria-hidden />
+        <strong>{upRate.value}</strong>
+        <small>{upRate.unit}</small>
+      </div>
+      <div className="node-list-cell node-list-speed is-download" role="cell" aria-label="下载速度">
+        <ArrowDown size={11} aria-hidden />
+        <strong>{downRate.value}</strong>
+        <small>{downRate.unit}</small>
       </div>
 
-      <div className="node-list-cell node-list-network" role="cell" aria-label="实时网络">
-        <span><ArrowUp size={11} aria-hidden /><strong>{upRate.value}</strong><small>{upRate.unit}</small></span>
-        <span><ArrowDown size={11} aria-hidden /><strong>{downRate.value}</strong><small>{downRate.unit}</small></span>
-      </div>
-
-      <div className="node-list-cell node-list-traffic" role="cell" title={trafficTitle}>
+      <div className="node-list-cell node-list-traffic is-traffic" role="cell" title={trafficTitle}>
         <span><Database size={11} aria-hidden />流量</span>
         <strong>{traffic.detail}</strong>
         <i style={{ "--node-list-traffic": `${traffic.fraction * 100}%` } as CSSProperties} aria-hidden />
       </div>
 
-      <div className="node-list-cell node-list-ping" role="cell" aria-label="网络质量">
-        <span title="Ping 延迟"><Clock3 size={11} aria-hidden /><strong style={{ color: latencyColor }}>{ping.lastValue != null ? `${ping.lastValue.toFixed(2)}ms` : "—"}</strong></span>
-        <span title="丢包率"><Unplug size={11} aria-hidden /><strong style={{ color: lossColor }}>{ping.loss != null ? `${ping.loss.toFixed(2)}%` : "—"}</strong></span>
-      </div>
-
-      <div className="node-list-cell node-list-lifecycle" role="cell" aria-label="运行与续费">
-        <span title="在线时长"><Clock3 size={11} aria-hidden />{uptimeLabel}</span>
-        <span title="到期时间" style={{ color: expireColor }}><CalendarDays size={11} aria-hidden />{expireLabel}</span>
-        <strong title="续费价格">{renewalPrice || "未填价格"}</strong>
+      <div className="node-list-secondary">
+        <div className="node-list-cell node-list-secondary-metric" role="cell" title="Ping 延迟">
+          <Clock3 size={11} aria-hidden />
+          <strong style={{ color: latencyColor }}>{ping.lastValue != null ? `${ping.lastValue.toFixed(2)}ms` : "—"}</strong>
+        </div>
+        <div className="node-list-cell node-list-secondary-metric" role="cell" title="丢包率">
+          <Unplug size={11} aria-hidden />
+          <strong style={{ color: lossColor }}>{ping.loss != null ? `${ping.loss.toFixed(2)}%` : "—"}</strong>
+        </div>
+        <div className="node-list-cell node-list-secondary-metric" role="cell" title="在线时长">
+          <Clock3 size={11} aria-hidden />
+          <strong>{uptimeLabel}</strong>
+        </div>
+        <div className="node-list-cell node-list-secondary-metric" role="cell" title="到期时间" style={{ color: expireColor }}>
+          <CalendarDays size={11} aria-hidden />
+          <strong>{expireLabel}</strong>
+        </div>
+        <div className="node-list-cell node-list-secondary-metric is-price" role="cell" title="续费价格">
+          <strong>{renewalPrice || "未填价格"}</strong>
+        </div>
       </div>
 
       <Link className="node-list-detail" to={`/instance/${node.uuid}`} aria-label={`查看 ${node.name} 详情`} title="查看详情">
@@ -207,7 +221,18 @@ export function NodeList({
       onTouchCancel={() => onInteractionChange(false)}
     >
       <div className="node-list-head" role="row">
-        {DIRECT_SORT_GROUPS.map((group, index) => <SortHeaderGroup key={index} sorts={sorts} onSort={onSort}>{group}</SortHeaderGroup>)}
+        {PRIMARY_SORT_FIELDS.map((item) => (
+          <span key={item.key} className={`node-list-head-${item.key}`} role="columnheader">
+            <SortHeaderButton sortKey={item.key} label={item.label} sorts={sorts} onSort={onSort} />
+          </span>
+        ))}
+        <span className="node-list-head-secondary">
+          {SECONDARY_SORT_FIELDS.map((item) => (
+            <span key={item.key} role="columnheader">
+              <SortHeaderButton sortKey={item.key} label={item.label} sorts={sorts} onSort={onSort} />
+            </span>
+          ))}
+        </span>
         <span aria-hidden />
       </div>
       <div className="node-list-body" role="rowgroup">
