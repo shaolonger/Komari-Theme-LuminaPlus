@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  filterHomepagePingTaskGroups,
+  normalizeHomepagePingTaskGroups,
+} from "@/utils/homepagePingSettings";
 import { normalizeThemeSettings } from "@/utils/themeSettings";
 
 describe("normalizeThemeSettings", () => {
@@ -118,5 +122,16 @@ describe("normalizeThemeSettings", () => {
     expect(settings.homeSelectedNodeUuids).toEqual(["node-a", "node-b"]);
     expect(settings.homeSavedViews).toHaveLength(1);
     expect(settings.homeDefaultSavedViewId).toBe("core");
+  });
+});
+
+describe("filterHomepagePingTaskGroups", () => {
+  it("removes display groups belonging to deleted Ping tasks", () => {
+    expect(
+      filterHomepagePingTaskGroups(
+        normalizeHomepagePingTaskGroups({ 3: "公共", 7: "已删除", 9: "海外" }),
+        [3, 9],
+      ),
+    ).toEqual({ 3: "公共", 9: "海外" });
   });
 });

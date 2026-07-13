@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   countHomepagePingBindingPairs,
   countHomepagePingBoundClients,
+  filterHomepagePingTaskBindings,
   getHomepagePingTaskIdsByClient,
   invertHomepagePingTaskBindings,
   normalizeHomepagePingTaskBindings,
@@ -37,6 +38,17 @@ describe("invertHomepagePingTaskBindings", () => {
       ["node-c", 9],
       ["node-b", 9],
     ]);
+  });
+});
+
+describe("filterHomepagePingTaskBindings", () => {
+  it("removes bindings for Ping tasks no longer present in the task catalogue", () => {
+    expect(
+      filterHomepagePingTaskBindings(
+        { 3: ["node-a"], 7: ["node-a", "node-b"], 9: ["node-c"] },
+        [3, 9],
+      ),
+    ).toEqual({ 3: ["node-a"], 9: ["node-c"] });
   });
 });
 

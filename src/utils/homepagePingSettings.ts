@@ -78,3 +78,23 @@ export function normalizeHomepagePingTaskGroups(
 
   return normalized;
 }
+
+export function filterHomepagePingTaskGroups(
+  taskGroups: HomepagePingTaskGroups,
+  availableTaskIds: Iterable<number>,
+): HomepagePingTaskGroups {
+  const available = new Set(
+    Array.from(availableTaskIds).filter(
+      (taskId) => Number.isInteger(taskId) && taskId > 0,
+    ),
+  );
+  const filtered: HomepagePingTaskGroups = {};
+
+  for (const [taskId, label] of Object.entries(normalizeHomepagePingTaskGroups(taskGroups))) {
+    if (available.has(Number(taskId))) {
+      filtered[taskId] = label;
+    }
+  }
+
+  return filtered;
+}

@@ -74,6 +74,7 @@ import {
 } from "@/utils/homeVpsViews";
 import { buildHomepagePingClientBindingRows } from "@/utils/homepagePingBindingRows";
 import {
+  filterHomepagePingTaskGroups,
   normalizeHomepagePingPrimaryTasks,
   normalizeHomepagePingTaskGroups,
   type HomepagePingAggregationStrategy,
@@ -83,6 +84,7 @@ import {
 import {
   countHomepagePingBindingPairs,
   countHomepagePingBoundClients,
+  filterHomepagePingTaskBindings,
   getHomepagePingTaskIdsByClient,
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
@@ -606,6 +608,11 @@ export function ThemeManage() {
   }, []);
 
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
+  const activePingTaskIds = useMemo(
+    () => sortedTasks.map((task) => task.id),
+    [sortedTasks],
+  );
+  const canValidatePingTasks = !tasksLoading && !tasksError;
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
   const clientsById = useMemo(
     () => new Map(sortedClients.map((client) => [client.uuid, client])),
@@ -705,15 +712,41 @@ export function ThemeManage() {
         second: "2-digit",
         hourCycle: "h23",
       });
-  const prunedDraftBindings = useMemo(() => pruneBindings(draftBindings), [draftBindings]);
+  const locallyPrunedDraftBindings = useMemo(
+    () => pruneBindings(draftBindings),
+    [draftBindings],
+  );
+  const prunedDraftBindings = useMemo(() => {
+    const bindings = locallyPrunedDraftBindings;
+    return canValidatePingTasks
+      ? filterHomepagePingTaskBindings(bindings, activePingTaskIds)
+      : bindings;
+  }, [activePingTaskIds, canValidatePingTasks, locallyPrunedDraftBindings]);
   const normalizedDraftPingPrimaryTasks = useMemo(
     () => normalizeHomepagePingPrimaryTasks(draftPingPrimaryTasks, prunedDraftBindings),
     [draftPingPrimaryTasks, prunedDraftBindings],
   );
   const normalizedDraftPingTaskGroups = useMemo(
-    () => normalizeHomepagePingTaskGroups(draftPingTaskGroups),
-    [draftPingTaskGroups],
+    () => {
+      const taskGroups = normalizeHomepagePingTaskGroups(draftPingTaskGroups);
+      return canValidatePingTasks
+        ? filterHomepagePingTaskGroups(taskGroups, activePingTaskIds)
+        : taskGroups;
+    },
+    [activePingTaskIds, canValidatePingTasks, draftPingTaskGroups],
   );
+  const stalePingTaskIds = useMemo(() => {
+    if (!canValidatePingTasks) return [];
+    const active = new Set(activePingTaskIds);
+    const referenced = new Set([
+      ...Object.keys(locallyPrunedDraftBindings),
+      ...Object.keys(normalizeHomepagePingTaskGroups(draftPingTaskGroups)),
+    ]);
+    return Array.from(referenced)
+      .map(Number)
+      .filter((taskId) => !active.has(taskId))
+      .sort((left, right) => left - right);
+  }, [activePingTaskIds, canValidatePingTasks, draftPingTaskGroups, locallyPrunedDraftBindings]);
   const normalizedDraftFacetDimensions = useMemo(
     () => normalizeHomeFacetDimensions(draftFacetDimensions),
     [draftFacetDimensions],
@@ -849,26 +882,26 @@ export function ThemeManage() {
   }, [isDirty]);
 
   const boundClientCount = useMemo(
-    () => countHomepagePingBoundClients(draftBindings),
-    [draftBindings],
+    () => countHomepagePingBoundClients(prunedDraftBindings),
+    [prunedDraftBindings],
   );
   const bindingPairCount = useMemo(
-    () => countHomepagePingBindingPairs(draftBindings),
-    [draftBindings],
+    () => countHomepagePingBindingPairs(prunedDraftBindings),
+    [prunedDraftBindings],
   );
   const pingDiagnostics = useMemo(
     () =>
       buildPingDiagnostics({
         tasks: sortedTasks,
         clients: sortedClients,
-        bindings: draftBindings,
+        bindings: prunedDraftBindings,
       }),
-    [draftBindings, sortedClients, sortedTasks],
+    [prunedDraftBindings, sortedClients, sortedTasks],
   );
 
   const assignedTaskIdsByClientUuid = useMemo(
-    () => getHomepagePingTaskIdsByClient(draftBindings),
-    [draftBindings],
+    () => getHomepagePingTaskIdsByClient(prunedDraftBindings),
+    [prunedDraftBindings],
   );
   const pingClientBindingRows = useMemo(
     () =>
@@ -2141,6 +2174,21 @@ export function ThemeManage() {
               </strong>
             </div>
           </div>
+
+          {stalePingTaskIds.length > 0 && (
+            <div className="theme-manage-diagnostics" role="status">
+              <div className="theme-manage-diagnostics-head">
+                <strong>已忽略已删除的 Ping 任务</strong>
+                <span>{stalePingTaskIds.length} 项</span>
+              </div>
+              <div className="theme-manage-diagnostics-list">
+                <div className="theme-manage-diagnostic-item">
+                  <span>任务 ID {stalePingTaskIds.join("、")}</span>
+                  <p>首页不会再展示这些任务的延迟或丢包；点击页面顶部“保存设置”即可永久清理其绑定、主任务和展示分组。</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
             <div className="surface-inset px-4 py-4">

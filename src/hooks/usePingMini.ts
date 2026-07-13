@@ -183,7 +183,7 @@ function resolveSelectedTasks(
 // 会一直为 true，把后续所有轮询都卡死。给每个请求加 race 才能保证整条链路能恢复。
 const PING_REQUEST_TIMEOUT_MS = 35_000;
 
-async function buildOverviewMap(
+export async function buildHomepagePingOverviewMap(
   hours: number,
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
@@ -225,6 +225,7 @@ async function buildOverviewMap(
 
   const itemsByTask = new Map<number, Map<string, PingOverviewItem>>();
   const tasksById = new Map<number, PingTask>();
+  const unavailableTaskIds = new Set<number>();
   const refreshIntervals: number[] = [];
 
   for (const result of overviewResults) {
@@ -236,20 +237,31 @@ async function buildOverviewMap(
       taskId,
       overview: { records, tasks },
     } = result.value;
+
+    // A task can be removed between the theme settings being saved and this
+    // poll. Do not reinterpret its retained history as a valid task with a
+    // synthetic "任务 #id" label. A successful response without that task's
+    // metadata is the backend's authoritative deletion signal.
+    const task = tasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      unavailableTaskIds.add(taskId);
+      continue;
+    }
     for (const task of tasks) {
       tasksById.set(task.id, task);
     }
-    itemsByTask.set(taskId, buildPingOverviewItemsForTask(taskId, records, tasksById.get(taskId)));
+    itemsByTask.set(taskId, buildPingOverviewItemsForTask(taskId, records, task));
 
-    const taskInterval = tasks.find((task) => task.id === taskId)?.interval;
-    refreshIntervals.push(normalizeRefreshInterval(taskInterval));
+    refreshIntervals.push(normalizeRefreshInterval(task.interval));
   }
 
   const items = new Map<string, PingOverviewItem>();
   for (const [uuid, taskIds] of selectedTaskIdsByClient) {
+    const activeTaskIds = taskIds.filter((taskId) => !unavailableTaskIds.has(taskId));
+    if (activeTaskIds.length === 0) continue;
     const item = aggregateHomepagePingOverviewItem({
       client: uuid,
-      taskIds,
+      taskIds: activeTaskIds,
       itemsByTask,
       tasksById,
       aggregationStrategy,
@@ -259,7 +271,16 @@ async function buildOverviewMap(
   }
 
   return {
-    assignmentKey: buildHomepagePingAssignmentKey(selectedTaskIdsByClient),
+    assignmentKey: buildHomepagePingAssignmentKey(
+      new Map(
+        Array.from(selectedTaskIdsByClient)
+          .map(([uuid, taskIds]) => [
+            uuid,
+            taskIds.filter((taskId) => !unavailableTaskIds.has(taskId)),
+          ] as const)
+          .filter(([, taskIds]) => taskIds.length > 0),
+      ),
+    ),
     intervalMs:
       refreshIntervals.length > 0
         ? Math.min(...refreshIntervals)
@@ -422,7 +443,7 @@ async function refreshPingOverview() {
       return;
     }
 
-    const next = await buildOverviewMap(
+    const next = await buildHomepagePingOverviewMap(
       1,
       scheduledVisibleUuids,
       scheduledBindings,

@@ -35,6 +35,32 @@ export function normalizeHomepagePingTaskBindings(
   return normalized;
 }
 
+/**
+ * Keeps only homepage bindings whose Ping task is present in a freshly loaded
+ * task catalogue. This deliberately leaves validation to the caller: public
+ * pages may not have permission to read the catalogue, while the theme admin
+ * page does and can turn the result into a clean saved configuration.
+ */
+export function filterHomepagePingTaskBindings(
+  bindings: HomepagePingTaskBindings,
+  availableTaskIds: Iterable<number>,
+): HomepagePingTaskBindings {
+  const available = new Set(
+    Array.from(availableTaskIds).filter(
+      (taskId) => Number.isInteger(taskId) && taskId > 0,
+    ),
+  );
+  const filtered: HomepagePingTaskBindings = {};
+
+  for (const [taskId, clients] of Object.entries(normalizeHomepagePingTaskBindings(bindings))) {
+    if (available.has(Number(taskId))) {
+      filtered[taskId] = clients;
+    }
+  }
+
+  return filtered;
+}
+
 export function invertHomepagePingTaskBindings(
   bindings: HomepagePingTaskBindings,
 ): Map<string, number> {
