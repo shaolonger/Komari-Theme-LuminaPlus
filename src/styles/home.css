@@ -1687,6 +1687,20 @@
   scrollbar-width: none;
 }
 
+.home-facet-empty {
+  display: inline-flex;
+  min-width: 0;
+  height: 28px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  padding: 0 8px;
+  font-size: 9.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .home-facet-options button,
 .home-facet-more-popover button {
   display: inline-flex;

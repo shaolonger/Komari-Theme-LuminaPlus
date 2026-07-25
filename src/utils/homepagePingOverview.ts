@@ -5,6 +5,9 @@ import {
 } from "@/utils/homepagePingSettings";
 import { isLostPingSample, isValidPingLatency } from "@/utils/pingSamples";
 
+export const HOMEPAGE_PING_WINDOW_HOURS = 1;
+export const HOMEPAGE_PING_WINDOW_LABEL = "近 1 小时";
+
 interface TaskRecord {
   task_id: number;
   time: string | number;

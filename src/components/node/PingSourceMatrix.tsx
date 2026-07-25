@@ -2,18 +2,16 @@ import { useMemo, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3 } from "lucide-react";
 import type { HomepagePingSourceRow } from "@/utils/homepagePingSources";
+import { HOMEPAGE_PING_WINDOW_HOURS } from "@/utils/homepagePingOverview";
 import { formatLatencyValue, formatMetricNumber } from "@/utils/format";
 import { latencyHeatColor } from "@/utils/metricTone";
-import { isValidPingLatency } from "@/utils/pingSamples";
+import { buildPingSparklineGeometry } from "@/utils/pingSparkline";
 import { buildPingTaskVpsCompareUrl } from "@/utils/vpsCompare";
 
 const REGULAR_SOURCE_LIMIT = 4;
 const COMPACT_SOURCE_LIMIT = 4;
 const SPARKLINE_WIDTH = 100;
 const SPARKLINE_HEIGHT = 22;
-const SPARKLINE_BASELINE_MAX = 300;
-
-type SparkPoint = { x: number; y: number };
 
 function sourceMeta(source: HomepagePingSourceRow) {
   return source.group || source.target || `ID ${source.taskId}`;
@@ -27,89 +25,14 @@ function median(values: number[]) {
   return (sorted[center - 1] + sorted[center]) / 2;
 }
 
-function smoothPath(points: SparkPoint[]) {
-  if (points.length === 0) return "";
-  if (points.length === 1) {
-    const point = points[0];
-    return `M ${Math.max(0, point.x - 1.4)} ${point.y} L ${Math.min(
-      SPARKLINE_WIDTH,
-      point.x + 1.4,
-    )} ${point.y}`;
-  }
-
-  let path = `M ${points[0].x} ${points[0].y}`;
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const previous = points[index - 1] ?? points[index];
-    const current = points[index];
-    const next = points[index + 1];
-    const after = points[index + 2] ?? next;
-    const control1X = current.x + (next.x - previous.x) / 6;
-    const control1Y = current.y + (next.y - previous.y) / 6;
-    const control2X = next.x - (after.x - current.x) / 6;
-    const control2Y = next.y - (after.y - current.y) / 6;
-    path += ` C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${next.x} ${next.y}`;
-  }
-  return path;
-}
-
-function buildSparklineGeometry(
-  samples: Array<{ time: number; value: number }>,
-  sampleLimit: number,
-) {
-  const selected = samples.slice(-sampleLimit);
-  const validValues = selected
-    .map((sample) => sample.value)
-    .filter(isValidPingLatency);
-  const scaleMax = Math.max(SPARKLINE_BASELINE_MAX, ...validValues, 1);
-  const firstTime = selected[0]?.time ?? 0;
-  const lastTime = selected[selected.length - 1]?.time ?? firstTime;
-  const timeSpan = Math.max(0, lastTime - firstTime);
-  const xForSample = (sample: { time: number }, index: number) => {
-    if (selected.length <= 1) return SPARKLINE_WIDTH / 2;
-    if (timeSpan <= 0) return (index / (selected.length - 1)) * SPARKLINE_WIDTH;
-    return Math.max(
-      0,
-      Math.min(SPARKLINE_WIDTH, ((sample.time - firstTime) / timeSpan) * SPARKLINE_WIDTH),
-    );
-  };
-  const yForValue = (value: number) => {
-    const ratio = Math.min(1, value / scaleMax);
-    return SPARKLINE_HEIGHT - 2.5 - ratio * (SPARKLINE_HEIGHT - 5);
-  };
-
-  const segments: SparkPoint[][] = [];
-  const lossMarkers: number[] = [];
-  let activeSegment: SparkPoint[] = [];
-
-  selected.forEach((sample, index) => {
-    const x = xForSample(sample, index);
-    if (!isValidPingLatency(sample.value)) {
-      if (activeSegment.length > 0) segments.push(activeSegment);
-      activeSegment = [];
-      lossMarkers.push(x);
-      return;
-    }
-    activeSegment.push({ x, y: yForValue(sample.value) });
-  });
-  if (activeSegment.length > 0) segments.push(activeSegment);
-
-  return {
-    paths: segments.map(smoothPath).filter(Boolean),
-    lossMarkers,
-  };
-}
-
 function PingTaskSparkline({
   source,
-  density,
 }: {
   source: HomepagePingSourceRow;
-  density: "regular" | "compact";
 }) {
-  const sampleLimit = density === "compact" ? 14 : 22;
   const geometry = useMemo(
-    () => buildSparklineGeometry(source.samples, sampleLimit),
-    [source.samples, sampleLimit],
+    () => buildPingSparklineGeometry(source.samples),
+    [source.samples],
   );
   const lineColor = latencyHeatColor(source.latencyMs);
   const style = { "--ping-task-line": lineColor } as CSSProperties;
@@ -162,7 +85,10 @@ function PingTaskTile({
     >
       <div className="ping-task-tile-head">
         <Link
-          to={buildPingTaskVpsCompareUrl({ taskId: source.taskId })}
+          to={buildPingTaskVpsCompareUrl({
+            taskId: source.taskId,
+            hours: HOMEPAGE_PING_WINDOW_HOURS,
+          })}
           className="ping-task-name"
           title="对比该任务下的 VPS"
         >
@@ -181,7 +107,41 @@ function PingTaskTile({
         </span>
       </div>
       {density === "regular" && <small className="ping-task-meta">{sourceMeta(source)}</small>}
-      <PingTaskSparkline source={source} density={density} />
+      <PingTaskSparkline source={source} />
+    </article>
+  );
+}
+
+function CompactPingTaskLane({ source }: { source: HomepagePingSourceRow }) {
+  const latencyColor = latencyHeatColor(source.latencyMs);
+  const hasLoss = (source.lossPercent ?? 0) > 0;
+
+  return (
+    <article
+      className="ping-task-lane"
+      data-status={source.status}
+      data-loss={hasLoss ? "true" : "false"}
+      title={source.title}
+    >
+      <Link
+        to={buildPingTaskVpsCompareUrl({
+          taskId: source.taskId,
+          hours: HOMEPAGE_PING_WINDOW_HOURS,
+        })}
+        className="ping-task-lane-name"
+        title="对比该任务下的 VPS"
+      >
+        {source.name}
+      </Link>
+      <strong className="ping-task-lane-latency tabular" style={{ color: latencyColor }}>
+        {source.latencyShortLabel}
+        {source.latencyMs != null && <small>ms</small>}
+      </strong>
+      <PingTaskSparkline source={source} />
+      <strong className="ping-task-lane-loss tabular">
+        {source.lossShortLabel}
+        {source.lossPercent != null && <small>%</small>}
+      </strong>
     </article>
   );
 }
@@ -211,6 +171,7 @@ export function PingSourceMatrix({
   const medianLatency = median(latencyValues);
   const worstLatency = latencyValues.length > 0 ? Math.max(...latencyValues) : null;
   const maxLoss = lossValues.length > 0 ? Math.max(...lossValues) : null;
+  const compact = density === "compact";
 
   return (
     <section className="ping-source-matrix" data-density={density}>
@@ -237,14 +198,18 @@ export function PingSourceMatrix({
           </Link>
         </header>
       )}
-      <div className="ping-source-list">
+      <div className={compact ? "ping-source-lanes" : "ping-source-list"}>
         {visibleRows.map((source) => (
-          <PingTaskTile key={source.taskId} source={source} density={density} />
+          compact ? (
+            <CompactPingTaskLane key={source.taskId} source={source} />
+          ) : (
+            <PingTaskTile key={source.taskId} source={source} density={density} />
+          )
         ))}
         {hasOverflow && (
           <Link
             to={compareUrl}
-            className="ping-task-overflow"
+            className={compact ? "ping-task-lane ping-task-lane-overflow" : "ping-task-overflow"}
             title={`查看其余 ${overflowCount} 个监测任务`}
           >
             <strong>+{overflowCount}</strong>

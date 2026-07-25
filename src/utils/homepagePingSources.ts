@@ -1,5 +1,9 @@
 import type { PingOverviewItem, PingOverviewTaskSummary } from "@/types/komari";
 import { formatLatency, formatLatencyValue, formatMetricNumber, formatPacketLoss } from "@/utils/format";
+import {
+  HOMEPAGE_PING_WINDOW_HOURS,
+  HOMEPAGE_PING_WINDOW_LABEL,
+} from "@/utils/homepagePingOverview";
 import type { HomepagePingTaskGroups } from "@/utils/homepagePingSettings";
 
 export interface HomepagePingSourceRow {
@@ -91,7 +95,7 @@ function sourceTitle(row: {
         : row.status === "empty"
           ? "暂无样本"
           : "正常";
-  return `${row.name}${meta ? ` · ${meta}` : ""} · ${row.latencyLabel} · 丢包 ${row.lossLabel} · ${status}`;
+  return `${row.name}${meta ? ` · ${meta}` : ""} · ${row.latencyLabel} · ${HOMEPAGE_PING_WINDOW_LABEL}丢包 ${row.lossLabel} · ${status}`;
 }
 
 export function buildHomepagePingSourceRows(
@@ -144,7 +148,7 @@ export function buildHomepagePingCompareUrl(uuid: string, taskIds: number[]) {
   const params = new URLSearchParams({
     nodes: uuid,
     metric: "ping_latency",
-    hours: "4",
+    hours: String(HOMEPAGE_PING_WINDOW_HOURS),
     tab: "trend",
   });
   const normalizedTaskIds = Array.from(new Set(taskIds))

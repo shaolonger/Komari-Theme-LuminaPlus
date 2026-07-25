@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeTrafficUsed, resolveTrafficUsage, trafficTypeLabel } from "@/utils/traffic";
+import {
+  computeTrafficUsed,
+  formatCompactTrafficDetail,
+  resolveTrafficUsage,
+  trafficTypeLabel,
+} from "@/utils/traffic";
 
 describe("computeTrafficUsed", () => {
   it("reduces up/down per type", () => {
@@ -56,6 +61,32 @@ describe("resolveTrafficUsage", () => {
     expect(usage.used).toBe(250);
     expect(usage.fraction).toBe(1);
     expect(usage.remaining).toBe(0);
+  });
+});
+
+describe("formatCompactTrafficDetail", () => {
+  it("shares a single unit between used and limit values", () => {
+    expect(
+      formatCompactTrafficDetail(
+        resolveTrafficUsage("sum", 1.79 * 1024 ** 3, 0, 500 * 1024 ** 3),
+      ),
+    ).toBe("1.79/500 GB");
+  });
+
+  it("uses one unit below a much larger limit to keep both values readable", () => {
+    expect(
+      formatCompactTrafficDetail(
+        resolveTrafficUsage("sum", 22 * 1024 ** 3, 0, 2 * 1024 ** 4),
+      ),
+    ).toBe("22/2048 GB");
+  });
+
+  it("keeps unlimited usage concise", () => {
+    expect(
+      formatCompactTrafficDetail(
+        resolveTrafficUsage("sum", 2.73 * 1024 ** 3, 0, 0),
+      ),
+    ).toBe("2.73 GB/∞");
   });
 });
 

@@ -12,7 +12,12 @@ import {
   parseTags,
 } from "@/utils/format";
 import { latencyHeatColor, lossHeatColor, trafficUsageColor } from "@/utils/metricTone";
-import { resolveTrafficUsage, trafficTypeLabel, type TrafficDisplay } from "@/utils/traffic";
+import {
+  formatCompactTrafficDetail,
+  resolveTrafficUsage,
+  trafficTypeLabel,
+  type TrafficDisplay,
+} from "@/utils/traffic";
 import { resolveOsInfo } from "@/components/ui/OsLogo";
 
 export function useNodeCardModel(uuid: string, pingBucketCount?: number) {
@@ -94,6 +99,7 @@ export function useNodeCardModel(uuid: string, pingBucketCount?: number) {
         : trafficUsageColor(trafficUsage.fraction),
       remainingLabel: trafficUsage.unlimited ? "∞" : formatBytes(trafficUsage.remaining),
       detail: `${trafficUsedLabel} / ${trafficLimitLabel}`,
+      compactDetail: formatCompactTrafficDetail(trafficUsage),
       typeLabel: trafficTypeLabel(meta.traffic_limit_type),
     };
 

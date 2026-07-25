@@ -41,7 +41,8 @@ function clamp01(value: number) {
 }
 
 function formatCompactPercent(value: number) {
-  return Number.isFinite(value) ? formatMetricPercent(value) : "0.00%";
+  if (!Number.isFinite(value)) return "0%";
+  return formatMetricPercent(value, { digits: Math.abs(value) < 1 ? 2 : 1 });
 }
 
 function formatCompactExpire({ value, unit }: CompactExpire) {
@@ -81,6 +82,7 @@ function CompactGauge({
       className="compact-node-gauge"
       style={style}
       title={detail ? `${label} ${value} · ${detail}` : `${label} ${value}`}
+      aria-label={detail ? `${label} ${value}，${detail}` : `${label} ${value}`}
     >
       <div className="compact-node-gauge-head">
         <span className="compact-node-gauge-label">
@@ -301,8 +303,7 @@ function CompactLiveTraffic({
         <span className="compact-node-quota-fill" aria-hidden />
         <span className="compact-node-quota-content">
           <Database size={10} />
-          <span>流量</span>
-          <strong className="tabular">{traffic.detail}</strong>
+          <strong className="tabular">{traffic.compactDetail}</strong>
         </span>
       </div>
     </div>

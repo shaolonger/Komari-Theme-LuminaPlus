@@ -2,6 +2,8 @@
 .compact-node-card {
   --compact-card-status: var(--status-success);
   position: relative;
+  container-name: compact-card;
+  container-type: inline-size;
   content-visibility: auto;
   contain-intrinsic-size: auto 205px;
   display: flex;
@@ -349,6 +351,28 @@
   font-size: 8.5px;
   font-weight: 760;
   text-overflow: ellipsis;
+}
+
+@container compact-card (max-width: 300px) {
+  .compact-node-gauge-label > span {
+    display: none;
+  }
+
+  .compact-node-gauge-head {
+    gap: 2px;
+  }
+
+  .compact-node-live-traffic {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .compact-node-traffic-pulse {
+    display: none;
+  }
+
+  .compact-node-quota-content {
+    padding-inline: 5px;
+  }
 }
 
 .compact-node-ping-empty {

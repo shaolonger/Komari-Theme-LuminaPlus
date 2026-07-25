@@ -477,6 +477,7 @@ function getDimensionLabel(dimensions: HomeFacetDimension[], id: string) {
 
 function FacetRail({
   dimensions,
+  dimensionCoverage,
   selectedDimension,
   options,
   optionCounts,
@@ -486,6 +487,7 @@ function FacetRail({
   onSelectValue,
 }: {
   dimensions: HomeFacetDimension[];
+  dimensionCoverage: Map<string, number>;
   selectedDimension: string;
   options: string[];
   optionCounts: Map<string, number>;
@@ -528,7 +530,7 @@ function FacetRail({
         >
           {dimensions.map((dimension) => (
             <option key={dimension.id} value={dimension.id}>
-              {dimension.label}
+              {dimension.label} · {dimensionCoverage.get(dimension.id) ?? 0}
             </option>
           ))}
         </select>
@@ -551,6 +553,13 @@ function FacetRail({
           <small>{optionCounts.get(HOME_ALL_GROUP) ?? 0}</small>
         </button>
         {quickOptions.map((option) => renderOption(option, "quick"))}
+        {options.length === 0 && (
+          <span className="home-facet-empty" role="status">
+            {(optionCounts.get(HOME_ALL_GROUP) ?? 0) > 0
+              ? `当前节点尚未配置${dimensionLabel}`
+              : "当前筛选下无节点"}
+          </span>
+        )}
       </div>
       {overflowOptions.length > 0 && (
         <details className="home-facet-more">
@@ -1037,6 +1046,21 @@ export function NodeGrid() {
     }
     return counts;
   }, [optionFacetNodes, selectedFacetDimension]);
+  const facetDimensionCoverage = useMemo(() => {
+    const coverage = new Map<string, number>();
+    for (const dimension of visibleFacetDimensions) {
+      const candidates = filterHomeFacetNodes({
+        nodes: facetNodes,
+        filters: clearFacetFilter(facetFilters, dimension.id),
+        selectedNodeUuids,
+      });
+      coverage.set(
+        dimension.id,
+        candidates.filter((node) => (node.facets[dimension.id] ?? []).length > 0).length,
+      );
+    }
+    return coverage;
+  }, [facetFilters, facetNodes, selectedNodeUuids, visibleFacetDimensions]);
   const activeFacetFilterCount = useMemo(
     () =>
       Object.values(facetFilters).reduce(
@@ -1278,8 +1302,7 @@ export function NodeGrid() {
   const showFacetRail =
     themeSettings.isReady &&
     themeSettings.showGroupTabs &&
-    visibleFacetDimensions.length > 0 &&
-    facetOptions.length > 0;
+    visibleFacetDimensions.length > 0;
   const gridClassName = mode === "compact" || mode === "list" ? "grid gap-3" : "grid gap-4 xl:gap-5";
   const gridColumns =
     mode === "list"
@@ -1558,6 +1581,7 @@ export function NodeGrid() {
         {showFacetRail && (
           <FacetRail
             dimensions={visibleFacetDimensions}
+            dimensionCoverage={facetDimensionCoverage}
             selectedDimension={selectedFacetDimension}
             options={facetOptions}
             optionCounts={facetOptionCounts}

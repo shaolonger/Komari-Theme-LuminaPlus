@@ -62,6 +62,7 @@ describe("homepage Ping source helpers", () => {
     expect(rows[0].attentionScore).toBeGreaterThan(rows[1].attentionScore);
     expect(rows[0].latencyRatio).toBeGreaterThan(rows[1].latencyRatio);
     expect(rows[0].title).toContain("Los Angeles · 海外");
+    expect(rows[0].title).toContain("近 1 小时丢包 6.35%");
   });
 
   it("keeps same-attention rows in source order and models empty sources", () => {
@@ -206,13 +207,13 @@ describe("homepage Ping source helpers", () => {
 
   it("builds a compare URL for single-VPS multi-task trends", () => {
     expect(buildHomepagePingCompareUrl("node-a", [5, 2, 2])).toBe(
-      "/compare?nodes=node-a&metric=ping_latency&hours=4&tab=trend&pingTasks=2%2C5",
+      "/compare?nodes=node-a&metric=ping_latency&hours=1&tab=trend&pingTasks=2%2C5",
     );
   });
 
   it("omits pingTasks from compare URLs when no valid task IDs exist", () => {
     expect(buildHomepagePingCompareUrl("node-a", [0, -1, Number.NaN])).toBe(
-      "/compare?nodes=node-a&metric=ping_latency&hours=4&tab=trend",
+      "/compare?nodes=node-a&metric=ping_latency&hours=1&tab=trend",
     );
   });
 });

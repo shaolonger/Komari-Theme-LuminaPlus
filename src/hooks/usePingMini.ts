@@ -9,6 +9,7 @@ import {
   aggregateHomepagePingOverviewItem,
   buildHomepagePingAssignmentKey,
   buildPingOverviewItemsForTask,
+  HOMEPAGE_PING_WINDOW_HOURS,
 } from "@/utils/homepagePingOverview";
 import {
   DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
@@ -445,7 +446,7 @@ async function refreshPingOverview() {
     }
 
     const next = await buildHomepagePingOverviewMap(
-      1,
+      HOMEPAGE_PING_WINDOW_HOURS,
       scheduledVisibleUuids,
       scheduledBindings,
       aggregationStrategy,
