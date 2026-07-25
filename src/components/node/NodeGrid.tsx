@@ -10,8 +10,10 @@ import {
   CircleDollarSign,
   ListFilter,
   ListChecks,
+  MoreHorizontal,
   Network,
   Search,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -80,6 +82,7 @@ import { VpsListSortPanel } from "./VpsListSortPanel";
 const UUID_KEY_SEPARATOR = ",";
 const WORKBENCH_OPEN_STORAGE_KEY = "lumina-home-workbench-open";
 const HOME_COMPARE_SEED_COUNT = 3;
+const HOME_FACET_QUICK_OPTION_LIMIT = 10;
 
 interface HomeOverview {
   totalNodes: number;
@@ -441,10 +444,11 @@ function HomeRiskFilters({
           <button
             key={filter.value}
             type="button"
+            data-zero={filter.value !== "all" && count === 0 ? "true" : "false"}
             data-active={selectedFilter === filter.value ? "true" : "false"}
             onClick={() => onSelectFilter(filter.value)}
           >
-            <span>{filter.label}</span>
+            <span>{filter.value === "all" ? "全部节点" : filter.label}</span>
             {filter.value !== "all" && <strong>{count}</strong>}
           </button>
         );
@@ -471,105 +475,119 @@ function getDimensionLabel(dimensions: HomeFacetDimension[], id: string) {
   return dimensions.find((dimension) => dimension.id === id)?.label ?? id;
 }
 
-function FacetTabs({
+function FacetRail({
   dimensions,
   selectedDimension,
   options,
+  optionCounts,
   selectedValues,
+  activeFilterCount,
   onSelectDimension,
   onSelectValue,
 }: {
   dimensions: HomeFacetDimension[];
   selectedDimension: string;
   options: string[];
+  optionCounts: Map<string, number>;
   selectedValues: string[];
+  activeFilterCount: number;
   onSelectDimension: (dimension: string) => void;
   onSelectValue: (value: string) => void;
 }) {
+  const quickOptions = Array.from(new Set([...selectedValues, ...options])).slice(
+    0,
+    HOME_FACET_QUICK_OPTION_LIMIT,
+  );
+  const quickSet = new Set(quickOptions);
+  const overflowOptions = options.filter((option) => !quickSet.has(option));
+  const dimensionLabel = getDimensionLabel(dimensions, selectedDimension);
+
+  const renderOption = (option: string, location: "quick" | "more") => (
+    <button
+      key={`${location}-${option}`}
+      type="button"
+      role="option"
+      aria-selected={selectedValues.includes(option)}
+      data-active={selectedValues.includes(option) ? "true" : "false"}
+      onClick={() => onSelectValue(option)}
+      title={`${dimensionLabel}：${option}`}
+    >
+      <span>{option}</span>
+      <small>{optionCounts.get(option) ?? 0}</small>
+    </button>
+  );
+
   return (
-    <div className="home-facet-tabs">
-      <div className="home-facet-dimensions" role="tablist" aria-label="筛选维度">
-        {dimensions.map((dimension) => (
-          <button
-            key={dimension.id}
-            type="button"
-            role="tab"
-            aria-selected={selectedDimension === dimension.id}
-            data-active={selectedDimension === dimension.id ? "true" : "false"}
-            onClick={() => onSelectDimension(dimension.id)}
-            title={dimension.label}
-          >
-            {dimension.label}
-          </button>
-        ))}
+    <section className="home-facet-rail" aria-label="分类筛选">
+      <div className="home-facet-dimension-select">
+        <SlidersHorizontal size={13} aria-hidden="true" />
+        <select
+          value={selectedDimension}
+          onChange={(event) => onSelectDimension(event.target.value)}
+          aria-label="选择筛选维度"
+        >
+          {dimensions.map((dimension) => (
+            <option key={dimension.id} value={dimension.id}>
+              {dimension.label}
+            </option>
+          ))}
+        </select>
+        {activeFilterCount > 0 && <strong>{activeFilterCount}</strong>}
+        <ChevronDown size={12} aria-hidden="true" />
       </div>
-      <div className="home-group-tabs" role="tablist" aria-label={`${getDimensionLabel(dimensions, selectedDimension)}筛选`}>
+      <div
+        className="home-facet-options"
+        role="listbox"
+        aria-label={`${dimensionLabel}筛选`}
+      >
         <button
           type="button"
-          role="tab"
+          role="option"
           aria-selected={selectedValues.length === 0}
           data-active={selectedValues.length === 0 ? "true" : "false"}
           onClick={() => onSelectValue(HOME_ALL_GROUP)}
         >
-          全部
+          <span>不限</span>
+          <small>{optionCounts.get(HOME_ALL_GROUP) ?? 0}</small>
         </button>
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            role="tab"
-            aria-selected={selectedValues.includes(option)}
-            data-active={selectedValues.includes(option) ? "true" : "false"}
-            onClick={() => onSelectValue(option)}
-            title={option}
-          >
-            {option}
-          </button>
-        ))}
+        {quickOptions.map((option) => renderOption(option, "quick"))}
       </div>
-    </div>
+      {overflowOptions.length > 0 && (
+        <details className="home-facet-more">
+          <summary title={`查看其余 ${overflowOptions.length} 个${dimensionLabel}`}>
+            <MoreHorizontal size={13} aria-hidden="true" />
+            <span>更多</span>
+            <strong>+{overflowOptions.length}</strong>
+          </summary>
+          <div className="home-facet-more-popover" role="listbox">
+            <header>
+              <span>更多{dimensionLabel}</span>
+              <small>{options.length} 项</small>
+            </header>
+            {overflowOptions.map((option) => renderOption(option, "more"))}
+          </div>
+        </details>
+      )}
+    </section>
   );
 }
 
 function HomeFilterChips({
   dimensions,
   filters,
-  selectedNodeCount,
-  search,
-  riskFilter,
-  activeSavedViewName,
-  onClearSearch,
-  onClearSelectedNodes,
+  selectedDimension,
   onRemoveFacetValue,
-  onClearRiskFilter,
-  onClearAll,
+  onClearFacets,
 }: {
   dimensions: HomeFacetDimension[];
   filters: HomeFacetFilters;
-  selectedNodeCount: number;
-  search: string;
-  riskFilter: HomeRiskFilter;
-  activeSavedViewName: string;
-  onClearSearch: () => void;
-  onClearSelectedNodes: () => void;
+  selectedDimension: string;
   onRemoveFacetValue: (dimensionId: string, value: string) => void;
-  onClearRiskFilter: () => void;
-  onClearAll: () => void;
+  onClearFacets: () => void;
 }) {
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
-  const normalizedSearch = search.trim();
-
-  if (activeSavedViewName) {
-    chips.push({ key: "view", label: `视图: ${activeSavedViewName}`, onRemove: onClearAll });
-  }
-  if (selectedNodeCount > 0) {
-    chips.push({
-      key: "selected",
-      label: `已选 ${selectedNodeCount} 台`,
-      onRemove: onClearSelectedNodes,
-    });
-  }
   for (const [dimensionId, values] of Object.entries(filters)) {
+    if (dimensionId === selectedDimension) continue;
     for (const value of values) {
       chips.push({
         key: `${dimensionId}:${value}`,
@@ -577,13 +595,6 @@ function HomeFilterChips({
         onRemove: () => onRemoveFacetValue(dimensionId, value),
       });
     }
-  }
-  if (riskFilter !== "all") {
-    const riskLabel = HOME_RISK_FILTERS.find((item) => item.value === riskFilter)?.label ?? riskFilter;
-    chips.push({ key: "risk", label: `事项: ${riskLabel}`, onRemove: onClearRiskFilter });
-  }
-  if (normalizedSearch) {
-    chips.push({ key: "search", label: `搜索: ${normalizedSearch}`, onRemove: onClearSearch });
   }
 
   if (chips.length === 0) return null;
@@ -596,8 +607,8 @@ function HomeFilterChips({
           <X size={13} aria-hidden="true" />
         </button>
       ))}
-      <button type="button" className="home-filter-clear" onClick={onClearAll}>
-        清空筛选
+      <button type="button" className="home-filter-clear" onClick={onClearFacets}>
+        清空分类
       </button>
     </div>
   );
@@ -823,10 +834,6 @@ export function NodeGrid() {
     () => themeSettings.homeFacetDimensions.filter((dimension) => dimension.visible),
     [themeSettings.homeFacetDimensions],
   );
-  const activeSavedView = useMemo(
-    () => themeSettings.homeSavedViews.find((view) => view.id === activeSavedViewId) ?? null,
-    [activeSavedViewId, themeSettings.homeSavedViews],
-  );
   const facetNodes = useMemo<HomeFacetNode[]>(
     () =>
       visibleNodes.map((node) => {
@@ -1019,6 +1026,25 @@ export function NodeGrid() {
     themeSettings.homeGroupOrder,
     themeSettings.isReady,
   ]);
+  const facetOptionCounts = useMemo(() => {
+    const counts = new Map<string, number>([
+      [HOME_ALL_GROUP, optionFacetNodes.length],
+    ]);
+    for (const node of optionFacetNodes) {
+      for (const value of node.facets[selectedFacetDimension] ?? []) {
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [optionFacetNodes, selectedFacetDimension]);
+  const activeFacetFilterCount = useMemo(
+    () =>
+      Object.values(facetFilters).reduce(
+        (total, values) => total + values.length,
+        0,
+      ),
+    [facetFilters],
+  );
   useEffect(() => {
     if (selectedFacetValues.length === 0) return;
     const available = new Set(facetOptions);
@@ -1242,17 +1268,18 @@ export function NodeGrid() {
     return [...frozenUuids, ...liveUuids.filter((uuid) => !frozenUuidSet.has(uuid))];
   }, [listInteractionActive, uuidsKey]);
   const compareHref = useMemo(() => {
-    const seed = filteredNodes.slice(0, HOME_COMPARE_SEED_COUNT).map((node) => node.uuid);
+    const seed =
+      selectedNodeUuids.length >= 2
+        ? selectedNodeUuids.slice(0, HOME_COMPARE_SEED_COUNT)
+        : filteredNodes.slice(0, HOME_COMPARE_SEED_COUNT).map((node) => node.uuid);
     if (seed.length < 2) return "/compare";
     return `/compare?${new URLSearchParams({ nodes: seed.join(",") }).toString()}`;
-  }, [filteredNodes]);
-  const showFacetTabs =
+  }, [filteredNodes, selectedNodeUuids]);
+  const showFacetRail =
     themeSettings.isReady &&
     themeSettings.showGroupTabs &&
     visibleFacetDimensions.length > 0 &&
     facetOptions.length > 0;
-  // 筛选标签栏和卡片网格共用,让标签栏处在同一网格中、正好占一列卡片宽——
-  // 边缘和第一张卡片对齐。
   const gridClassName = mode === "compact" || mode === "list" ? "grid gap-3" : "grid gap-4 xl:gap-5";
   const gridColumns =
     mode === "list"
@@ -1260,7 +1287,6 @@ export function NodeGrid() {
       : mode === "compact"
       ? "repeat(auto-fill, minmax(min(100%, 260px), 1fr))"
       : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))";
-  const activeSavedViewName = activeSavedView?.name ?? "";
   const selectFacetValue = (value: string) => {
     setActiveSavedViewId("");
     setFacetFilters((prev) => {
@@ -1272,6 +1298,7 @@ export function NodeGrid() {
     });
   };
   const selectFacetDimension = (dimension: string) => {
+    setActiveSavedViewId("");
     setSelectedFacetDimension(dimension);
   };
   const removeFacetValue = (dimensionId: string, value: string) => {
@@ -1284,6 +1311,10 @@ export function NodeGrid() {
     setSelectedNodeUuids([]);
     setSelectedRiskFilter("all");
     setNodeSearch("");
+  };
+  const clearFacetFilters = () => {
+    setActiveSavedViewId("");
+    setFacetFilters({});
   };
   const clearSelectedNodes = () => {
     setActiveSavedViewId("");
@@ -1306,6 +1337,12 @@ export function NodeGrid() {
       ),
     );
   };
+  const hasActiveFilters =
+    nodeSearch.trim().length > 0 ||
+    selectedRiskFilter !== "all" ||
+    selectedNodeUuids.length > 0 ||
+    activeFacetFilterCount > 0 ||
+    activeSavedViewId.length > 0;
 
   if (!themeSettings.isReady) {
     return (
@@ -1374,140 +1411,170 @@ export function NodeGrid() {
         onOpenCostSummary={() => setCostSummaryOpen(true)}
         onToggle={() => setWorkbenchOpen((value) => !value)}
       />
-      <div className="home-workbench-controls">
-        <label className="home-workbench-search">
-          <Search size={15} aria-hidden="true" />
-	          <input
-	            type="search"
-	            value={nodeSearch}
-	            onChange={(event) => setNodeSearch(event.target.value)}
-	            placeholder="搜索 VPS、UUID、备注或标签"
-	            aria-label="搜索 VPS"
-	          />
-	        </label>
-	        {themeSettings.homeSavedViews.length > 0 && (
-	          <label className="home-workbench-sort home-saved-view-picker">
-	            <Bookmark size={15} aria-hidden="true" />
-	            <select
-	              value={activeSavedViewId}
-	              onChange={(event) => {
-	                const viewId = event.target.value;
-	                if (viewId) applySavedView(viewId);
-	                else setActiveSavedViewId("");
-	              }}
-	              aria-label="切换保存视图"
-	            >
-	              <option value="">手动视图</option>
-	              {themeSettings.homeSavedViews.map((view) => (
-	                <option key={view.id} value={view.id}>
-	                  {view.name}
-	                </option>
-	              ))}
-	            </select>
-	          </label>
-	        )}
-	        {mode === "list" ? (
-	          <button
-	            type="button"
-	            className="home-select-button"
-	            data-active={listSortPanelOpen ? "true" : "false"}
-	            aria-expanded={listSortPanelOpen}
-	            onClick={() => setListSortPanelOpen((value) => !value)}
-	          >
-	            <ListFilter size={15} aria-hidden="true" />
-	            排序 {listSorts.length}
-	          </button>
-	        ) : (
-	          <label className="home-workbench-sort">
-	            <ArrowUpDown size={15} aria-hidden="true" />
-	            <select
-	              value={workbenchSort}
-	              onChange={(event) => {
-	                setActiveSavedViewId("");
-	                setWorkbenchSort(event.target.value as WorkbenchSortKey);
-	              }}
-	              aria-label="排序 VPS"
-	            >
-              {WORKBENCH_SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-	              ))}
-	            </select>
-	          </label>
-	        )}
-	        <button
-	          type="button"
-	          className="home-select-button"
-	          data-active={selectedNodeUuids.length > 0 ? "true" : "false"}
-	          onClick={() => setNodeSelectorOpen((value) => !value)}
-	        >
-	          <ListChecks size={15} aria-hidden="true" />
-	          {selectedNodeUuids.length > 0 ? `${selectedNodeUuids.length} 台` : "选择 VPS"}
-	        </button>
-	        <Link to="/fleet-3d" className="home-3d-link">
-	          <Network size={15} aria-hidden="true" />
-	          3D
-        </Link>
-        <Link to={compareHref} className="home-compare-link">
-          <BarChart3 size={15} aria-hidden="true" />
-          对比
-        </Link>
-        <HomeRiskFilters
-          risks={operationRisks}
-          selectedFilter={selectedRiskFilter}
-	          onSelectFilter={setSelectedRiskFilter}
-	        />
-	      </div>
-	      {mode === "list" && listSortPanelOpen && (
-	        <VpsListSortPanel
-	          sorts={listSorts}
-	          onToggle={(key) => handleListSort(key, true)}
-	          onChangeDirection={changeListSortDirection}
-	          onMove={moveListSort}
-	          onRemove={removeListSort}
-	          onReset={resetListSorts}
-	          onClose={() => setListSortPanelOpen(false)}
-	        />
-	      )}
-	      {nodeSelectorOpen && (
-	        <NodeSelectionPanel
-	          nodes={workbenchNodes}
-	          selectedUuids={selectedNodeUuids}
-	          searchTextByUuid={facetSearchTextByUuid}
-	          search={nodeSelectorSearch}
-	          onSearch={setNodeSelectorSearch}
-	          onToggleNode={toggleSelectedNode}
-	          onSelectMany={selectManyNodes}
-	          onClear={clearSelectedNodes}
-	          onClose={() => setNodeSelectorOpen(false)}
-	        />
-	      )}
-	      <HomeFilterChips
-	        dimensions={visibleFacetDimensions}
-	        filters={facetFilters}
-	        selectedNodeCount={selectedNodeUuids.length}
-	        search={nodeSearch}
-	        riskFilter={selectedRiskFilter}
-	        activeSavedViewName={activeSavedViewName}
-	        onClearSearch={() => setNodeSearch("")}
-	        onClearSelectedNodes={clearSelectedNodes}
-	        onRemoveFacetValue={removeFacetValue}
-	        onClearRiskFilter={() => setSelectedRiskFilter("all")}
-	        onClearAll={clearAllFilters}
-	      />
-	      {showFacetTabs && (
-	        <div className={`${gridClassName} mb-4`} style={{ gridTemplateColumns: gridColumns }}>
-	          <FacetTabs
-	            dimensions={visibleFacetDimensions}
-	            selectedDimension={selectedFacetDimension}
-	            options={facetOptions}
-	            selectedValues={selectedFacetValues}
-	            onSelectDimension={selectFacetDimension}
-	            onSelectValue={selectFacetValue}
-	          />
-	        </div>
-	      )}
+      <section className="home-command-area" aria-label="VPS 搜索与筛选">
+        <div className="home-command-bar">
+          <label className="home-workbench-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              type="search"
+              value={nodeSearch}
+              onChange={(event) => setNodeSearch(event.target.value)}
+              placeholder="搜索 VPS、UUID、备注或标签"
+              aria-label="搜索 VPS"
+            />
+          </label>
+          <HomeRiskFilters
+            risks={operationRisks}
+            selectedFilter={selectedRiskFilter}
+            onSelectFilter={setSelectedRiskFilter}
+          />
+          <span
+            className="home-command-result"
+            title={`当前显示 ${filteredNodes.length} / ${visibleNodes.length} 台 VPS`}
+          >
+            <strong>{filteredNodes.length}</strong>
+            <span>/ {visibleNodes.length} 台</span>
+          </span>
+          {themeSettings.homeSavedViews.length > 0 && (
+            <label className="home-workbench-sort home-saved-view-picker">
+              <Bookmark size={14} aria-hidden="true" />
+              <select
+                value={activeSavedViewId}
+                onChange={(event) => {
+                  const viewId = event.target.value;
+                  if (viewId) applySavedView(viewId);
+                  else setActiveSavedViewId("");
+                }}
+                aria-label="切换保存视图"
+              >
+                <option value="">手动视图</option>
+                {themeSettings.homeSavedViews.map((view) => (
+                  <option key={view.id} value={view.id}>
+                    {view.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {mode === "list" ? (
+            <button
+              type="button"
+              className="home-command-action"
+              data-active={listSortPanelOpen ? "true" : "false"}
+              aria-expanded={listSortPanelOpen}
+              onClick={() => setListSortPanelOpen((value) => !value)}
+            >
+              <ListFilter size={14} aria-hidden="true" />
+              <span>排序 {listSorts.length}</span>
+            </button>
+          ) : (
+            <label className="home-workbench-sort">
+              <ArrowUpDown size={14} aria-hidden="true" />
+              <select
+                value={workbenchSort}
+                onChange={(event) => {
+                  setActiveSavedViewId("");
+                  setWorkbenchSort(event.target.value as WorkbenchSortKey);
+                }}
+                aria-label="排序 VPS"
+              >
+                {WORKBENCH_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button
+            type="button"
+            className="home-command-action"
+            data-active={selectedNodeUuids.length > 0 ? "true" : "false"}
+            aria-expanded={nodeSelectorOpen}
+            onClick={() => setNodeSelectorOpen((value) => !value)}
+            title="指定要显示或对比的 VPS"
+          >
+            <ListChecks size={14} aria-hidden="true" />
+            <span>
+              {selectedNodeUuids.length > 0
+                ? `指定 ${selectedNodeUuids.length}`
+                : "指定 VPS"}
+            </span>
+          </button>
+          {selectedNodeUuids.length >= 2 && (
+            <Link
+              to={compareHref}
+              className="home-command-action is-contextual"
+              title="对比已指定的 VPS（最多带入 3 台）"
+            >
+              <BarChart3 size={14} aria-hidden="true" />
+              <span>对比 {Math.min(selectedNodeUuids.length, HOME_COMPARE_SEED_COUNT)}</span>
+            </Link>
+          )}
+          <Link
+            to="/fleet-3d"
+            className="home-command-action is-view"
+            title="打开 3D 舰队视图"
+          >
+            <Network size={14} aria-hidden="true" />
+            <span>3D</span>
+          </Link>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="home-command-reset"
+              onClick={clearAllFilters}
+              title="清除搜索、状态和分类筛选"
+              aria-label="清除全部筛选"
+            >
+              <X size={14} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        {mode === "list" && listSortPanelOpen && (
+          <VpsListSortPanel
+            sorts={listSorts}
+            onToggle={(key) => handleListSort(key, true)}
+            onChangeDirection={changeListSortDirection}
+            onMove={moveListSort}
+            onRemove={removeListSort}
+            onReset={resetListSorts}
+            onClose={() => setListSortPanelOpen(false)}
+          />
+        )}
+        {nodeSelectorOpen && (
+          <NodeSelectionPanel
+            nodes={workbenchNodes}
+            selectedUuids={selectedNodeUuids}
+            searchTextByUuid={facetSearchTextByUuid}
+            search={nodeSelectorSearch}
+            onSearch={setNodeSelectorSearch}
+            onToggleNode={toggleSelectedNode}
+            onSelectMany={selectManyNodes}
+            onClear={clearSelectedNodes}
+            onClose={() => setNodeSelectorOpen(false)}
+          />
+        )}
+        {showFacetRail && (
+          <FacetRail
+            dimensions={visibleFacetDimensions}
+            selectedDimension={selectedFacetDimension}
+            options={facetOptions}
+            optionCounts={facetOptionCounts}
+            selectedValues={selectedFacetValues}
+            activeFilterCount={activeFacetFilterCount}
+            onSelectDimension={selectFacetDimension}
+            onSelectValue={selectFacetValue}
+          />
+        )}
+        <HomeFilterChips
+          dimensions={visibleFacetDimensions}
+          filters={facetFilters}
+          selectedDimension={selectedFacetDimension}
+          onRemoveFacetValue={removeFacetValue}
+          onClearFacets={clearFacetFilters}
+        />
+      </section>
       {listUuids.length > 0 ? (
         mode === "list" ? (
           <NodeList
