@@ -1,261 +1,232 @@
-/* 紧凑节点卡片 */
+/* 高密度节点卡片：一行资源、一行实时流量、一个多任务 Ping 时间带。 */
 .compact-node-card {
+  --compact-card-status: var(--status-success);
   position: relative;
-  /* 对屏幕外卡片跳过布局/样式/绘制。首页网格里只有约 16 张卡片在视口内,但每张屏幕外卡片仍会在
-     每约 1s 的指标刷新(样式/内联变量变动)和滚动时被布局和绘制——这是生产环境性能分析里的主要开销。
-     `auto <length>` 保留一个占位尺寸让滚动条稳定;浏览器在首次渲染后记住每张卡片的真实高度,因此
-     紧凑卡片(高度随计费/流量小块变化)滚动回来时不会跳动。该值只是首帧估算,并非沿用大卡片的 438px。 */
   content-visibility: auto;
-  contain-intrinsic-size: auto 268px;
+  contain-intrinsic-size: auto 205px;
   display: flex;
+  min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 64%, var(--border));
+  border-radius: 12px;
   background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-a) 94%, transparent) 0%,
-      color-mix(in srgb, var(--surface-a) 98%, black 2%) 100%
-  );
-  box-shadow: var(--shadow-card);
-  padding: 12px 14px;
+    linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 32%),
+    var(--surface-a);
+  box-shadow:
+    inset 3px 0 0 var(--compact-card-status),
+    0 1px 2px color-mix(in srgb, black 10%, transparent),
+    0 9px 24px -20px color-mix(in srgb, black 58%, transparent);
+  padding: 8px 9px 8px 11px;
   color: var(--text-primary);
   transition:
-    transform 180ms cubic-bezier(0.32, 0.72, 0, 1),
-    border-color 160ms ease;
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.compact-node-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-  opacity: 0.55;
-  pointer-events: none;
+.compact-node-card[data-status="warning"] {
+  --compact-card-status: var(--status-warning);
+}
+
+.compact-node-card[data-status="critical"],
+.compact-node-card.is-offline {
+  --compact-card-status: var(--status-offline);
 }
 
 .compact-node-card:hover {
+  z-index: 1;
+  border-color: color-mix(in srgb, var(--compact-card-status) 34%, var(--border-strong));
+  box-shadow:
+    inset 3px 0 0 var(--compact-card-status),
+    0 1px 3px color-mix(in srgb, black 14%, transparent),
+    0 14px 30px -20px color-mix(in srgb, black 64%, transparent);
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--border-strong) 72%, var(--border));
 }
 
-.compact-node-card.is-offline {
+[data-appearance="dark"] .compact-node-card {
   background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--status-offline) 24%, var(--surface-a) 76%) 0%,
-      color-mix(in srgb, var(--status-offline) 16%, var(--surface-a) 84%) 100%
-    );
-  border-color: color-mix(in srgb, var(--status-offline) 58%, var(--border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--status-offline) 28%, transparent),
-    0 14px 32px -24px color-mix(in srgb, var(--status-offline) 34%, rgba(0, 0, 0, 0.82));
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface-a) 94%, black 6%);
 }
 
 .compact-node-header {
   display: flex;
   min-width: 0;
+  min-height: 22px;
   align-items: center;
   justify-content: space-between;
-  min-height: 28px;
-  gap: 10px;
-}
-
-.compact-node-title-wrap {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 0;
-}
-
-.compact-node-title-row,
-.compact-node-actions,
-.compact-node-gauge-label,
-.compact-node-health-label,
-.compact-node-info-row-label {
-  display: inline-flex;
-  align-items: center;
+  gap: 7px;
 }
 
 .compact-node-title-row {
+  display: flex;
   min-width: 0;
-  gap: 7px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
 }
 
 .compact-node-title {
   min-width: 0;
   overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 760;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-primary);
-  font-size: 14.5px;
-  font-weight: 720;
-  line-height: 1.2;
-  transition: color 160ms ease;
 }
 
 .compact-node-title:hover {
   color: var(--progress-cpu);
 }
 
-.compact-node-subtitle {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 10rem;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 7px;
-  background: var(--tag-gray-bg);
-  color: var(--tag-gray-fg);
-  padding: 0 0.5rem;
-  font-size: 10.5px;
-  font-weight: 680;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-node-actions {
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 .compact-node-detail-link {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
   place-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface-elev-a) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 45%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-elev-a) 68%, transparent);
   color: var(--text-tertiary);
-  transition:
-    background 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
 }
 
 .compact-node-detail-link:hover {
-  background: color-mix(in srgb, var(--surface-elev-a) 78%, transparent);
+  border-color: color-mix(in srgb, var(--progress-cpu) 34%, var(--border-strong));
   color: var(--progress-cpu);
-  transform: translateY(-1px);
 }
 
-.compact-node-chip-row {
+.compact-node-meta-row {
   display: flex;
   min-width: 0;
-  min-height: 22px;
-  max-height: 22px;
-  flex-wrap: nowrap;
+  min-height: 17px;
   align-items: center;
-  gap: 5px;
+  justify-content: space-between;
+  gap: 6px;
   overflow: hidden;
 }
 
-/* 整标签轨道:标签保持自然尺寸,且始终完整显示——放不下的会换到被裁剪的第二行(max-height 把它
-   钉死在一行),因此不会有标签在词中被切断,也没有 "+N" 徽标。纯 CSS,不做宽度测量。完整列表放在
-   该轨道的 tooltip 里。 */
+.compact-node-tag-lane,
+.compact-node-meta-facts {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
 .compact-node-tag-lane {
-  display: flex;
-  flex: 1 1 0;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: center;
-  gap: 5px;
-  max-height: 20px;
-  overflow: hidden;
+  flex: 1 1 auto;
 }
 
-.compact-node-tag {
-  display: inline-flex;
-  height: 20px;
-  min-height: 20px;
-  max-height: 20px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  padding: 0 0.5rem;
-  font-size: 10.5px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.compact-node-tag {
-  /* 整标签是从被裁剪的轨道里换行出去,而不是被挤压,因此尺寸保持一致(换行永不溢出一行,所以多标签
-     行上 flex-shrink 永不触发)。保留收缩仅是为了让单个比轨道更宽的标签干净地省略号截断(受 max-width
-     限制),而不是在词中被硬裁剪。 */
+.compact-node-meta-facts {
   flex: 0 1 auto;
-  max-width: 8.5rem;
+  justify-content: flex-end;
+}
+
+.compact-node-subtitle,
+.compact-node-tag,
+.compact-node-meta-facts > span {
+  display: inline-flex;
+  height: 17px;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 3px;
   overflow: hidden;
+  border-radius: 5px;
+  padding: 0 5px;
+  font-size: 8.5px;
+  font-weight: 710;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-node-subtitle {
+  max-width: 7rem;
+  background: var(--tag-gray-bg);
+  color: var(--tag-gray-fg);
+}
+
+.compact-node-tag {
+  max-width: 5rem;
   border: 1px solid color-mix(in srgb, var(--tag-fg) 14%, transparent);
   background: var(--tag-bg);
   color: var(--tag-fg);
-  text-overflow: ellipsis;
+}
+
+.compact-node-meta-facts > span {
+  max-width: 5.5rem;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 30%, transparent);
+  background: color-mix(in srgb, var(--surface-elev-a) 60%, transparent);
+  color: var(--text-tertiary);
+}
+
+.compact-node-meta-facts > .is-price {
+  color: var(--status-success);
 }
 
 .compact-node-vitals {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 6px;
 }
 
 .compact-node-gauge {
-  min-width: 0;
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.compact-node-gauge-head,
-.compact-node-health-head {
+.compact-node-gauge-head {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 7px;
+  gap: 3px;
 }
 
 .compact-node-gauge-label {
-  gap: 5px;
+  display: inline-flex;
   min-width: 0;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 660;
-  line-height: 1.15;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 8.5px;
+  font-weight: 680;
+  white-space: nowrap;
 }
 
 .compact-node-gauge-label svg {
-  color: var(--compact-gauge-color);
   flex: 0 0 auto;
+  color: var(--compact-gauge-color);
 }
 
 .compact-node-gauge strong {
-  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-primary);
-  font-size: 12.5px;
-  font-weight: 780;
-  letter-spacing: 0;
+  font-size: 9px;
+  font-weight: 790;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* 单条分段进度条(原本是 18 个 <span>)。填充是直到 --compact-gauge-fill 的硬停止渐变;
-   repeating mask 切出 18 段,段间用 2px 透明缝隔开(缝隙透出卡片表面,与旧网格的 `gap` 一致)。
-   周期 = (100% + 2px) / 18,缝隙 = 每个周期的最后 2px。 */
 .compact-node-gauge-track {
   min-width: 0;
-  height: 7px;
+  height: 3px;
   overflow: hidden;
+  border-radius: 999px;
   background: linear-gradient(
     to right,
     var(--compact-gauge-color) 0,
@@ -263,398 +234,148 @@
     var(--progress-bg) var(--compact-gauge-fill, 0%),
     var(--progress-bg) 100%
   );
-  -webkit-mask: repeating-linear-gradient(
-    to right,
-    #000 0,
-    #000 calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18)
-  );
-  mask: repeating-linear-gradient(
-    to right,
-    #000 0,
-    #000 calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18)
-  );
 }
 
-.compact-node-info-strip {
-  /* 单行信息条。随着小块数量增加(实时速率 / 累计流量 / 费用到期 / 连接数 全开时最多 4 个),
-     每列变窄,于是我们不换行,而是按比例收缩每个小块的内部尺寸——像 "7.46 Kbps" / "¥19.90"
-     这样的值能保持单行而非省略号截断。--ci-shrink 在 1–2 个小块时为 0(不变),每多一列加 1
-     (3 → 1,4 → 2),供后面的 calc() 尺寸使用。 */
-  --ci-shrink: max(0, var(--compact-info-columns, 3) - 2);
-  display: grid;
-  grid-template-columns: repeat(var(--compact-info-columns, 3), minmax(0, 1fr));
-  gap: calc(7px - var(--ci-shrink) * 0.8px);
-  border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 7px;
-}
-
-/* 必显的流量配额条。复用 .compact-node-gauge-track(由该容器上设置的 --compact-gauge-*
-   变量驱动),从而与各项指标仪表外观一致。 */
-.compact-node-traffic {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 8px;
-}
-
-.compact-node-traffic-body {
+.compact-node-live-traffic {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto 7px;
+  grid-template-columns: auto minmax(24px, 0.42fr) minmax(96px, 1fr);
   align-items: center;
-  row-gap: 5px;
+  gap: 6px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 6px;
 }
 
-.compact-node-traffic-body.has-uptime {
-  grid-template-columns: minmax(0, 1fr) max-content;
-  grid-template-rows: auto auto;
-  column-gap: 8px;
-  row-gap: 3px;
-}
-
-.compact-node-traffic-head {
+.compact-node-rate-stack {
   display: flex;
-  grid-column: 1;
-  grid-row: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact-node-rate {
+  display: inline-flex;
   min-width: 0;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 2px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 
-.compact-node-traffic > .compact-node-traffic-body > .compact-node-gauge-track {
-  grid-column: 1;
-  grid-row: 2;
-  /* 仅流量仪表:把扁平的 --compact-gauge-color 填充换成共享的、按位置着色的热力光谱(中性遮盖
-     层挡住已用比例之外的部分),从而像大卡片那样按分段呈现 green→amber→red。各项指标仪表则通过
-     上面的基础规则保持单一纯色。 */
-  background:
-    linear-gradient(
-      to right,
-      transparent 0,
-      transparent var(--compact-gauge-fill, 0%),
-      var(--progress-bg) var(--compact-gauge-fill, 0%),
-      var(--progress-bg) 100%
-    ),
-    var(--traffic-heat-spectrum);
-}
-
-.compact-node-traffic-label {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 660;
-  line-height: 1.15;
-}
-
-.compact-node-traffic-label svg {
-  flex: 0 0 auto;
-  color: var(--compact-gauge-color);
-}
-
-.compact-node-traffic-body.has-uptime > .compact-node-traffic-label {
-  grid-column: 1;
-  grid-row: 1;
+.compact-node-rate svg {
   align-self: center;
-}
-
-.compact-node-traffic-uptime {
-  display: inline-flex;
-  grid-column: 2;
-  grid-row: 1;
-  min-width: max-content;
-  align-items: center;
-  justify-content: flex-end;
-  color: var(--status-success);
-  font-size: 11px;
-  font-weight: 700;
-  text-align: right;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.compact-node-traffic-body.has-uptime > .compact-node-traffic-value {
-  grid-column: 2;
-  grid-row: 2;
-  align-self: center;
-}
-
-.compact-node-traffic-value {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 640;
-  text-align: right;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-variant-numeric: tabular-nums;
-}
-
-.compact-node-info-tile {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 44px;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 56%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--fill-tertiary) 70%, transparent);
-  padding: calc(5px - var(--ci-shrink) * 0.35px) calc(7px - var(--ci-shrink) * 0.8px);
-  color: var(--text-secondary);
-  text-align: left;
-}
-
-.compact-node-info-content {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: calc(3px - var(--ci-shrink) * 0.35px);
-}
-
-.compact-node-info-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: calc(6px - var(--ci-shrink) * 0.7px);
-  font-size: calc(11px - var(--ci-shrink) * 0.4px);
-  line-height: 1.1;
-}
-
-.compact-node-info-row-label {
   flex: 0 0 auto;
-  gap: calc(4px - var(--ci-shrink) * 0.5px);
-  color: var(--compact-info-row-color, var(--compact-info-color));
 }
 
-/* 图标随小块一起收缩,以免前导字形挤占了数值的空间。 */
-.compact-node-info-row-label svg {
-  flex: 0 0 auto;
-  width: calc(12px - var(--ci-shrink) * 0.6px);
-  height: calc(12px - var(--ci-shrink) * 0.6px);
+.compact-node-rate strong {
+  font-weight: 790;
 }
 
-.compact-node-info-row-value {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--compact-info-row-color, var(--text-primary));
-  font-size: calc(11.5px - var(--ci-shrink) * 0.6px);
-  font-weight: 760;
-  letter-spacing: 0;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.compact-node-info-row-value small,
-.compact-node-health-value small {
-  margin-left: 2px;
+.compact-node-rate small {
   color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 620;
-}
-
-/* 信息条内的单位收缩(覆盖上面的共享规则)。限定在信息条内,使 --ci-shrink 只作用于此处,
-   绝不影响 .compact-node-health-value。 */
-.compact-node-info-strip .compact-node-info-row-value small {
-  margin-left: calc(2px - var(--ci-shrink) * 0.3px);
-  font-size: calc(10px - var(--ci-shrink) * 0.5px);
+  font-size: 7.5px;
+  font-weight: 650;
 }
 
 .compact-node-traffic-pulse {
   display: grid;
-  grid-template-columns: repeat(14, minmax(0, 1fr));
-  align-items: center;
-  gap: 1.5px;
   min-width: 0;
-  /* 活跃圆点最大放大到 scale(1.30) → 4px*1.30≈5.2px,容器要留够高度否则上下被裁;
-     不再 overflow:hidden,圆点完整显示。 */
-  height: 7px;
+  height: 8px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: center;
+  gap: 1px;
 }
 
 .compact-node-traffic-pulse span {
+  width: 3px;
+  height: 3px;
   justify-self: center;
-  width: 4px;
-  height: 4px;
   border-radius: 999px;
   background: var(--compact-traffic-dot-color);
   transform: scale(var(--compact-traffic-dot-scale));
-  transform-origin: center;
-  transition:
-    background 160ms ease,
-    opacity 160ms ease,
-    transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* 活跃的流量圆点通过 CompactTrafficPulse 设置的内联 color/opacity/scale 静态着色。之前那个
-   无限循环的 `filter` keyframe 动画会在每张卡片(含屏幕外)上对最多 16 个圆点运行——这是持续的
-   合成/绘制开销,拖累滚动。静态圆点能传达同样的信号。 */
-
-.compact-node-health,
-.compact-node-bottom {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: end;
-  gap: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--hairline) 88%, transparent);
-  padding-top: 8px;
-}
-
-.compact-node-health-item {
+.compact-node-quota-pill {
+  position: relative;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.compact-node-health-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 680;
-  line-height: 1.1;
-}
-
-.compact-node-health-value {
-  min-width: 0;
+  height: 24px;
   overflow: hidden;
-  font-size: 12.5px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
+  border: 1px solid color-mix(in srgb, var(--compact-traffic-color) 25%, var(--border-strong));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-elev-a) 72%, transparent);
+}
+
+.compact-node-quota-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--compact-traffic-fill);
+  background: color-mix(in srgb, var(--compact-traffic-color) 14%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--compact-traffic-color) 42%, transparent);
+}
+
+.compact-node-quota-fill::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: var(--compact-traffic-color);
+}
+
+.compact-node-quota-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--text-tertiary);
+  font-size: 8px;
+  font-weight: 670;
   white-space: nowrap;
 }
 
-.compact-node-health-bars {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(16, minmax(0, 1fr));
-  align-items: end;
-  gap: 1.5px;
+.compact-node-quota-content svg {
+  flex: 0 0 auto;
+  color: var(--compact-traffic-color);
+}
+
+.compact-node-quota-content strong {
   min-width: 0;
-  height: 12px;
-  overflow: visible;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 8.5px;
+  font-weight: 760;
+  text-overflow: ellipsis;
 }
 
-.compact-node-health-tooltip {
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: var(--compact-health-tooltip-x, 50%);
-  z-index: 2;
-  width: max-content;
-  max-width: 156px;
-  pointer-events: none;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--text-primary) 90%, black 10%);
-  box-shadow: 0 10px 18px -14px rgba(0, 0, 0, 0.55);
-  color: var(--surface);
-  padding: 4px 6px;
-  font-size: 10.5px;
-  font-weight: 680;
-  line-height: 1.15;
-  text-align: center;
-  transform: translateX(-50%) translateY(0) scale(1);
-  animation: compact-health-tooltip-in 150ms cubic-bezier(0.32, 0.72, 0, 1);
+.compact-node-ping-empty {
+  display: grid;
+  min-height: 36px;
+  place-items: center;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 44%, transparent);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 650;
 }
 
-.compact-node-health-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  background: inherit;
-  transform: translate(-50%, -3px) rotate(45deg);
-}
-
-.compact-node-health-bar {
-  display: block;
-  width: 100%;
-  min-width: 2px;
-  height: var(--compact-health-height);
-  border: 0;
-  border-radius: 1.5px;
-  background: var(--compact-health-color);
-  padding: 0;
-  transform-origin: bottom center;
-  transition:
-    filter 150ms ease,
-    opacity 150ms ease,
-    transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.compact-node-health-bar:hover,
-.compact-node-health-bar:focus,
-.compact-node-health-bar[data-selected="true"] {
-  filter: saturate(1.14) brightness(1.04);
-  opacity: 1 !important;
-  outline: none;
-  transform: scaleY(1.55);
-}
-
-.compact-node-health-bars:hover .compact-node-health-bar:not(:hover):not([data-selected="true"]) {
-  opacity: 0.54 !important;
-}
-
-@keyframes compact-health-tooltip-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(4px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@media (max-width: 390px) {
+@media (max-width: 430px) {
   .compact-node-card {
-    padding: 12px;
+    padding-inline: 10px 8px;
   }
 
   .compact-node-vitals {
-    gap: 9px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .compact-node-chip-row {
-    gap: 4px;
+  .compact-node-live-traffic {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr);
   }
 
-  .compact-node-info-strip {
-    gap: 5px;
-  }
-
-  .compact-node-info-tile {
-    min-height: 46px;
-    padding: 6px;
-  }
-
-  .compact-node-info-row {
-    gap: 4px;
-    font-size: 10.5px;
-  }
-
-  .compact-node-info-row-value {
-    font-size: 11px;
-  }
-
-  .compact-node-bottom {
-    gap: 7px;
+  .compact-node-traffic-pulse {
+    display: none;
   }
 }

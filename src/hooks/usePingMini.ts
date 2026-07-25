@@ -133,7 +133,8 @@ function equalTaskSummaries(
       leftSummary.lastValue !== rightSummary.lastValue ||
       leftSummary.loss !== rightSummary.loss ||
       leftSummary.sampleCount !== rightSummary.sampleCount ||
-      leftSummary.hasSamples !== rightSummary.hasSamples
+      leftSummary.hasSamples !== rightSummary.hasSamples ||
+      !equalSamples(leftSummary.samples ?? [], rightSummary.samples ?? [])
     ) {
       return false;
     }
@@ -566,6 +567,9 @@ function pingItemSignature(item: PingOverviewItem) {
           summary.loss ?? "",
           summary.sampleCount,
           summary.hasSamples ? "1" : "0",
+          summary.samples?.length ?? 0,
+          summary.samples?.at(-1)?.time ?? "",
+          summary.samples?.at(-1)?.value ?? "",
         ].join(":"),
       )
       .join(";"),

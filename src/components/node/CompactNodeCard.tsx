@@ -1,66 +1,36 @@
-import { memo, useEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { memo, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
   Calendar,
   CircleDollarSign,
-  Clock3,
   Cpu,
   Database,
-  Download,
   Gauge,
   HardDrive,
   MemoryStick,
   Network,
-  Upload,
-  Unplug,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { Flag } from "@/components/ui/Flag";
 import { OsLogo } from "@/components/ui/OsLogo";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import {
-  formatBytes,
-  formatLatencyValue,
-  formatLoadValue,
-  formatMetricNumber,
-  formatMetricPercent,
-  trimFixed,
-} from "@/utils/format";
-import {
-  latencyHeatColor,
-  lossHeatColor,
-  speedRateColor,
-  speedRateColorFromBytes,
-} from "@/utils/metricTone";
+import { formatBytes, formatLoadValue, formatMetricPercent, trimFixed } from "@/utils/format";
 import {
   buildHomepagePingCompareUrl,
   buildHomepagePingSourceRows,
+  type HomepagePingSourceRow,
 } from "@/utils/homepagePingSources";
+import { speedRateColor, speedRateColorFromBytes } from "@/utils/metricTone";
 import { PingSourceMatrix } from "./PingSourceMatrix";
-import { formatHealthBucketTooltip } from "./pingBucketText";
-import {
-  joinTagTitle,
-  nodeDetailLinkLabels,
-  pingEmptyLabels,
-  pingTaskAggregateLabels,
-} from "./nodeCardShared";
-import type {
-  NodeInfo,
-  NodeMetrics,
-  PingOverviewBucket,
-  PingOverviewItem,
-  TrafficTrendSample,
-} from "@/types/komari";
+import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
+import type { NodeInfo, NodeMetrics, TrafficTrendSample } from "@/types/komari";
 import type { ByteRateDisplay } from "@/utils/format";
 import type { TrafficDisplay } from "@/utils/traffic";
-import type { DisplayTimeZone } from "@/utils/timeDisplay";
 
-const TRAFFIC_DOT_COUNT = 14;
-const HEALTH_BAR_COUNT = 16;
+const TRAFFIC_DOT_COUNT = 12;
 type CompactNode = NodeInfo & NodeMetrics;
 type CompactTag = { label: string; color: string };
 type CompactExpire = { value: string; unit: string };
@@ -72,6 +42,18 @@ function clamp01(value: number) {
 
 function formatCompactPercent(value: number) {
   return Number.isFinite(value) ? formatMetricPercent(value) : "0.00%";
+}
+
+function formatCompactExpire({ value, unit }: CompactExpire) {
+  if (value === "—") return "到期 --";
+  return unit ? `${value}${unit}` : value;
+}
+
+function formatCompactUptime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  const days = seconds / 86400;
+  const value = days >= 1 ? Math.floor(days).toString() : trimFixed(days, 2);
+  return `${value}天`;
 }
 
 function CompactGauge({
@@ -89,9 +71,6 @@ function CompactGauge({
   color: string;
   fraction: number;
 }) {
-  // 单元素分段条:填充用一个 hard-stop 渐变到 fraction 处,再叠一个重复 mask 打出
-  // 18 个段间空隙。替代了 18 个逐段 <span>(每卡 ×4 个 gauge)—— 那些 span 在每个
-  // 屏外卡片上每 tick 的 reconcile + 样式重算曾是渲染开销大头。
   const style = {
     "--compact-gauge-color": color,
     "--compact-gauge-fill": `${clamp01(fraction) * 100}%`,
@@ -115,28 +94,6 @@ function CompactGauge({
   );
 }
 
-function CompactInfoTile({
-  label,
-  color,
-  children,
-}: {
-  label: string;
-  color: string;
-  children: ReactNode;
-}) {
-  const style = { "--compact-info-color": color } as CSSProperties;
-
-  return (
-    <div
-      className="compact-node-info-tile"
-      style={style}
-      aria-label={label}
-    >
-      <span className="compact-node-info-content">{children}</span>
-    </div>
-  );
-}
-
 function CompactTrafficPulse({
   up,
   down,
@@ -146,33 +103,27 @@ function CompactTrafficPulse({
 }) {
   const upSelected = up.slice(-TRAFFIC_DOT_COUNT);
   const downSelected = down.slice(-TRAFFIC_DOT_COUNT);
-  const upPadding = Math.max(0, TRAFFIC_DOT_COUNT - upSelected.length);
-  const downPadding = Math.max(0, TRAFFIC_DOT_COUNT - downSelected.length);
+  const padding = Math.max(0, TRAFFIC_DOT_COUNT - Math.max(upSelected.length, downSelected.length));
 
   return (
     <span className="compact-node-traffic-pulse" aria-hidden>
       {Array.from({ length: TRAFFIC_DOT_COUNT }, (_, index) => {
-        const upSample = index < upPadding ? null : upSelected[index - upPadding];
-        const downSample = index < downPadding ? null : downSelected[index - downPadding];
-        const upValue = upSample?.value ?? 0;
-        const downValue = downSample?.value ?? 0;
-        const active = upValue > 0 || downValue > 0;
+        const sampleIndex = index - padding;
+        const upSample = sampleIndex >= 0 ? upSelected[upSelected.length - (TRAFFIC_DOT_COUNT - index)] : null;
+        const downSample = sampleIndex >= 0
+          ? downSelected[downSelected.length - (TRAFFIC_DOT_COUNT - index)]
+          : null;
+        const value = Math.max(upSample?.value ?? 0, downSample?.value ?? 0);
         const level = Math.max(upSample?.level ?? 0, downSample?.level ?? 0);
-        // 每点按其主方向(上/下取大)速率的单位档上色,与大卡的速度档色一致;大小/透明度仍按 level。
-        // 仅活跃点计算颜色,空闲点直接用中性色,省掉无谓的 formatByteRate。
-        const style = {
-          "--compact-traffic-dot-color": active
-            ? speedRateColorFromBytes(Math.max(upValue, downValue))
-            : "var(--progress-bg)",
-          "--compact-traffic-dot-scale": active ? `${0.68 + level * 0.62}` : "0.48",
-          opacity: active ? 0.5 + level * 0.42 : 0.38,
-        } as CSSProperties;
-
         return (
           <span
             key={index}
-            data-active={active ? "true" : "false"}
-            style={style}
+            style={{
+              "--compact-traffic-dot-color":
+                value > 0 ? speedRateColorFromBytes(value) : "var(--progress-bg)",
+              "--compact-traffic-dot-scale": value > 0 ? `${0.72 + level * 0.5}` : "0.52",
+              opacity: value > 0 ? 0.55 + level * 0.4 : 0.34,
+            } as CSSProperties}
           />
         );
       })}
@@ -180,268 +131,91 @@ function CompactTrafficPulse({
   );
 }
 
-function CompactInfoRow({
-  icon,
-  label,
-  value,
-  unit,
-  color,
-}: {
-  icon: ReactNode;
-  label?: string;
-  value: string;
-  unit?: string;
-  color?: string;
-}) {
-  const style = color ? ({ "--compact-info-row-color": color } as CSSProperties) : undefined;
-
-  return (
-    <span className="compact-node-info-row" style={style}>
-      <span className="compact-node-info-row-label">
-        {icon}
-        {label && <span>{label}</span>}
-      </span>
-      <strong className="compact-node-info-row-value tabular">
-        {value}
-        {unit && <small>{unit}</small>}
-      </strong>
-    </span>
-  );
-}
-
-function formatCompactExpire({
-  value,
-  unit,
-}: {
-  value: string;
-  unit: string;
-}) {
-  if (value === "—") return "余 --";
-  return unit ? `余 ${value}${unit}` : value;
-}
-
-function formatCompactUptime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "";
-  const days = seconds / 86400;
-  const value = days >= 1 ? Math.floor(days).toString() : trimFixed(days, 2);
-  return `在线：${value}天`;
-}
-
-function HealthBars({
-  buckets,
-  max,
-  kind,
-  displayTimeZone,
-}: {
-  buckets: PingOverviewBucket[];
-  max: number;
-  kind: "latency" | "loss";
-  displayTimeZone: DisplayTimeZone;
-}) {
-  const safeMax = Math.max(1, max);
-  const bars = buckets.slice(-HEALTH_BAR_COUNT);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const activeIndex = hoveredIndex ?? selectedIndex;
-  const activeBucket = activeIndex == null ? null : bars[activeIndex] ?? null;
-  const activeTooltip = activeBucket
-    ? formatHealthBucketTooltip(activeBucket, kind, displayTimeZone)
-    : null;
-  const activeLeft =
-    activeIndex == null || bars.length === 0
-      ? "50%"
-      : `clamp(42px, ${((activeIndex + 0.5) / bars.length) * 100}%, calc(100% - 42px))`;
-
-  useEffect(() => {
-    if (selectedIndex == null) return;
-
-    const clearWhenOutside = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && containerRef.current?.contains(target)) {
-        return;
-      }
-      setSelectedIndex(null);
-    };
-
-    document.addEventListener("pointerdown", clearWhenOutside);
-    return () => document.removeEventListener("pointerdown", clearWhenOutside);
-  }, [selectedIndex]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="compact-node-health-bars"
-      data-kind={kind}
-      style={{ "--compact-health-tooltip-x": activeLeft } as CSSProperties}
-    >
-      {activeTooltip && (
-        <span className="compact-node-health-tooltip" role="status">
-          {activeTooltip}
-        </span>
-      )}
-      {bars.map((bucket, index) => {
-        const hasSamples = bucket.total > 0;
-        const latencyValue = bucket.value ?? 0;
-        const lossValue = bucket.loss ?? 0;
-        const active = kind === "latency" ? hasSamples && latencyValue > 0 : hasSamples;
-        const height =
-          kind === "latency"
-            ? `${active ? Math.max(26, Math.min(100, (latencyValue / safeMax) * 100)) : 24}%`
-            : `${active ? Math.max(38, Math.min(100, 84 - Math.min(lossValue, 45))) : 24}%`;
-        const color = active
-          ? kind === "latency"
-            ? latencyHeatColor(latencyValue)
-            : lossHeatColor(lossValue)
-          : "var(--progress-bg)";
-        const style = {
-          "--compact-health-height": height,
-          "--compact-health-color": color,
-          opacity: active ? 0.94 : 0.42,
-        } as CSSProperties;
-        const tooltip = formatHealthBucketTooltip(bucket, kind, displayTimeZone);
-
-        return (
-          <button
-            key={`${bucket.index}-${index}`}
-            type="button"
-            className="compact-node-health-bar"
-            style={style}
-            data-selected={selectedIndex === index ? "true" : "false"}
-            aria-label={`${kind === "latency" ? "延迟" : "丢包"} ${tooltip}`}
-            title={tooltip}
-            onMouseEnter={() => setHoveredIndex(index)}
-            onMouseLeave={() => setHoveredIndex(null)}
-            onFocus={() => setHoveredIndex(index)}
-            onBlur={() => setHoveredIndex(null)}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setSelectedIndex((current) => (current === index ? null : index));
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function CompactHealthItem({
-  icon,
-  label,
-  sourceTitle,
-  value,
-  unit,
-  color,
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  sourceTitle?: string;
-  value: string;
-  unit?: string;
-  color: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="compact-node-health-item" title={sourceTitle}>
-      <div className="compact-node-health-head">
-        <span className="compact-node-health-label">
-          {icon}
-          {label}
-        </span>
-        <strong className="compact-node-health-value tabular" style={{ color }}>
-          {value}
-          {unit && <small>{unit}</small>}
-        </strong>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function CompactNodeHeader({
-  node,
-  osName,
-}: {
-  node: CompactNode;
-  osName: string;
-}) {
+function CompactNodeHeader({ node, osName }: { node: CompactNode; osName: string }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
     <header className="compact-node-header">
-      <div className="compact-node-title-wrap">
-        <div className="compact-node-title-row">
-          <Flag region={node.region} size={15} />
-          <Link
-            to={`/instance/${node.uuid}`}
-            className="compact-node-title"
-            title={node.name}
-          >
-            {node.name}
-          </Link>
-        </div>
-      </div>
-      <div className="compact-node-actions">
-        <Link
-          to={`/instance/${node.uuid}`}
-          className="compact-node-detail-link"
-          title={detailLabels.title}
-          aria-label={detailLabels.ariaLabel}
-        >
-          <OsLogo value={node.os} size={15} />
+      <div className="compact-node-title-row">
+        <Flag region={node.region} size={14} />
+        <Link to={`/instance/${node.uuid}`} className="compact-node-title" title={node.name}>
+          {node.name}
         </Link>
       </div>
+      <Link
+        to={`/instance/${node.uuid}`}
+        className="compact-node-detail-link"
+        title={detailLabels.title}
+        aria-label={detailLabels.ariaLabel}
+      >
+        <OsLogo value={node.os} size={14} />
+      </Link>
     </header>
   );
 }
 
-function CompactNodeChips({
+function CompactNodeMeta({
   subtitle,
   tags,
+  showBilling,
+  expire,
+  expireColor,
+  renewalPrice,
+  uptimeLabel,
+  showConnections,
+  connections,
 }: {
   subtitle: string;
   tags: CompactTag[];
+  showBilling: boolean;
+  expire: CompactExpire;
+  expireColor: string;
+  renewalPrice: string | null;
+  uptimeLabel: string;
+  showConnections: boolean;
+  connections: number;
 }) {
-  // 完整 tag 列表挂在 lane 的 tooltip 上;chip 不带自己的 title,hover 会穿透到 lane 上 ——
-  // 被裁剪 lane 折行挤出去的 tag 就靠这个保持可见,不用显示"+N"角标。
-  const tagTitle = joinTagTitle(tags);
-
   return (
-    <div className="compact-node-chip-row">
-      {subtitle && (
-        <span className="compact-node-subtitle" title={subtitle}>
-          {subtitle}
-        </span>
-      )}
-      {tags.length > 0 && (
-        <div className="compact-node-tag-lane" title={tagTitle}>
-          {tags.map((tag, index) => (
-            <span
-              key={`${tag.label}-${index}`}
-              className="compact-node-tag"
-              data-tag={tag.color}
-            >
-              {tag.label}
+    <div className="compact-node-meta-row" title={joinTagTitle(tags)}>
+      <div className="compact-node-tag-lane">
+        {subtitle && <span className="compact-node-subtitle">{subtitle}</span>}
+        {tags.map((tag, index) => (
+          <span key={`${tag.label}-${index}`} className="compact-node-tag" data-tag={tag.color}>
+            {tag.label}
+          </span>
+        ))}
+      </div>
+      <div className="compact-node-meta-facts">
+        {uptimeLabel && <span>在线 {uptimeLabel}</span>}
+        {showConnections && (
+          <span title="TCP + UDP 连接数">
+            <Network size={10} />
+            {connections.toLocaleString()}
+          </span>
+        )}
+        {showBilling && (
+          <>
+            <span style={{ color: expireColor }}>
+              <Calendar size={10} />
+              {formatCompactExpire(expire)}
             </span>
-          ))}
-        </div>
-      )}
+            {renewalPrice && (
+              <span className="is-price">
+                <CircleDollarSign size={10} />
+                {renewalPrice}
+              </span>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-function CompactNodeVitals({
-  node,
-  loadFraction,
-}: {
-  node: CompactNode;
-  loadFraction: number;
-}) {
+function CompactNodeVitals({ node, loadFraction }: { node: CompactNode; loadFraction: number }) {
   return (
     <div className="compact-node-vitals">
       <CompactGauge
-        icon={<Cpu size={12} />}
+        icon={<Cpu size={11} />}
         label="CPU"
         value={formatCompactPercent(node.cpuPct)}
         detail={`${node.cpu_cores || 0} 核`}
@@ -449,7 +223,7 @@ function CompactNodeVitals({
         color="var(--progress-cpu)"
       />
       <CompactGauge
-        icon={<MemoryStick size={12} />}
+        icon={<MemoryStick size={11} />}
         label="内存"
         value={formatCompactPercent(node.ramPct)}
         detail={`${formatBytes(node.ramUsed)} / ${formatBytes(node.ramTotal)}`}
@@ -457,7 +231,7 @@ function CompactNodeVitals({
         color="var(--progress-memory)"
       />
       <CompactGauge
-        icon={<HardDrive size={12} />}
+        icon={<HardDrive size={11} />}
         label="磁盘"
         value={formatCompactPercent(node.diskPct)}
         detail={`${formatBytes(node.diskUsed)} / ${formatBytes(node.diskTotal)}`}
@@ -465,7 +239,7 @@ function CompactNodeVitals({
         color="var(--progress-disk)"
       />
       <CompactGauge
-        icon={<Gauge size={12} />}
+        icon={<Gauge size={11} />}
         label="负载"
         value={formatLoadValue(node.load1)}
         detail={`${formatLoadValue(node.load5)} / ${formatLoadValue(node.load15)}`}
@@ -476,229 +250,73 @@ function CompactNodeVitals({
   );
 }
 
-function CompactNodeInfoStrip({
+function CompactRate({
+  direction,
+  rate,
+}: {
+  direction: "up" | "down";
+  rate: ByteRateDisplay;
+}) {
+  const color = speedRateColor(rate.unit);
+  return (
+    <span className="compact-node-rate" style={{ color }}>
+      {direction === "up" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+      <strong className="tabular">{rate.value}</strong>
+      <small>{rate.unit}</small>
+    </span>
+  );
+}
+
+function CompactLiveTraffic({
   node,
+  traffic,
   trafficTrend,
   upRate,
   downRate,
   showTrafficTotal,
-  showBilling,
-  showConnections,
-  expire,
-  expireColor,
-  renewalPrice,
 }: {
   node: CompactNode;
+  traffic: TrafficDisplay;
   trafficTrend: { up: TrafficTrendSample[]; down: TrafficTrendSample[] };
   upRate: ByteRateDisplay;
   downRate: ByteRateDisplay;
   showTrafficTotal: boolean;
-  showBilling: boolean;
-  showConnections: boolean;
-  expire: CompactExpire;
-  expireColor: string;
-  renewalPrice: string | null;
-}) {
-  const infoTileCount =
-    1 + (showTrafficTotal ? 1 : 0) + (showBilling ? 1 : 0) + (showConnections ? 1 : 0);
-
-  return (
-    <div
-      className="compact-node-info-strip"
-      style={{ "--compact-info-columns": infoTileCount } as CSSProperties}
-    >
-      <CompactInfoTile
-        label="实时速率"
-        color="var(--progress-cpu)"
-      >
-        <CompactInfoRow
-          icon={<ArrowUp size={12} strokeWidth={2.3} />}
-          value={upRate.value}
-          unit={upRate.unit}
-          color={speedRateColor(upRate.unit)}
-        />
-        <CompactInfoRow
-          icon={<ArrowDown size={12} strokeWidth={2.3} />}
-          value={downRate.value}
-          unit={downRate.unit}
-          color={speedRateColor(downRate.unit)}
-        />
-        <CompactTrafficPulse up={trafficTrend.up} down={trafficTrend.down} />
-      </CompactInfoTile>
-      {showTrafficTotal && (
-        <CompactInfoTile
-          label="累计流量"
-          color="var(--text-secondary)"
-        >
-          <CompactInfoRow
-            icon={<Upload size={12} strokeWidth={2.1} />}
-            value={formatBytes(node.trafficUp)}
-          />
-          <CompactInfoRow
-            icon={<Download size={12} strokeWidth={2.1} />}
-            value={formatBytes(node.trafficDown)}
-          />
-        </CompactInfoTile>
-      )}
-      {showBilling && (
-        <CompactInfoTile
-          label="费用到期"
-          color="var(--status-success)"
-        >
-          <CompactInfoRow
-            icon={<Calendar size={12} strokeWidth={2.1} />}
-            value={formatCompactExpire(expire)}
-            color={expireColor}
-          />
-          <CompactInfoRow
-            icon={<CircleDollarSign size={12} strokeWidth={2.2} />}
-            value={renewalPrice || "未填"}
-            color={renewalPrice ? "var(--status-success)" : "var(--text-tertiary)"}
-          />
-        </CompactInfoTile>
-      )}
-      {showConnections && (
-        <CompactInfoTile label="连接数" color="var(--progress-network)">
-          <CompactInfoRow
-            icon={<Network size={12} strokeWidth={2.1} />}
-            label="TCP"
-            value={node.connectionsTcp.toLocaleString()}
-            color="var(--progress-network)"
-          />
-          <CompactInfoRow
-            icon={<Network size={12} strokeWidth={2.1} />}
-            label="UDP"
-            value={node.connectionsUdp.toLocaleString()}
-          />
-        </CompactInfoTile>
-      )}
-    </div>
-  );
-}
-
-// 流量阈值条:label + used / limit 同一行(紧凑卡片很挤,这里省掉剩余量),
-// 用单元素热力填充(无 canvas、无逐段 span)复用 gauge 轨道,保持每 tick 低开销。
-function CompactTrafficBar({
-  traffic,
-  uptimeLabel,
-}: {
-  traffic: TrafficDisplay;
-  uptimeLabel: string;
 }) {
   const style = {
-    "--compact-gauge-color": traffic.color,
-    "--compact-gauge-fill": `${clamp01(traffic.fraction) * 100}%`,
+    "--compact-traffic-fill": `${clamp01(traffic.fraction) * 100}%`,
+    "--compact-traffic-color": traffic.color,
   } as CSSProperties;
+  const totalTitle = showTrafficTotal
+    ? ` · 上行 ${formatBytes(node.trafficUp)} · 下行 ${formatBytes(node.trafficDown)}`
+    : "";
 
   return (
-    <div
-      className="compact-node-traffic"
-      style={style}
-      title={`流量 · ${traffic.typeLabel} · ${traffic.detail}${uptimeLabel ? ` · ${uptimeLabel}` : ""}`}
-    >
-      <div className={clsx("compact-node-traffic-body", uptimeLabel && "has-uptime")}>
-        {uptimeLabel ? (
-          <>
-            <span className="compact-node-traffic-label">
-              <Database size={12} strokeWidth={2.1} />
-              <span>流量</span>
-            </span>
-            <div className="compact-node-gauge-track" aria-hidden />
-            <span className="compact-node-traffic-uptime">{uptimeLabel}</span>
-            <span className="compact-node-traffic-value">{traffic.detail}</span>
-          </>
-        ) : (
-          <>
-            <div className="compact-node-traffic-head">
-              <span className="compact-node-traffic-label">
-                <Database size={12} strokeWidth={2.1} />
-                <span>流量</span>
-              </span>
-              <span className="compact-node-traffic-value">{traffic.detail}</span>
-            </div>
-            <div className="compact-node-gauge-track" aria-hidden />
-          </>
-        )}
+    <div className="compact-node-live-traffic" title={`流量 · ${traffic.typeLabel} · ${traffic.detail}${totalTitle}`}>
+      <div className="compact-node-rate-stack">
+        <CompactRate direction="up" rate={upRate} />
+        <CompactRate direction="down" rate={downRate} />
+      </div>
+      <CompactTrafficPulse up={trafficTrend.up} down={trafficTrend.down} />
+      <div className="compact-node-quota-pill" style={style}>
+        <span className="compact-node-quota-fill" aria-hidden />
+        <span className="compact-node-quota-content">
+          <Database size={10} />
+          <span>流量</span>
+          <strong className="tabular">{traffic.detail}</strong>
+        </span>
       </div>
     </div>
   );
 }
 
-// memo:每个 prop 都源自 ping,在父卡片每 ~1s 指标 tick 重渲染时引用稳定(ping 数据
-// ~60s 才刷新一次),所以在 ping 数据真正变化前,跳过重渲染 latency/loss HealthBars
-// 这棵子树 —— 它是每 tick DOM 开销的大头。
-const CompactNodeHealth = memo(function CompactNodeHealth({
-  uuid,
-  ping,
-  pingBuckets,
-  latencyColor,
-  lossColor,
-  hasHomepagePingBinding,
-  taskGroups,
-  displayTimeZone,
-}: {
-  uuid: string;
-  ping: PingOverviewItem;
-  pingBuckets: PingOverviewBucket[];
-  latencyColor: string;
-  lossColor: string;
-  hasHomepagePingBinding: boolean;
-  taskGroups: Record<string, string>;
-  displayTimeZone: DisplayTimeZone;
-}) {
-  // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
-  const { text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
-  const pingAggregate = pingTaskAggregateLabels(ping);
-  const sourceRows = buildHomepagePingSourceRows(ping, taskGroups);
-  const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
-  const canShowSources = hasHomepagePingBinding && sourceRows.length > 0;
-  return (
-    <>
-      <div className="compact-node-bottom">
-        <CompactHealthItem
-          icon={<Clock3 size={12} />}
-          label="延迟"
-          sourceTitle={pingAggregate.title}
-          value={ping.lastValue != null ? formatLatencyValue(ping.lastValue) : emptyText}
-          unit={ping.lastValue != null ? "ms" : undefined}
-          color={latencyColor}
-        >
-          <HealthBars
-            buckets={pingBuckets}
-            max={ping.max}
-            kind="latency"
-            displayTimeZone={displayTimeZone}
-          />
-        </CompactHealthItem>
-        <CompactHealthItem
-          icon={<Unplug size={12} />}
-          label="丢包"
-          sourceTitle={pingAggregate.title}
-          value={ping.loss != null ? formatMetricNumber(ping.loss) : emptyText}
-          unit={ping.loss != null ? "%" : undefined}
-          color={lossColor}
-        >
-          <HealthBars
-            buckets={pingBuckets}
-            max={1}
-            kind="loss"
-            displayTimeZone={displayTimeZone}
-          />
-        </CompactHealthItem>
-      </div>
-      {canShowSources && (
-        <PingSourceMatrix rows={sourceRows} compareUrl={compareUrl} density="compact" />
-      )}
-    </>
-  );
-});
+function resolveCardStatus(isOffline: boolean, rows: HomepagePingSourceRow[]) {
+  if (isOffline || rows.some((row) => row.status === "critical")) return "critical";
+  if (rows.some((row) => row.status === "warning" || row.status === "empty")) return "warning";
+  return "ok";
+}
 
-export const CompactNodeCard = memo(function CompactNodeCard({
-  uuid,
-}: {
-  uuid: string;
-}) {
-  const model = useNodeCardModel(uuid, HEALTH_BAR_COUNT);
+export const CompactNodeCard = memo(function CompactNodeCard({ uuid }: { uuid: string }) {
+  const model = useNodeCardModel(uuid);
   const themeSettings = useThemeSettings();
 
   if (!model.node) {
@@ -710,7 +328,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
     traffic,
     trafficTrend,
     ping,
-    pingBuckets,
     compactFooterTags: footerTags,
     subtitle,
     renewalPrice,
@@ -719,8 +336,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
     upRate,
     downRate,
     isOffline,
-    latencyColor,
-    lossColor,
     loadFraction,
     hasHomepagePingBinding,
     osName,
@@ -729,37 +344,43 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
   const showUptime = themeSettings.isReady && themeSettings.compactShowUptime;
   const showConnections = themeSettings.isReady && themeSettings.showConnections;
-  // 开关关闭或节点离线时,完全跳过格式化工作。
   const uptimeLabel = showUptime && !isOffline ? formatCompactUptime(node.uptime) : "";
+  const sourceRows = buildHomepagePingSourceRows(ping, themeSettings.homepagePingTaskGroups);
+  const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
+  const cardStatus = resolveCardStatus(isOffline, sourceRows);
+  const emptyText = pingEmptyLabels(hasHomepagePingBinding).text;
 
   return (
-    <article className={clsx("compact-node-card", isOffline && "is-offline")}>
+    <article
+      className={clsx("compact-node-card", isOffline && "is-offline")}
+      data-status={cardStatus}
+    >
       <CompactNodeHeader node={node} osName={osName} />
-      <CompactNodeChips subtitle={subtitle} tags={footerTags} />
+      <CompactNodeMeta
+        subtitle={subtitle}
+        tags={footerTags}
+        showBilling={showBilling}
+        expire={expire}
+        expireColor={expireColor}
+        renewalPrice={renewalPrice}
+        uptimeLabel={uptimeLabel}
+        showConnections={showConnections}
+        connections={node.connectionsTcp + node.connectionsUdp}
+      />
       <CompactNodeVitals node={node} loadFraction={loadFraction} />
-      <CompactNodeInfoStrip
+      <CompactLiveTraffic
         node={node}
+        traffic={traffic}
         trafficTrend={trafficTrend}
         upRate={upRate}
         downRate={downRate}
         showTrafficTotal={showTrafficTotal}
-        showBilling={showBilling}
-        showConnections={showConnections}
-        expire={expire}
-        expireColor={expireColor}
-        renewalPrice={renewalPrice}
       />
-      <CompactTrafficBar traffic={traffic} uptimeLabel={uptimeLabel} />
-      <CompactNodeHealth
-        uuid={uuid}
-        ping={ping}
-        pingBuckets={pingBuckets}
-        latencyColor={latencyColor}
-        lossColor={lossColor}
-        hasHomepagePingBinding={hasHomepagePingBinding}
-        taskGroups={themeSettings.homepagePingTaskGroups}
-        displayTimeZone={themeSettings.displayTimeZone}
-      />
+      {hasHomepagePingBinding && sourceRows.length > 0 ? (
+        <PingSourceMatrix rows={sourceRows} compareUrl={compareUrl} density="compact" />
+      ) : (
+        <div className="compact-node-ping-empty">{emptyText}</div>
+      )}
     </article>
   );
 });

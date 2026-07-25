@@ -66,6 +66,10 @@ describe("buildPingOverviewItemsForTask", () => {
           loss: 50,
           sampleCount: 2,
           hasSamples: true,
+          samples: [
+            { time: 1_000_000, value: 30 },
+            { time: 2_000_000, value: 0 },
+          ],
         },
       ],
     });

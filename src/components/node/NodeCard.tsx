@@ -8,8 +8,6 @@ import {
   Globe,
   ArrowDown,
   ArrowUp,
-  Clock3,
-  Unplug,
   Calendar,
   RefreshCw,
   CircleDollarSign,
@@ -19,42 +17,23 @@ import {
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import {
-  formatBytes,
-  formatLatencyValue,
-  formatLoadValue,
-  formatMetricNumber,
-} from "@/utils/format";
+import { formatBytes, formatLoadValue, formatMetricNumber } from "@/utils/format";
 import {
   buildHomepagePingCompareUrl,
   buildHomepagePingSourceRows,
 } from "@/utils/homepagePingSources";
 import {
-  latencyHeatColor,
-  lossHeatColor,
   speedRateColor,
   trafficQuotaSegmentColor,
 } from "@/utils/metricTone";
 import { Flag } from "@/components/ui/Flag";
 import { OsLogo } from "@/components/ui/OsLogo";
 import { MetricBar } from "./MetricBar";
-import { MiniBars } from "./MiniBars";
 import { PingSourceMatrix } from "./PingSourceMatrix";
-import { QualityBars } from "./QualityBars";
 import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
-import {
-  joinTagTitle,
-  nodeDetailLinkLabels,
-  pingEmptyLabels,
-  pingTaskAggregateLabels,
-} from "./nodeCardShared";
-import {
-  formatLatencyBucketSummary,
-  formatLossBucketSummary,
-  formatPingBucketWindow,
-} from "./pingBucketText";
+import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
 import { clsx } from "clsx";
-import type { NodeInfo, NodeMetrics, PingOverviewBucket, PingOverviewItem, TrafficTrendSample } from "@/types/komari";
+import type { NodeInfo, NodeMetrics, PingOverviewItem, TrafficTrendSample } from "@/types/komari";
 import type { ByteRateDisplay } from "@/utils/format";
 import type { TrafficDisplay } from "@/utils/traffic";
 
@@ -70,9 +49,6 @@ export const NodeCard = memo(function NodeCard({
   const { resolvedAppearance } = usePreferences();
   const themeSettings = useThemeSettings();
   const model = useNodeCardModel(uuid);
-  const [hoveredLatencyIndex, setHoveredLatencyIndex] = useState<number | null>(null);
-  const [hoveredLossIndex, setHoveredLossIndex] = useState<number | null>(null);
-
   if (!model.node) {
     return (
       <div
@@ -88,15 +64,12 @@ export const NodeCard = memo(function NodeCard({
     traffic,
     trafficTrend,
     ping,
-    pingBuckets,
     footerTags,
     subtitle,
     expire,
     expireColor,
     uptime,
     renewalPrice,
-    latencyColor,
-    lossColor,
     loadFraction,
     upRate,
     downRate,
@@ -106,24 +79,21 @@ export const NodeCard = memo(function NodeCard({
     osName,
   } = model;
   const showConnections = themeSettings.isReady && themeSettings.showConnections;
-  const hoveredLatencyBucket =
-    hoveredLatencyIndex != null ? (pingBuckets[hoveredLatencyIndex] ?? null) : null;
-  const hoveredLossBucket =
-    hoveredLossIndex != null ? (pingBuckets[hoveredLossIndex] ?? null) : null;
-  const latencyHoverTime = formatPingBucketWindow(
-    hoveredLatencyBucket,
-    themeSettings.displayTimeZone,
+  const sourceRows = buildHomepagePingSourceRows(
+    ping,
+    themeSettings.homepagePingTaskGroups,
   );
-  const lossHoverTime = formatPingBucketWindow(hoveredLossBucket, themeSettings.displayTimeZone);
-  const latencyHoverColor = hoveredLatencyBucket?.value != null
-    ? latencyHeatColor(hoveredLatencyBucket.value)
-    : "var(--text-tertiary)";
-  const lossHoverColor = hoveredLossBucket ? lossHeatColor(hoveredLossBucket.loss) : null;
-
+  const cardStatus =
+    isOffline || sourceRows.some((row) => row.status === "critical")
+      ? "critical"
+      : sourceRows.some((row) => row.status === "warning" || row.status === "empty")
+        ? "warning"
+        : "ok";
   return (
     <article
       className={clsx("server-card", isOffline && "is-offline")}
       data-appearance={resolvedAppearance}
+      data-status={cardStatus}
     >
       <div className="server-card-content">
         <NodeCardHeader node={node} subtitle={subtitle} osName={osName} />
@@ -166,20 +136,8 @@ export const NodeCard = memo(function NodeCard({
           <NodeHealthSection
             uuid={uuid}
             ping={ping}
-            pingBuckets={pingBuckets}
-            redrawKey={resolvedAppearance}
             hasHomepagePingBinding={hasHomepagePingBinding}
-            taskGroups={themeSettings.homepagePingTaskGroups}
-            latencyColor={latencyColor}
-            lossColor={lossColor}
-            latencyHoverTime={latencyHoverTime}
-            lossHoverTime={lossHoverTime}
-            hoveredLatencyBucket={hoveredLatencyBucket}
-            hoveredLossBucket={hoveredLossBucket}
-            latencyHoverColor={latencyHoverColor}
-            lossHoverColor={lossHoverColor}
-            onLatencyHover={setHoveredLatencyIndex}
-            onLossHover={setHoveredLossIndex}
+            sourceRows={sourceRows}
           />
         </div>
 
@@ -381,130 +339,27 @@ function NodeTrafficQuota({ traffic }: { traffic: TrafficDisplay }) {
 const NodeHealthSection = memo(function NodeHealthSection({
   uuid,
   ping,
-  pingBuckets,
-  redrawKey,
   hasHomepagePingBinding,
-  taskGroups,
-  latencyColor,
-  lossColor,
-  latencyHoverTime,
-  lossHoverTime,
-  hoveredLatencyBucket,
-  hoveredLossBucket,
-  latencyHoverColor,
-  lossHoverColor,
-  onLatencyHover,
-  onLossHover,
+  sourceRows,
 }: {
   uuid: string;
   ping: PingOverviewItem;
-  pingBuckets: PingOverviewBucket[];
-  redrawKey: string;
   hasHomepagePingBinding: boolean;
-  taskGroups: Record<string, string>;
-  latencyColor: string;
-  lossColor: string;
-  latencyHoverTime: string | null;
-  lossHoverTime: string | null;
-  hoveredLatencyBucket: PingOverviewBucket | null;
-  hoveredLossBucket: PingOverviewBucket | null;
-  latencyHoverColor: string;
-  lossHoverColor: string | null;
-  onLatencyHover: (index: number | null) => void;
-  onLossHover: (index: number | null) => void;
+  sourceRows: ReturnType<typeof buildHomepagePingSourceRows>;
 }) {
   const { title: emptyTitle, text: emptyText } = pingEmptyLabels(hasHomepagePingBinding);
-  const pingAggregate = pingTaskAggregateLabels(ping);
-  const sourceRows = buildHomepagePingSourceRows(ping, taskGroups);
   const compareUrl = buildHomepagePingCompareUrl(uuid, ping.taskIds ?? []);
   const canShowSources = hasHomepagePingBinding && sourceRows.length > 0;
 
   return (
     <div className="card-metric-section card-metric-divided server-health-grid">
-      <div className="server-health-block" title={pingAggregate.title}>
-        <div className="server-health-head">
-          <div className="server-health-label">
-            <Clock3 size={13} strokeWidth={2} />
-            <span>延迟</span>
-          </div>
-          <span className="server-health-value tabular" style={{ color: latencyColor }}>
-            {ping.lastValue != null ? (
-              <>
-                {formatLatencyValue(ping.lastValue)}
-                <span className="server-health-unit">ms</span>
-              </>
-            ) : (
-              <span className="server-health-empty" title={emptyTitle}>
-                {emptyText}
-              </span>
-            )}
-          </span>
+      {canShowSources ? (
+        <PingSourceMatrix rows={sourceRows} compareUrl={compareUrl} />
+      ) : (
+        <div className="server-health-placeholder" title={emptyTitle}>
+          {emptyText}
         </div>
-        <div className="server-health-chart-wrap">
-          {hasHomepagePingBinding ? (
-            <MiniBars
-              max={ping.max}
-              buckets={pingBuckets}
-              redrawKey={redrawKey}
-              onHoverIndex={onLatencyHover}
-            />
-          ) : (
-            <div className="server-health-placeholder">未配置首页 Ping</div>
-          )}
-          {latencyHoverTime && hoveredLatencyBucket && (
-            <div className="server-health-tooltip">
-              <div className="instance-chart-tooltip-time">{latencyHoverTime}</div>
-              <div className="instance-chart-tooltip-row">
-                <span className="instance-chart-tooltip-dot" style={{ background: latencyHoverColor }} />
-                <span>延迟</span>
-                <strong>{formatLatencyBucketSummary(hoveredLatencyBucket)}</strong>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="server-health-block" title={pingAggregate.title}>
-        <div className="server-health-head">
-          <div className="server-health-label">
-            <Unplug size={13} strokeWidth={2} />
-            <span>丢包率</span>
-          </div>
-          <span className="server-health-value tabular" style={{ color: lossColor }}>
-            {ping.loss != null ? (
-              <>
-                {formatMetricNumber(ping.loss)}
-                <span className="server-health-unit">%</span>
-              </>
-            ) : (
-              <span className="server-health-empty" title={emptyTitle}>
-                {emptyText}
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="server-health-chart-wrap">
-          {hasHomepagePingBinding ? (
-            <QualityBars
-              buckets={pingBuckets}
-              redrawKey={redrawKey}
-              onHoverIndex={onLossHover}
-            />
-          ) : (
-            <div className="server-health-placeholder">未配置首页 Ping</div>
-          )}
-          {lossHoverTime && hoveredLossBucket && (
-            <div className="server-health-tooltip">
-              <div className="instance-chart-tooltip-time">{lossHoverTime}</div>
-              <div className="instance-chart-tooltip-row">
-                <span className="instance-chart-tooltip-dot" style={{ background: lossHoverColor ?? lossColor }} />
-                <span>丢包率</span>
-                <strong>{formatLossBucketSummary(hoveredLossBucket)}</strong>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {canShowSources && <PingSourceMatrix rows={sourceRows} compareUrl={compareUrl} />}
+      )}
     </div>
   );
 });

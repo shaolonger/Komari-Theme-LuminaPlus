@@ -599,6 +599,142 @@
   }
 }
 
+/* 大卡片 V2：更清晰的实体边界与状态侧轨，保留完整信息但压缩内部节奏。 */
+.server-card {
+  --server-card-status: var(--status-success);
+  border-color: color-mix(in srgb, var(--border-strong) 62%, var(--border));
+  border-radius: 14px;
+  box-shadow:
+    inset 3px 0 0 var(--server-card-status),
+    0 1px 2px color-mix(in srgb, black 10%, transparent),
+    0 12px 28px -22px color-mix(in srgb, black 58%, transparent);
+}
+
+.server-card.is-offline {
+  --server-card-status: var(--status-offline);
+  box-shadow:
+    inset 3px 0 0 var(--server-card-status),
+    0 1px 2px color-mix(in srgb, black 12%, transparent),
+    0 12px 28px -20px color-mix(in srgb, var(--status-offline) 32%, transparent);
+}
+
+.server-card[data-status="warning"] {
+  --server-card-status: var(--status-warning);
+}
+
+.server-card[data-status="critical"] {
+  --server-card-status: var(--status-offline);
+}
+
+.server-card:hover {
+  border-color: color-mix(in srgb, var(--server-card-status) 30%, var(--border-strong));
+  box-shadow:
+    inset 3px 0 0 var(--server-card-status),
+    0 2px 4px color-mix(in srgb, black 12%, transparent),
+    0 16px 34px -22px color-mix(in srgb, black 65%, transparent);
+}
+
+.server-card-content {
+  gap: 9px;
+  padding: 12px 12px 10px 14px;
+}
+
+.server-card-header {
+  align-items: center;
+}
+
+.server-card-title-block {
+  gap: 4px;
+}
+
+.server-card-title-link {
+  font-size: 14px;
+  font-weight: 740;
+}
+
+.server-card-subtitle {
+  min-height: 19px;
+  padding: 0.2rem 0.48rem;
+  font-size: 9.5px;
+}
+
+.server-card-detail-link {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.server-card-stack {
+  gap: 9px;
+}
+
+.server-metric-grid {
+  gap: 9px 12px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 8px;
+}
+
+.metric-item {
+  gap: 4px;
+}
+
+.metric-detail {
+  min-height: 13px;
+  padding: 1px 6px;
+  font-size: 9.5px;
+}
+
+.metric-track,
+.metric-track-canvas {
+  height: 7px;
+}
+
+.server-traffic-section {
+  gap: 12px;
+}
+
+.traffic-stat {
+  gap: 6px;
+}
+
+.traffic-stat-value {
+  font-size: 15px;
+}
+
+.traffic-stat-foot {
+  font-size: 10px;
+}
+
+.traffic-quota {
+  gap: 5px;
+  margin-top: 0;
+}
+
+.traffic-quota-track {
+  height: 7px;
+}
+
+.server-health-grid {
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.card-metric-section + .card-metric-section.card-metric-divided {
+  padding-top: 8px;
+}
+
+.server-card-footer {
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.dstatus-tag-chip,
+.dstatus-price-chip {
+  border-radius: 6px;
+  padding: 0.28rem 0.5rem;
+  font-size: 9.5px;
+}
+
 .traffic-stat-value {
   flex: 0 0 auto;
   font-size: 18px;
@@ -915,5 +1051,303 @@
   .server-card-meta-grid {
     grid-template-columns: 1fr;
     gap: 14px;
+  }
+}
+
+/* 多任务 Ping 时间矩阵：折线表示延迟，折线断点与红色竖线共同标出丢包时刻。 */
+.ping-source-matrix {
+  width: 100%;
+  gap: 7px;
+}
+
+.ping-source-matrix-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.ping-source-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.ping-source-summary > span {
+  display: inline-flex;
+  min-width: 0;
+  height: 21px;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 36%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-elev-a) 58%, transparent);
+  color: var(--text-tertiary);
+  padding: 0 6px;
+  font-size: 8.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ping-source-summary strong {
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 780;
+}
+
+.ping-source-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ping-task-tile,
+.ping-task-overflow {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 65px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 45%, transparent);
+  border-radius: 9px;
+  background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--ping-task-line, var(--status-success)) 7%, transparent),
+      transparent 48%
+    ),
+    color-mix(in srgb, var(--surface-elev-a) 62%, transparent);
+  padding: 6px 7px 5px;
+}
+
+.ping-task-tile[data-status="warning"] {
+  border-color: color-mix(in srgb, var(--status-warning) 34%, var(--border-strong));
+}
+
+.ping-task-tile[data-status="critical"],
+.ping-task-tile[data-loss="true"] {
+  border-color: color-mix(in srgb, var(--status-error) 36%, var(--border-strong));
+}
+
+.ping-task-tile[data-status="empty"] {
+  border-style: dashed;
+}
+
+[data-appearance="dark"] .ping-task-tile,
+[data-appearance="dark"] .ping-task-overflow {
+  background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--ping-task-line, var(--status-success)) 10%, transparent),
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--surface-elev-a) 45%, transparent);
+}
+
+.ping-task-tile-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.ping-task-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.1;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ping-task-name:hover {
+  color: var(--progress-cpu);
+}
+
+.ping-task-readings {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.ping-task-readings strong {
+  color: var(--status-success);
+  font-size: 9.5px;
+  font-weight: 820;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.ping-task-readings small {
+  margin-left: 1px;
+  color: var(--text-tertiary);
+  font-size: 7px;
+  font-weight: 680;
+}
+
+.ping-task-readings i {
+  width: 1px;
+  height: 8px;
+  background: var(--hairline);
+}
+
+.ping-task-loss-value {
+  color: var(--status-success) !important;
+}
+
+.ping-task-tile[data-loss="true"] .ping-task-loss-value {
+  color: var(--status-error) !important;
+}
+
+.ping-task-meta {
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 8px;
+  font-weight: 590;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ping-task-sparkline {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: auto;
+  overflow: visible;
+}
+
+.ping-task-sparkline-baseline {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border-strong) 38%, transparent);
+  stroke-dasharray: 2 3;
+  stroke-width: 0.8;
+}
+
+.ping-task-sparkline-line {
+  fill: none;
+  stroke: var(--ping-task-line, var(--status-success));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.ping-task-sparkline-loss {
+  stroke: var(--status-error);
+  stroke-linecap: round;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ping-task-sparkline-empty {
+  display: grid;
+  min-height: 22px;
+  margin-top: auto;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: 8px;
+  font-weight: 620;
+}
+
+.ping-task-overflow {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  text-decoration: none;
+}
+
+.ping-task-overflow strong {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 790;
+  line-height: 1;
+}
+
+.ping-task-overflow span {
+  margin-top: 3px;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.ping-source-matrix[data-density="compact"] {
+  padding-top: 0;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-source-list {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-tile,
+.ping-source-matrix[data-density="compact"] .ping-task-overflow {
+  min-height: 44px;
+  border-radius: 7px;
+  padding: 4px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-tile-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-name {
+  font-size: 8px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-readings {
+  gap: 2px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-readings strong {
+  font-size: 7.5px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-readings small {
+  font-size: 6px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-readings i {
+  height: 6px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-sparkline {
+  height: 17px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-overflow strong {
+  font-size: 13px;
+}
+
+.ping-source-matrix[data-density="compact"] .ping-task-overflow span {
+  font-size: 7px;
+}
+
+@media (max-width: 430px) {
+  .ping-source-summary {
+    display: none;
+  }
+
+  .ping-source-matrix-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ping-source-list,
+  .ping-source-matrix[data-density="compact"] .ping-source-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

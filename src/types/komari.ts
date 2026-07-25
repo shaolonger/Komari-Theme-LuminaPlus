@@ -403,6 +403,7 @@ export interface PingOverviewTaskSummary {
   loss: number | null;
   sampleCount: number;
   hasSamples: boolean;
+  samples?: Array<{ time: number; value: number }>;
 }
 
 export interface PingOverviewItem {

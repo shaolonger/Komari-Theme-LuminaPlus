@@ -41,6 +41,7 @@ function summarizeTask(
     loss: item?.loss ?? null,
     sampleCount: item?.samples.length ?? 0,
     hasSamples: Boolean(item && (item.samples.length > 0 || item.values.length > 0)),
+    samples: item?.samples ?? [],
   };
 }
 

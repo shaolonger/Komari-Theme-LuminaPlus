@@ -1308,3 +1308,146 @@
     font-size: 11px;
   }
 }
+
+/* 首页舰队状态压缩为单条信息轨道，避免总览卡与工作台摘要重复占用纵向空间。 */
+.home-workbench {
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.home-fleet-strip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  border-color: color-mix(in srgb, var(--border-strong) 55%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-a) 91%, transparent);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, black 8%, transparent),
+    0 10px 24px -22px color-mix(in srgb, black 62%, transparent);
+  padding: 5px 6px;
+}
+
+.home-fleet-metrics {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.home-fleet-metrics > span,
+.home-fleet-metric {
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 31%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-elev-a) 58%, transparent);
+  color: var(--text-tertiary);
+  padding: 0 7px;
+  font-size: 9px;
+  font-weight: 670;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.home-fleet-metrics > span strong,
+.home-fleet-metric strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-fleet-metric {
+  cursor: pointer;
+  font: inherit;
+}
+
+.home-fleet-metric > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-fleet-metric svg {
+  flex: 0 0 auto;
+  color: var(--status-success);
+}
+
+.home-fleet-metric:disabled {
+  cursor: default;
+}
+
+.home-fleet-metric:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--status-success) 34%, var(--border-strong));
+  background: color-mix(in srgb, var(--status-success) 7%, var(--surface-elev-a));
+}
+
+.home-fleet-toggle {
+  min-width: 62px;
+  height: 34px;
+  gap: 4px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+.home-workbench-controls {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) minmax(138px, 0.48fr) auto auto auto minmax(340px, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.home-workbench-search,
+.home-workbench-sort,
+.home-select-button,
+.home-3d-link,
+.home-compare-link {
+  height: 34px;
+  border-radius: 10px;
+  font-size: 10.5px;
+}
+
+.home-facet-tabs {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 1380px) {
+  .home-fleet-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .home-workbench-controls {
+    grid-template-columns: minmax(240px, 1fr) minmax(140px, 180px) repeat(3, auto);
+  }
+
+  .home-risk-filter-strip {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .home-fleet-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .home-fleet-metrics {
+    grid-column: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    order: 0;
+  }
+
+  .home-fleet-toggle {
+    order: 1;
+    width: 100%;
+  }
+
+  .home-workbench-controls {
+    grid-template-columns: 1fr;
+  }
+}

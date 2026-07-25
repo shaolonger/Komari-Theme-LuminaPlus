@@ -23,14 +23,12 @@ import { getAdminClients } from "@/services/api";
 import type { HomeNodeSummary } from "@/services/wsStore";
 import {
   formatBytes,
-  formatByteRate,
   formatByteRateLabel,
   resolveExpireTimestamp,
   trimFixed,
 } from "@/utils/format";
 import { formatRenewalPrice } from "@/utils/billing";
 import { calculateCostSummary, formatCnyMoney, getExchangeRates } from "@/utils/cost";
-import { speedRateColor } from "@/utils/metricTone";
 import {
   HOME_ALL_GROUP,
   sortHomeGroupOptions,
@@ -48,11 +46,6 @@ import {
   type HomeFacetFilters,
   type HomeFacetNode,
 } from "@/utils/homeVpsViews";
-import {
-  getOverviewRating,
-  type OverviewRating,
-  type OverviewRatingStyle,
-} from "@/utils/overviewRating";
 import {
   overlayAdminClientMeta,
   shouldIncludeAgentVersionCompleteness,
@@ -119,11 +112,6 @@ const HOME_RISK_FILTERS: Array<{ value: HomeRiskFilter; label: string }> = [
   { value: "ping", label: "Ping" },
 ];
 
-function formatCompactBytes(value: number): string {
-  const [amount, unit = "B"] = formatBytes(value).split(" ");
-  return `${amount}${unit[0]}`;
-}
-
 function countRiskNodes(risks: HomeRiskItem[], filter: HomeRiskFilter) {
   if (filter === "all") return 0;
   const uuids = new Set<string>();
@@ -188,17 +176,26 @@ function HomeWorkbenchPanel({
   overview,
   risks,
   expanded,
+  showOverview,
+  costSummary,
+  costLoading,
+  showCostDetailButton,
+  onOpenCostSummary,
   onToggle,
 }: {
   nodes: VpsWorkbenchNode[];
   overview: HomeOverview;
   risks: HomeRiskItem[];
   expanded: boolean;
+  showOverview: boolean;
+  costSummary: { remainingCny: number } | null;
+  costLoading: boolean;
+  showCostDetailButton: boolean;
+  onOpenCostSummary: () => void;
   onToggle: () => void;
 }) {
   const summary = useMemo(() => summarizeWorkbench(nodes), [nodes]);
   const riskNodes = countRiskNodes(risks, "attention");
-  const topRisks = risks.slice(0, 2);
   const incompleteNodes = useMemo(
     () => sortWorkbenchNodes(nodes.filter((node) => node.completeness.ratio < 1), "completeness").slice(0, 3),
     [nodes],
@@ -236,15 +233,23 @@ function HomeWorkbenchPanel({
   return (
     <section className="home-workbench" aria-label="VPS 管理工作台" data-expanded={expanded ? "true" : "false"}>
       <div className="home-fleet-strip">
-        <div>
-          <p className="home-fleet-eyebrow">VPS 管理工作台</p>
-          <h2>{riskNodes > 0 ? `${riskNodes} 台需要关注` : "舰队状态平稳"}</h2>
-        </div>
         <div className="home-fleet-metrics" aria-label="舰队状态摘要">
           <span>
             在线
             <strong>{overview.onlineNodes}/{overview.totalNodes}</strong>
           </span>
+          {showOverview && (
+            <>
+              <span title={`↑ ${formatBytes(overview.trafficUp)} · ↓ ${formatBytes(overview.trafficDown)}`}>
+                累计流量
+                <strong>{formatBytes(overview.trafficUp + overview.trafficDown)}</strong>
+              </span>
+              <span title={`↑ ${formatByteRateLabel(overview.netUp)} · ↓ ${formatByteRateLabel(overview.netDown)}`}>
+                实时带宽
+                <strong>{formatByteRateLabel(overview.netUp + overview.netDown)}</strong>
+              </span>
+            </>
+          )}
           <span data-tone={riskNodes > 0 ? "warning" : "ok"}>
             待处理
             <strong>{riskNodes}</strong>
@@ -261,6 +266,25 @@ function HomeWorkbenchPanel({
             资料待补
             <strong>{summary.incomplete}</strong>
           </span>
+          {showOverview && (
+            <button
+              type="button"
+              className="home-fleet-metric"
+              disabled={!showCostDetailButton}
+              onClick={showCostDetailButton ? onOpenCostSummary : undefined}
+              title={showCostDetailButton ? "打开资产统计" : "资产统计未启用"}
+            >
+              <span>资产</span>
+              <strong>
+                {costSummary
+                  ? formatCnyMoney(costSummary.remainingCny)
+                  : costLoading
+                    ? "计算中"
+                    : "—"}
+              </strong>
+              {showCostDetailButton && <CircleDollarSign size={12} aria-hidden="true" />}
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -272,16 +296,6 @@ function HomeWorkbenchPanel({
           <span>{expanded ? "收起" : "展开"}</span>
         </button>
       </div>
-      {!expanded && topRisks.length > 0 && (
-        <div className="home-fleet-nudge" aria-label="优先关注">
-          {topRisks.map((risk) => (
-            <Link key={`${risk.uuid}-${risk.kind}-${risk.title}`} to={`/instance/${risk.uuid}`}>
-              <strong>{risk.name}</strong>
-              <span>{risk.detail}</span>
-            </Link>
-          ))}
-        </div>
-      )}
       {expanded && (
         <div className="home-workbench-details">
           <HomeOperationsQueue risks={risks} />
@@ -436,180 +450,6 @@ function HomeRiskFilters({
         );
       })}
     </div>
-  );
-}
-
-function HomeOverviewCards({
-  overview,
-  costSummary,
-  costLoading,
-  showOverviewRatings,
-  overviewRatingStyle,
-  showTrafficRating,
-  showBandwidthRating,
-  showAssetRating,
-  trafficRatingLabels,
-  bandwidthRatingLabels,
-  assetRatingLabels,
-  showDetailButton,
-  onOpenCostSummary,
-}: {
-  overview: HomeOverview;
-  costSummary: { remainingCny: number } | null;
-  costLoading: boolean;
-  showOverviewRatings: boolean;
-  overviewRatingStyle: OverviewRatingStyle;
-  showTrafficRating: boolean;
-  showBandwidthRating: boolean;
-  showAssetRating: boolean;
-  trafficRatingLabels: string;
-  bandwidthRatingLabels: string;
-  assetRatingLabels: string;
-  showDetailButton: boolean;
-  onOpenCostSummary: () => void;
-}) {
-  const [trafficValue, trafficUnit] = formatBytes(
-    overview.trafficUp + overview.trafficDown,
-  ).split(" ");
-  const rate = formatByteRate(overview.netUp + overview.netDown);
-  const onlinePct =
-    overview.totalNodes > 0 ? (overview.onlineNodes / overview.totalNodes) * 100 : 0;
-  const offlinePct =
-    overview.totalNodes > 0 ? (overview.offlineNodes / overview.totalNodes) * 100 : 0;
-  const remainingValue = costSummary
-    ? formatCnyMoney(costSummary.remainingCny)
-    : costLoading
-      ? "计算中"
-      : "—";
-  const trafficDetailLabel = `↑ ${formatBytes(overview.trafficUp)} · ↓ ${formatBytes(overview.trafficDown)}`;
-  const trafficCompactLabel = `↑${formatCompactBytes(overview.trafficUp)} ↓${formatCompactBytes(overview.trafficDown)}`;
-  const bandwidthDetailLabel = `↑ ${formatByteRateLabel(overview.netUp)} · ↓ ${formatByteRateLabel(overview.netDown)}`;
-  const bandwidthCompactLabel = `↑${formatCompactBytes(overview.netUp)} ↓${formatCompactBytes(overview.netDown)}`;
-  const trafficRating =
-    showOverviewRatings && showTrafficRating
-      ? getOverviewRating({
-          kind: "traffic",
-          value: overview.trafficUp + overview.trafficDown,
-          style: overviewRatingStyle,
-          customLabels: trafficRatingLabels,
-        })
-      : null;
-  const bandwidthRating =
-    showOverviewRatings && showBandwidthRating
-      ? getOverviewRating({
-          kind: "bandwidth",
-          value: overview.netUp + overview.netDown,
-          style: overviewRatingStyle,
-          customLabels: bandwidthRatingLabels,
-        })
-      : null;
-  const assetRating =
-    showOverviewRatings && showAssetRating && costSummary
-      ? getOverviewRating({
-          kind: "asset",
-          value: costSummary.remainingCny,
-          style: overviewRatingStyle,
-          customLabels: assetRatingLabels,
-        })
-      : null;
-
-  const renderRating = (rating: OverviewRating | null) =>
-    rating ? (
-      <span className="overview-card-rating" data-rating-level={rating.level} title={rating.label}>
-        {rating.label}
-      </span>
-    ) : null;
-
-  return (
-    <section className="home-overview" aria-label="首页总览">
-      <article className="overview-card">
-        <span className="overview-card-label">在线节点</span>
-        <div className="overview-card-main">
-          <p className="overview-card-value">
-            {overview.onlineNodes}
-            <span className="overview-card-unit">/ {overview.totalNodes}</span>
-          </p>
-        </div>
-        {overview.totalNodes >= 5 && overview.totalNodes <= 10 ? (
-          // 节点数 5–10 时改用块状:每台一格,在线格在左、离线格在右、未知格居中,
-          // 与条状的「左绿右红」完全同步。颜色复用同一组 token,避免该红却绿。
-          <div className="overview-blocks" role="presentation">
-            {Array.from({ length: overview.totalNodes }, (_, i) => {
-              const cls =
-                i < overview.onlineNodes
-                  ? "overview-block is-online"
-                  : i >= overview.totalNodes - overview.offlineNodes
-                    ? "overview-block is-offline"
-                    : "overview-block";
-              return <span key={i} className={cls} />;
-            })}
-          </div>
-        ) : (
-          <div className="overview-bar" role="presentation">
-            <span className="overview-bar-online" style={{ width: `${onlinePct}%` }} />
-            <span className="overview-bar-offline" style={{ width: `${offlinePct}%` }} />
-          </div>
-        )}
-      </article>
-
-      <article className="overview-card">
-        <span className="overview-card-label">累计流量</span>
-        <div className="overview-card-main">
-          <p className="overview-card-value">
-            {trafficValue}
-            <span className="overview-card-unit">{trafficUnit}</span>
-          </p>
-        </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-sub" title={trafficDetailLabel}>
-            <span className="overview-card-sub-full">{trafficDetailLabel}</span>
-            <span className="overview-card-sub-compact">{trafficCompactLabel}</span>
-          </p>
-          {renderRating(trafficRating)}
-        </div>
-      </article>
-
-      <article className="overview-card">
-        <span className="overview-card-label">实时带宽</span>
-        <div className="overview-card-main">
-          <p className="overview-card-value" style={{ color: speedRateColor(rate.unit) }}>
-            {rate.value}
-            <span className="overview-card-unit">{rate.unit}</span>
-          </p>
-        </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-sub" title={bandwidthDetailLabel}>
-            <span className="overview-card-sub-full">{bandwidthDetailLabel}</span>
-            <span className="overview-card-sub-compact">{bandwidthCompactLabel}</span>
-          </p>
-          {renderRating(bandwidthRating)}
-        </div>
-      </article>
-
-      <article className="overview-card">
-        <div className="overview-card-head">
-          <span className="overview-card-label">资产概览</span>
-          {showDetailButton && (
-            <button
-              type="button"
-              className="overview-card-action"
-              onClick={onOpenCostSummary}
-              aria-label="打开资产统计详情"
-              title="资产统计"
-            >
-              <CircleDollarSign size={15} />
-            </button>
-          )}
-        </div>
-        <div className="overview-card-main">
-          <p className="overview-card-value">{remainingValue}</p>
-        </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-caption">实时汇率计算</p>
-          {renderRating(assetRating)}
-        </div>
-      </article>
-    </section>
   );
 }
 
@@ -1418,7 +1258,7 @@ export function NodeGrid() {
     mode === "list"
       ? "1fr"
       : mode === "compact"
-      ? "repeat(auto-fill, minmax(min(100%, 300px), 1fr))"
+      ? "repeat(auto-fill, minmax(min(100%, 260px), 1fr))"
       : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))";
   const activeSavedViewName = activeSavedView?.name ?? "";
   const selectFacetValue = (value: string) => {
@@ -1485,28 +1325,16 @@ export function NodeGrid() {
             showLauncher={showCostFloatingButton}
           />
         )}
-        {showHomeOverview && (
-          <HomeOverviewCards
-            overview={overview}
-            showDetailButton={showCostDetailButton}
-            costSummary={costSummary}
-            costLoading={costLoading}
-            showOverviewRatings={themeSettings.showOverviewRatings}
-            overviewRatingStyle={themeSettings.overviewRatingStyle}
-            showTrafficRating={themeSettings.showTrafficRating}
-            showBandwidthRating={themeSettings.showBandwidthRating}
-            showAssetRating={themeSettings.showAssetRating}
-            trafficRatingLabels={themeSettings.trafficRatingLabels}
-            bandwidthRatingLabels={themeSettings.bandwidthRatingLabels}
-            assetRatingLabels={themeSettings.assetRatingLabels}
-            onOpenCostSummary={() => setCostSummaryOpen(true)}
-          />
-        )}
         <HomeWorkbenchPanel
           nodes={workbenchNodes}
           overview={overview}
           risks={operationRisks}
           expanded={workbenchOpen}
+          showOverview={showHomeOverview}
+          costSummary={costSummary}
+          costLoading={costLoading}
+          showCostDetailButton={showCostDetailButton}
+          onOpenCostSummary={() => setCostSummaryOpen(true)}
           onToggle={() => setWorkbenchOpen((value) => !value)}
         />
         <div className="flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
@@ -1534,28 +1362,16 @@ export function NodeGrid() {
           showLauncher={showCostFloatingButton}
         />
       )}
-      {showHomeOverview && (
-        <HomeOverviewCards
-          overview={overview}
-          showDetailButton={showCostDetailButton}
-          costSummary={costSummary}
-          costLoading={costLoading}
-          showOverviewRatings={themeSettings.showOverviewRatings}
-          overviewRatingStyle={themeSettings.overviewRatingStyle}
-          showTrafficRating={themeSettings.showTrafficRating}
-          showBandwidthRating={themeSettings.showBandwidthRating}
-          showAssetRating={themeSettings.showAssetRating}
-          trafficRatingLabels={themeSettings.trafficRatingLabels}
-          bandwidthRatingLabels={themeSettings.bandwidthRatingLabels}
-          assetRatingLabels={themeSettings.assetRatingLabels}
-          onOpenCostSummary={() => setCostSummaryOpen(true)}
-        />
-      )}
       <HomeWorkbenchPanel
         nodes={workbenchNodes}
         overview={overview}
         risks={operationRisks}
         expanded={workbenchOpen}
+        showOverview={showHomeOverview}
+        costSummary={costSummary}
+        costLoading={costLoading}
+        showCostDetailButton={showCostDetailButton}
+        onOpenCostSummary={() => setCostSummaryOpen(true)}
         onToggle={() => setWorkbenchOpen((value) => !value)}
       />
       <div className="home-workbench-controls">

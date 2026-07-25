@@ -15,6 +15,7 @@ export interface HomepagePingSourceRow {
   lossShortLabel: string;
   latencyRatio: number;
   lossDotCount: number;
+  samples: Array<{ time: number; value: number }>;
   attentionScore: number;
   title: string;
   status: "ok" | "warning" | "critical" | "empty";
@@ -116,6 +117,7 @@ export function buildHomepagePingSourceRows(
         lossShortLabel: lossShortLabel(summary.loss),
         latencyRatio: latencyRatio(summary.lastValue),
         lossDotCount: lossDotCount(summary.loss),
+        samples: summary.samples ?? [],
         attentionScore: sourceAttentionScore(summary),
         title: sourceTitle({
           name: summary.name,

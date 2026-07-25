@@ -17,6 +17,7 @@ describe("homepage Ping source helpers", () => {
             loss: 0,
             sampleCount: 8,
             hasSamples: true,
+            samples: [{ time: 1_000, value: 42.345 }],
           },
           {
             taskId: 5,
@@ -55,6 +56,7 @@ describe("homepage Ping source helpers", () => {
         lossShortLabel: "0.00",
         lossDotCount: 0,
         status: "ok",
+        samples: [{ time: 1_000, value: 42.345 }],
       }),
     ]);
     expect(rows[0].attentionScore).toBeGreaterThan(rows[1].attentionScore);
