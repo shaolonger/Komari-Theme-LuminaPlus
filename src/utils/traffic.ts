@@ -1,4 +1,4 @@
-import { formatBytes, trimFixed } from "@/utils/format";
+import { trimFixed } from "@/utils/format";
 
 const COMPACT_TRAFFIC_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -14,7 +14,7 @@ export interface TrafficDisplay {
   remainingLabel: string;
   /** "64.3 GB / 4.00 TB" 或 "2.73 GB / ∞" —— used/limit 那一行。 */
   detail: string;
-  /** "64.3/4096 GB" —— 小卡片去掉重复单位后的紧凑 used/limit。 */
+  /** "64.3/500 GB" 或 "8.05 MB/500 GB" —— 小卡片的紧凑 used/limit。 */
   compactDetail: string;
   /** 上限类型的可读标签,如 "上下取大" —— 给 tooltip 用。 */
   typeLabel: string;
@@ -79,21 +79,24 @@ function compactByteValue(value: number) {
   return "0";
 }
 
-export function formatCompactTrafficDetail(usage: TrafficUsage) {
-  if (usage.unlimited) return `${formatBytes(usage.used)}/∞`;
+function compactByteParts(value: number) {
+  const unitIndex = byteUnitIndex(value);
+  return {
+    value: compactByteValue(value / 1024 ** unitIndex),
+    unit: COMPACT_TRAFFIC_UNITS[unitIndex],
+    unitIndex,
+  };
+}
 
-  const usedUnitIndex = byteUnitIndex(usage.used);
-  const limitUnitIndex = byteUnitIndex(usage.limit);
-  // Use at most one unit below the limit, keeping the denominator at or below
-  // 1024 while avoiding tiny unreadable numerator values in the common case.
-  const displayUnitIndex = Math.min(
-    limitUnitIndex,
-    Math.max(usedUnitIndex, limitUnitIndex - 1),
-  );
-  const divisor = 1024 ** displayUnitIndex;
-  return `${compactByteValue(usage.used / divisor)}/${compactByteValue(
-    usage.limit / divisor,
-  )} ${COMPACT_TRAFFIC_UNITS[displayUnitIndex]}`;
+export function formatCompactTrafficDetail(usage: TrafficUsage) {
+  const used = compactByteParts(usage.used);
+  if (usage.unlimited) return `${used.value} ${used.unit}/∞`;
+
+  const limit = compactByteParts(usage.limit);
+  if (used.unitIndex === limit.unitIndex) {
+    return `${used.value}/${limit.value} ${used.unit}`;
+  }
+  return `${used.value} ${used.unit}/${limit.value} ${limit.unit}`;
 }
 
 // 共享的流量模型——首页卡片(useNodeCardModel)和实例详情页共用的 used/remaining/fraction 唯一来源,

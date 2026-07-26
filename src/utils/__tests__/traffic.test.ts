@@ -73,12 +73,28 @@ describe("formatCompactTrafficDetail", () => {
     ).toBe("1.79/500 GB");
   });
 
-  it("uses one unit below a much larger limit to keep both values readable", () => {
+  it("keeps natural units when used and limit sizes differ", () => {
     expect(
       formatCompactTrafficDetail(
         resolveTrafficUsage("sum", 22 * 1024 ** 3, 0, 2 * 1024 ** 4),
       ),
-    ).toBe("22/2048 GB");
+    ).toBe("22 GB/2 TB");
+  });
+
+  it("does not expand a GB limit into an unreadable MB denominator", () => {
+    expect(
+      formatCompactTrafficDetail(
+        resolveTrafficUsage("sum", 8.05 * 1024 ** 2, 0, 500 * 1024 ** 3),
+      ),
+    ).toBe("8.05 MB/500 GB");
+  });
+
+  it("keeps very small usage readable beside a much larger limit", () => {
+    expect(
+      formatCompactTrafficDetail(
+        resolveTrafficUsage("sum", 512, 0, 500 * 1024 ** 3),
+      ),
+    ).toBe("512 B/500 GB");
   });
 
   it("keeps unlimited usage concise", () => {
