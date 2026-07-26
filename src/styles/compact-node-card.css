@@ -55,6 +55,42 @@
     color-mix(in srgb, var(--surface-a) 94%, black 6%);
 }
 
+.compact-node-card.is-offline {
+  border-color: color-mix(in srgb, var(--status-offline) 58%, var(--border-strong));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--status-offline) 13%, transparent) 0%,
+      transparent 54%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 32%),
+    var(--surface-a);
+  box-shadow:
+    inset 3px 0 0 var(--status-offline),
+    0 0 0 1px color-mix(in srgb, var(--status-offline) 16%, transparent),
+    0 11px 26px -19px color-mix(in srgb, var(--status-offline) 38%, transparent);
+}
+
+[data-appearance="dark"] .compact-node-card.is-offline {
+  border-color: color-mix(in srgb, var(--status-offline) 62%, var(--border-strong));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--status-offline) 17%, transparent) 0%,
+      transparent 56%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, white 3%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface-a) 94%, black 6%);
+}
+
+.compact-node-card.is-offline:hover {
+  border-color: color-mix(in srgb, var(--status-offline) 68%, var(--border-strong));
+  box-shadow:
+    inset 3px 0 0 var(--status-offline),
+    0 0 0 1px color-mix(in srgb, var(--status-offline) 20%, transparent),
+    0 15px 32px -19px color-mix(in srgb, var(--status-offline) 46%, transparent);
+}
+
 .compact-node-header {
   display: flex;
   min-width: 0;
@@ -85,6 +121,38 @@
 
 .compact-node-title:hover {
   color: var(--progress-cpu);
+}
+
+.compact-node-card.is-offline .compact-node-title,
+.compact-node-card.is-offline .compact-node-title:hover {
+  color: color-mix(in srgb, var(--status-offline) 76%, var(--text-primary));
+}
+
+.compact-node-offline-badge {
+  display: inline-flex;
+  height: 17px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--status-offline) 34%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-offline) 12%, var(--surface-elev-a));
+  color: var(--status-offline);
+  padding: 0 6px;
+  font-size: 8.5px;
+  font-weight: 790;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.compact-node-offline-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .compact-node-detail-link {

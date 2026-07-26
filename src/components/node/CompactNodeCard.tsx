@@ -133,7 +133,15 @@ function CompactTrafficPulse({
   );
 }
 
-function CompactNodeHeader({ node, osName }: { node: CompactNode; osName: string }) {
+function CompactNodeHeader({
+  node,
+  osName,
+  isOffline,
+}: {
+  node: CompactNode;
+  osName: string;
+  isOffline: boolean;
+}) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
     <header className="compact-node-header">
@@ -142,6 +150,11 @@ function CompactNodeHeader({ node, osName }: { node: CompactNode; osName: string
         <Link to={`/instance/${node.uuid}`} className="compact-node-title" title={node.name}>
           {node.name}
         </Link>
+        {isOffline && (
+          <span className="compact-node-offline-badge" title="服务器离线">
+            离线
+          </span>
+        )}
       </div>
       <Link
         to={`/instance/${node.uuid}`}
@@ -355,8 +368,9 @@ export const CompactNodeCard = memo(function CompactNodeCard({ uuid }: { uuid: s
     <article
       className={clsx("compact-node-card", isOffline && "is-offline")}
       data-status={cardStatus}
+      data-online={node.online === true ? "true" : node.online === false ? "false" : "pending"}
     >
-      <CompactNodeHeader node={node} osName={osName} />
+      <CompactNodeHeader node={node} osName={osName} isOffline={isOffline} />
       <CompactNodeMeta
         subtitle={subtitle}
         tags={footerTags}
