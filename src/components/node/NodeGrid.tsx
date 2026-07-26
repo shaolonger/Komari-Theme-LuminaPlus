@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -36,6 +43,7 @@ import {
   sortHomeGroupOptions,
   sortHomeNodeSummaries,
 } from "@/utils/homeNodes";
+import { fitFacetQuickOptionCount } from "@/utils/facetRailLayout";
 import {
   HOME_FACET_LEGACY_GROUP,
   buildHomeFacetNode,
@@ -82,7 +90,6 @@ import { VpsListSortPanel } from "./VpsListSortPanel";
 const UUID_KEY_SEPARATOR = ",";
 const WORKBENCH_OPEN_STORAGE_KEY = "lumina-home-workbench-open";
 const HOME_COMPARE_SEED_COUNT = 3;
-const HOME_FACET_QUICK_OPTION_LIMIT = 10;
 
 interface HomeOverview {
   totalNodes: number;
@@ -475,7 +482,7 @@ function getDimensionLabel(dimensions: HomeFacetDimension[], id: string) {
   return dimensions.find((dimension) => dimension.id === id)?.label ?? id;
 }
 
-function FacetRail({
+export function FacetRail({
   dimensions,
   dimensionCoverage,
   selectedDimension,
@@ -496,17 +503,90 @@ function FacetRail({
   onSelectDimension: (dimension: string) => void;
   onSelectValue: (value: string) => void;
 }) {
-  const quickOptions = Array.from(new Set([...selectedValues, ...options])).slice(
-    0,
-    HOME_FACET_QUICK_OPTION_LIMIT,
+  const orderedOptions = useMemo(
+    () => Array.from(new Set([...selectedValues, ...options])),
+    [options, selectedValues],
   );
-  const quickSet = new Set(quickOptions);
-  const overflowOptions = options.filter((option) => !quickSet.has(option));
+  const [quickOptionCount, setQuickOptionCount] = useState(orderedOptions.length);
+  const railRef = useRef<HTMLElement>(null);
+  const dimensionRef = useRef<HTMLDivElement>(null);
+  const noFilterRef = useRef<HTMLButtonElement>(null);
+  const optionMeasureRef = useRef<HTMLDivElement>(null);
+  const moreMeasureRef = useRef<HTMLDivElement>(null);
+  const quickOptions = orderedOptions.slice(0, quickOptionCount);
+  const overflowOptions = orderedOptions.slice(quickOptionCount);
   const dimensionLabel = getDimensionLabel(dimensions, selectedDimension);
+  const measurementKey = [
+    selectedDimension,
+    activeFilterCount,
+    ...dimensions.map(
+      (dimension) =>
+        `${dimension.id}:${dimension.label}:${dimensionCoverage.get(dimension.id) ?? 0}`,
+    ),
+    ...orderedOptions.map(
+      (option) => `${option}:${optionCounts.get(option) ?? 0}`,
+    ),
+  ].join("|");
+
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    const dimension = dimensionRef.current;
+    const noFilter = noFilterRef.current;
+    const optionMeasure = optionMeasureRef.current;
+    const moreMeasure = moreMeasureRef.current;
+    if (!rail || !dimension || !noFilter || !optionMeasure || !moreMeasure) return;
+
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const style = window.getComputedStyle(rail);
+      const contentWidth =
+        rail.clientWidth -
+        Number.parseFloat(style.paddingLeft || "0") -
+        Number.parseFloat(style.paddingRight || "0");
+      const optionStyle = window.getComputedStyle(optionMeasure);
+      const nextCount = fitFacetQuickOptionCount({
+        contentWidth,
+        dimensionWidth: dimension.getBoundingClientRect().width,
+        noFilterWidth: noFilter.getBoundingClientRect().width,
+        railGap: Number.parseFloat(style.columnGap || style.gap || "0"),
+        optionGap: Number.parseFloat(
+          optionStyle.columnGap || optionStyle.gap || "0",
+        ),
+        optionWidths: Array.from(
+          optionMeasure.querySelectorAll<HTMLElement>(
+            "[data-facet-measure-option]",
+          ),
+          (element) => element.getBoundingClientRect().width,
+        ),
+        moreWidths: Array.from(
+          moreMeasure.querySelectorAll<HTMLElement>(
+            "[data-facet-measure-more]",
+          ),
+          (element) => element.getBoundingClientRect().width,
+        ),
+      });
+      setQuickOptionCount((current) =>
+        current === nextCount ? current : nextCount,
+      );
+    };
+
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(rail);
+    void document.fonts?.ready.then(measure);
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
+  }, [measurementKey]);
 
   const renderOption = (option: string, location: "quick" | "more") => (
     <button
       key={`${location}-${option}`}
+      className="home-facet-option"
       type="button"
       role="option"
       aria-selected={selectedValues.includes(option)}
@@ -520,8 +600,13 @@ function FacetRail({
   );
 
   return (
-    <section className="home-facet-rail" aria-label="分类筛选">
-      <div className="home-facet-dimension-select">
+    <section
+      ref={railRef}
+      className="home-facet-rail"
+      aria-label="分类筛选"
+      data-overflow={overflowOptions.length > 0 ? "true" : "false"}
+    >
+      <div ref={dimensionRef} className="home-facet-dimension-select">
         <SlidersHorizontal size={13} aria-hidden="true" />
         <select
           value={selectedDimension}
@@ -543,6 +628,8 @@ function FacetRail({
         aria-label={`${dimensionLabel}筛选`}
       >
         <button
+          ref={noFilterRef}
+          className="home-facet-option"
           type="button"
           role="option"
           aria-selected={selectedValues.length === 0}
@@ -563,7 +650,10 @@ function FacetRail({
       </div>
       {overflowOptions.length > 0 && (
         <details className="home-facet-more">
-          <summary title={`查看其余 ${overflowOptions.length} 个${dimensionLabel}`}>
+          <summary
+            className="home-facet-more-control"
+            title={`查看其余 ${overflowOptions.length} 个${dimensionLabel}`}
+          >
             <MoreHorizontal size={13} aria-hidden="true" />
             <span>更多</span>
             <strong>+{overflowOptions.length}</strong>
@@ -571,12 +661,45 @@ function FacetRail({
           <div className="home-facet-more-popover" role="listbox">
             <header>
               <span>更多{dimensionLabel}</span>
-              <small>{options.length} 项</small>
+              <small>{orderedOptions.length} 项</small>
             </header>
             {overflowOptions.map((option) => renderOption(option, "more"))}
           </div>
         </details>
       )}
+      <div
+        ref={optionMeasureRef}
+        className="home-facet-measure home-facet-option-measure"
+        aria-hidden="true"
+      >
+        {orderedOptions.map((option) => (
+          <span
+            key={`measure-${option}`}
+            className="home-facet-option"
+            data-facet-measure-option
+          >
+            <span>{option}</span>
+            <small>{optionCounts.get(option) ?? 0}</small>
+          </span>
+        ))}
+      </div>
+      <div
+        ref={moreMeasureRef}
+        className="home-facet-measure home-facet-more-measure"
+        aria-hidden="true"
+      >
+        {orderedOptions.map((_, index) => (
+          <span
+            key={`measure-more-${index + 1}`}
+            className="home-facet-more-control"
+            data-facet-measure-more
+          >
+            <MoreHorizontal size={13} aria-hidden="true" />
+            <span>更多</span>
+            <strong>+{index + 1}</strong>
+          </span>
+        ))}
+      </div>
     </section>
   );
 }

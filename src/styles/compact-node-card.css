@@ -1,6 +1,7 @@
 /* 高密度节点卡片：一行资源、一行实时流量、一个多任务 Ping 时间带。 */
 .compact-node-card {
   --compact-card-status: var(--status-success);
+  --compact-quota-width: 120px;
   position: relative;
   container-name: compact-card;
   container-type: inline-size;
@@ -241,7 +242,7 @@
 .compact-node-live-traffic {
   display: grid;
   min-width: 0;
-  grid-template-columns: auto minmax(24px, 0.42fr) minmax(96px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(24px, 0.42fr) var(--compact-quota-width);
   align-items: center;
   gap: 6px;
   border-top: 1px solid var(--hairline);
@@ -252,7 +253,9 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px;
+  overflow: hidden;
 }
 
 .compact-node-rate {
@@ -300,6 +303,7 @@
 .compact-node-quota-pill {
   position: relative;
   min-width: 0;
+  width: 100%;
   height: 24px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--compact-traffic-color) 25%, var(--border-strong));
@@ -363,7 +367,7 @@
   }
 
   .compact-node-live-traffic {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) var(--compact-quota-width);
   }
 
   .compact-node-traffic-pulse {
@@ -396,7 +400,7 @@
   }
 
   .compact-node-live-traffic {
-    grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr);
+    grid-template-columns: minmax(0, 1fr) var(--compact-quota-width);
   }
 
   .compact-node-traffic-pulse {
