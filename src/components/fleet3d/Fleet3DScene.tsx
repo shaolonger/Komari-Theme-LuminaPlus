@@ -96,6 +96,24 @@ const QUALITY_SETTINGS: Record<
   eco: { pixelRatio: 1, stars: 280, particleRatio: 0.38, pulseHalos: false },
 };
 
+export function resolveFleet3DEffectiveQuality({
+  requested,
+  nodeCount,
+  reducedMotion,
+  deviceMemory,
+}: {
+  requested: Fleet3DQuality;
+  nodeCount: number;
+  reducedMotion: boolean;
+  deviceMemory?: number;
+}): Fleet3DQuality {
+  if (reducedMotion || nodeCount >= 300 || (deviceMemory != null && deviceMemory <= 2)) return "eco";
+  if ((nodeCount >= 100 || (deviceMemory != null && deviceMemory <= 4)) && requested === "high") {
+    return "balanced";
+  }
+  return requested;
+}
+
 interface TrafficStream {
   points: THREE.Points;
   positions: Float32Array;
@@ -139,6 +157,7 @@ interface SceneRuntime {
 
 interface LatestSceneState {
   nodes: Fleet3DNode[];
+  nodeByUuid: Map<string, Fleet3DNode>;
   orbits: Fleet3DOrbit[];
   selectedUuid: string | null;
   compareUuids: string[];
@@ -148,6 +167,7 @@ interface LatestSceneState {
   focusCenter: [number, number, number] | null;
   focusedUuids: string[];
   quality: Fleet3DQuality;
+  reducedMotion: boolean;
   rendererMode: Fleet3DRendererMode;
   onSelectNode: (uuid: string | null) => void;
   onMarqueeSelect: (uuids: string[]) => void;
@@ -959,6 +979,7 @@ export function Fleet3DScene({
   const snapshotRef = useRef<(() => string | null) | null>(null);
   const latestRef = useRef<LatestSceneState>({
     nodes,
+    nodeByUuid: new Map(nodes.map((node) => [node.uuid, node])),
     orbits,
     selectedUuid,
     compareUuids,
@@ -968,6 +989,7 @@ export function Fleet3DScene({
     focusCenter,
     focusedUuids,
     quality,
+    reducedMotion: false,
     rendererMode,
     onSelectNode,
     onMarqueeSelect,
@@ -977,10 +999,29 @@ export function Fleet3DScene({
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
   const [labels, setLabels] = useState<SceneLabel[]>([]);
   const [hoverCard, setHoverCard] = useState<HoverCard | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const effectiveQuality = resolveFleet3DEffectiveQuality({
+    requested: quality,
+    nodeCount: nodes.length,
+    reducedMotion,
+    deviceMemory: typeof navigator === "undefined"
+      ? undefined
+      : (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  });
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     latestRef.current = {
       nodes,
+      nodeByUuid: new Map(nodes.map((node) => [node.uuid, node])),
       orbits,
       selectedUuid,
       compareUuids,
@@ -989,7 +1030,8 @@ export function Fleet3DScene({
       layoutMode,
       focusCenter,
       focusedUuids,
-      quality,
+      quality: effectiveQuality,
+      reducedMotion,
       rendererMode,
       onSelectNode,
       onMarqueeSelect,
@@ -1008,7 +1050,8 @@ export function Fleet3DScene({
     onSnapshotReady,
     onUserCameraControl,
     orbits,
-    quality,
+    effectiveQuality,
+    reducedMotion,
     rendererMode,
     riskScan,
     selectedUuid,
@@ -1158,8 +1201,8 @@ export function Fleet3DScene({
       renderer.setSize(width, height, false);
     };
     resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(container);
 
     const setPointerFromEvent = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -1297,7 +1340,26 @@ export function Fleet3DScene({
     renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
 
-    const animate = () => {
+    let inViewport = true;
+    let pageVisible = document.visibilityState !== "hidden";
+    let previousRenderMs = 0;
+    const animationActive = () => inViewport && pageVisible;
+    const scheduleFrame = () => {
+      if (runtime.frame === 0 && animationActive()) {
+        runtime.frame = window.requestAnimationFrame(animate);
+      }
+    };
+    const animate = (nowMs = performance.now()) => {
+      runtime.frame = 0;
+      if (!animationActive()) return;
+      const targetFrameMs = latestRef.current.quality === "eco"
+        ? 1_000 / (latestRef.current.reducedMotion ? 10 : 30)
+        : 0;
+      if (targetFrameMs > 0 && nowMs - previousRenderMs < targetFrameMs) {
+        scheduleFrame();
+        return;
+      }
+      previousRenderMs = nowMs;
       const elapsed = (performance.now() - runtime.startMs) / 1000;
       controls.update();
       starField.rotation.y = elapsed * 0.025;
@@ -1306,7 +1368,7 @@ export function Fleet3DScene({
       runtime.pingHalos.forEach((halo) => updatePingHalo(halo, elapsed));
       runtime.nodeGroups.forEach((group, uuid) => {
         const selected = uuid === latestRef.current.selectedUuid;
-        const riskNode = latestRef.current.nodes.find((node) => node.uuid === uuid);
+        const riskNode = latestRef.current.nodeByUuid.get(uuid);
         const riskBoost = latestRef.current.riskScan && riskNode?.risk.tone === "critical" ? 0.08 : 0;
         const pulse = 1 + Math.sin(elapsed * 2.8 + group.position.x) * (selected ? 0.07 : 0.025 + riskBoost);
         group.scale.setScalar(pulse);
@@ -1320,13 +1382,30 @@ export function Fleet3DScene({
         );
       }
       renderer.render(scene, camera);
-      runtime.frame = window.requestAnimationFrame(animate);
+      scheduleFrame();
     };
-    animate();
+    const visibilityObserver = typeof IntersectionObserver === "undefined"
+      ? null
+      : new IntersectionObserver(([entry]) => {
+          inViewport = entry?.isIntersecting ?? false;
+          container.dataset.renderActive = animationActive() ? "true" : "false";
+          scheduleFrame();
+        }, { rootMargin: "160px" });
+    visibilityObserver?.observe(container);
+    const handleVisibility = () => {
+      pageVisible = document.visibilityState !== "hidden";
+      container.dataset.renderActive = animationActive() ? "true" : "false";
+      scheduleFrame();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    container.dataset.renderActive = animationActive() ? "true" : "false";
+    scheduleFrame();
 
     return () => {
       window.cancelAnimationFrame(runtime.frame);
-      observer.disconnect();
+      resizeObserver.disconnect();
+      visibilityObserver?.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibility);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
@@ -1349,7 +1428,7 @@ export function Fleet3DScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
-    updateRendererQuality(runtime, quality);
+    updateRendererQuality(runtime, effectiveQuality);
     rebuildSceneObjects(runtime, {
       nodes,
       orbits,
@@ -1358,9 +1437,9 @@ export function Fleet3DScene({
       riskScan,
       layoutMode,
       focusedUuids,
-      quality,
+      quality: effectiveQuality,
     });
-  }, [compareUuids, focusedUuids, layoutMode, nodes, orbits, quality, riskScan, selectedUuid]);
+  }, [compareUuids, effectiveQuality, focusedUuids, layoutMode, nodes, orbits, riskScan, selectedUuid]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1409,6 +1488,7 @@ export function Fleet3DScene({
       data-selected-uuid={selectedUuid ?? ""}
       data-compare-count={compareUuids.length}
       data-label-count={labels.length}
+      data-effective-quality={effectiveQuality}
     >
       <div className="fleet3d-label-layer" aria-hidden="true">
         {labels.map((label) => (
