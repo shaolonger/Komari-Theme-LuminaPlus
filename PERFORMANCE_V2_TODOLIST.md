@@ -25,5 +25,5 @@ tests and a dedicated commit.
 
 ## L2-3 Acceptance and release
 
-- [ ] **L2-301 Contract matrix, 30/300/1000-node browser and long-run tests**
+- [x] **L2-301 Contract matrix, 30/300/1000-node browser and long-run tests**
 - [ ] **L2-302 Version, push, tag and publish the LuminaPlus release**
