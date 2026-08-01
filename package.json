@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "test:contract": "node scripts/check-rpc-contract.mjs",
     "test:watch": "vitest",
     "release": "node scripts/release.mjs"
   },

@@ -10,7 +10,7 @@ tests and a dedicated commit.
 
 ## L2-1 Contract and data flow
 
-- [ ] **L2-101 Consume generated RPC types and capability discovery**
+- [x] **L2-101 Consume generated RPC types and capability discovery**
 - [ ] **L2-102 Replace 2-second full polling with resumable deltas**
 - [ ] **L2-103 Replace per-task Ping overview with one set request**
 - [ ] **L2-104 Replace per-node Compare history with one set request**
