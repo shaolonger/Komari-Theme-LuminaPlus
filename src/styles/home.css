@@ -1935,3 +1935,8 @@
     grid-template-columns: minmax(98px, auto) minmax(0, 1fr);
   }
 }
+.home-node-card-slot {
+  content-visibility: auto;
+  contain: layout paint style;
+  contain-intrinsic-size: auto 438px;
+}

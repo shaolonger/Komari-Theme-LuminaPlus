@@ -1399,7 +1399,7 @@ export function NodeGrid() {
   const cards = useMemo(() => {
     const uuids = uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : [];
     return uuids.map((uuid) => (
-      <div key={uuid} className="min-w-0">
+      <div key={uuid} className="home-node-card-slot min-w-0">
         {mode === "compact" ? <CompactNodeCard uuid={uuid} /> : <NodeCard uuid={uuid} />}
       </div>
     ));

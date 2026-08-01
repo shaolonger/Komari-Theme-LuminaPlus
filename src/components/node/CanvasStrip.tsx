@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 
 interface CanvasStripProps {
   className?: string;
@@ -8,6 +8,64 @@ interface CanvasStripProps {
   draw: (ctx: CanvasRenderingContext2D, width: number, height: number) => void;
   getHoverIndex?: (offsetX: number, width: number) => number | null;
   onHoverIndex?: (index: number | null) => void;
+}
+
+type IntersectionListener = (visible: boolean) => void;
+const intersectionListeners = new WeakMap<Element, IntersectionListener>();
+let sharedIntersectionObserver: IntersectionObserver | null = null;
+
+function observeStrip(element: Element, listener: IntersectionListener) {
+  if (typeof IntersectionObserver === "undefined") {
+    listener(true);
+    return () => undefined;
+  }
+  if (!sharedIntersectionObserver) {
+    sharedIntersectionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        intersectionListeners.get(entry.target)?.(entry.isIntersecting);
+      }
+    }, { rootMargin: "320px 0px" });
+  }
+  intersectionListeners.set(element, listener);
+  sharedIntersectionObserver.observe(element);
+  return () => {
+    sharedIntersectionObserver?.unobserve(element);
+    intersectionListeners.delete(element);
+  };
+}
+
+const pageVisibilityListeners = new Set<() => void>();
+let pageVisibilityListening = false;
+function subscribePageVisibility(listener: () => void) {
+  pageVisibilityListeners.add(listener);
+  if (!pageVisibilityListening && typeof document !== "undefined") {
+    pageVisibilityListening = true;
+    document.addEventListener("visibilitychange", emitPageVisibility);
+  }
+  return () => {
+    pageVisibilityListeners.delete(listener);
+    if (pageVisibilityListeners.size === 0 && pageVisibilityListening) {
+      document.removeEventListener("visibilitychange", emitPageVisibility);
+      pageVisibilityListening = false;
+    }
+  };
+}
+
+function emitPageVisibility() {
+  for (const listener of pageVisibilityListeners) listener();
+}
+
+function getPageVisible() {
+  return typeof document === "undefined" || document.visibilityState !== "hidden";
+}
+
+export function canvasBackingSize(width: number, height: number, devicePixelRatio: number) {
+  const dpr = Math.min(2, Math.max(1, Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1));
+  return {
+    dpr,
+    width: Math.max(1, Math.round(width * dpr)),
+    height: Math.max(1, Math.round(height * dpr)),
+  };
 }
 
 // 解析 CSS 自定义属性要走 getComputedStyle(documentElement),会强制一次同步样式
@@ -223,6 +281,21 @@ export function CanvasStrip({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIndexRef = useRef<number | null>(null);
   const [width, setWidth] = useState(0);
+  const [intersecting, setIntersecting] = useState(
+    () => typeof IntersectionObserver === "undefined",
+  );
+  const pageVisible = useSyncExternalStore(
+    subscribePageVisibility,
+    getPageVisible,
+    () => true,
+  );
+  const renderActive = intersecting && pageVisible;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    return observeStrip(canvas, setIntersecting);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -247,19 +320,19 @@ export function CanvasStrip({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || width <= 0) return;
+    if (!canvas || width <= 0 || !renderActive) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(height * dpr));
+    const backing = canvasBackingSize(width, height, window.devicePixelRatio || 1);
+    canvas.width = backing.width;
+    canvas.height = backing.height;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(backing.dpr, 0, 0, backing.dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
     draw(ctx, width, height);
-  }, [draw, height, redrawKey, width]);
+  }, [draw, height, redrawKey, renderActive, width]);
 
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
     if (!getHoverIndex || !onHoverIndex || width <= 0) return;
@@ -281,6 +354,7 @@ export function CanvasStrip({
       className={className}
       style={{ width: "100%", height }}
       aria-hidden={ariaHidden}
+      data-render-active={renderActive ? "true" : "false"}
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
     />
