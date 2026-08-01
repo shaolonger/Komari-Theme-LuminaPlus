@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveFlatConnectionsTcp, resolveTrafficTotal } from "@/services/wsStore";
+import {
+  collectRealtimeDeltaTargets,
+  resolveFlatConnectionsTcp,
+  resolveTrafficTotal,
+} from "@/services/wsStore";
 
 // 像 resolveTrafficTotals 每个 tick 那样,把一串原始累计读数喂给 resolver:把上一个显示值
 //(store 存在 node metrics 上)往后传。
@@ -55,5 +59,25 @@ describe("resolveFlatConnectionsTcp", () => {
 
   it("clamps to 0 when udp exceeds the combined count", () => {
     expect(resolveFlatConnectionsTcp({ connections: 3, connections_udp: 5 })).toBe(0);
+  });
+});
+
+describe("collectRealtimeDeltaTargets", () => {
+  it("touches only changed nodes for an incremental delta", () => {
+    const result = collectRealtimeDeltaTargets(
+      { sequence: 8, snapshot: false, reports: { a: { cpu: 10 } }, offline: ["b"] },
+      ["a", "b", "c"],
+    );
+    expect(result.targets.sort()).toEqual(["a", "b"]);
+    expect(result.onlineOverrides.get("b")).toBe(false);
+  });
+
+  it("reconciles every known node on snapshots and resyncs", () => {
+    const result = collectRealtimeDeltaTargets(
+      { sequence: 9, snapshot: true, reports: { a: {} }, online: ["a"] },
+      ["a", "b", "c"],
+    );
+    expect(result.targets).toEqual(["a", "b", "c"]);
+    expect(result.onlineOverrides.get("a")).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import type { NodeInfo, NodeMetrics, NodeRealtime, TrafficTrendSample } from "@/types/komari";
-import { getNodes, getNodesLatestStatus } from "@/services/api";
+import type { RealtimeDelta } from "@/generated/rpcContract";
+import { getNodes, getRealtimeDelta } from "@/services/api";
 
 type Listener = () => void;
 type RealtimePayload = Record<string, unknown>;
@@ -52,12 +53,10 @@ interface NodeTrafficTrend {
   };
 }
 
-const LIVE_STATUS_REFRESH_INTERVAL_MS = 2_000;
 const NODE_INFO_REFRESH_INTERVAL_MS = 30_000;
-// 实时轮询每 2s 一次;单次请求超时设得远低于 RPC 默认的 30s,这样 half-open socket 能
-// 快速失败(暴露 failureStreak 并让下一 tick 重试),而不是冻结实时更新长达一分钟。
-const LIVE_STATUS_REQUEST_TIMEOUT_MS = 8_000;
-const SCROLL_IDLE_DELAY_MS = 160;
+const REALTIME_DELTA_WAIT_MS = 25_000;
+const REALTIME_DELTA_TIMEOUT_MS = 30_000;
+const REALTIME_RETRY_MAX_MS = 30_000;
 const TRAFFIC_TREND_SAMPLE_COUNT = 18;
 const EMPTY_TRAFFIC_TREND_SAMPLE: TrafficTrendSample = {
   value: 0,
@@ -382,10 +381,6 @@ let allNodeMetaSnapshotVersion = -1;
 let homeNodeSummariesSnapshot: HomeNodeSummary[] = [];
 let homeNodeSummariesSnapshotVersion = -1;
 let storeStatusSnapshot: StoreStatusSnapshot = { failureStreak: 0 };
-let scrollIdleTimer: number | null = null;
-let scrollTrackingStarted = false;
-let scrollActive = false;
-let refreshDeferredWhileScrolling = false;
 
 interface CommitTouches {
   meta?: Iterable<string>;
@@ -433,27 +428,6 @@ function commit(next: State, touches: CommitTouches = {}) {
     emitMappedListeners(nodeMetricsListeners, touches.metrics);
   }
   if (touches.trafficTrends) emitMappedListeners(trafficTrendListeners, touches.trafficTrends);
-}
-
-function markScrollActivity() {
-  scrollActive = true;
-  if (scrollIdleTimer != null) {
-    window.clearTimeout(scrollIdleTimer);
-  }
-  scrollIdleTimer = window.setTimeout(() => {
-    scrollIdleTimer = null;
-    scrollActive = false;
-    if (refreshDeferredWhileScrolling) {
-      refreshDeferredWhileScrolling = false;
-      void refreshLatestStatus();
-    }
-  }, SCROLL_IDLE_DELAY_MS);
-}
-
-function ensureScrollTrackingStarted() {
-  if (scrollTrackingStarted) return;
-  scrollTrackingStarted = true;
-  window.addEventListener("scroll", markScrollActivity, { passive: true });
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -600,7 +574,11 @@ function normalizeRealtime(
   };
 }
 
-function applyLatestStatus(records: Record<string, unknown>) {
+function applyLatestStatus(
+  records: Record<string, unknown>,
+  targetUuids: Iterable<string> = state.order,
+  onlineOverrides: ReadonlyMap<string, boolean> = new Map(),
+) {
   const touchedMetrics = new Set<string>();
   const touchedTrafficTrends = new Set<string>();
   // 懒克隆 map —— 安静的 tick(metric/trend 无变化)很常见,且调用方会丢弃未变的 map,
@@ -608,12 +586,12 @@ function applyLatestStatus(records: Record<string, unknown>) {
   let nextMetricsByUuid = state.metricsByUuid;
   let nextTrafficTrends = state.trafficTrends;
 
-  for (const uuid of state.order) {
+  for (const uuid of targetUuids) {
     const meta = state.metaByUuid[uuid];
     const prev = state.metricsByUuid[uuid];
     if (!meta || !prev) continue;
     const rawRecord = records[uuid];
-    const online = resolveOnline(rawRecord);
+    const online = onlineOverrides.get(uuid) ?? resolveOnline(rawRecord);
     const realtime = normalizeRealtime(rawRecord, meta, prev);
     const merged = realtime
       ? mergeRealtime(meta, prev, realtime, online)
@@ -665,9 +643,21 @@ function applyLatestStatus(records: Record<string, unknown>) {
   };
 }
 
+export function collectRealtimeDeltaTargets(delta: RealtimeDelta, allUuids: string[]) {
+  const records = delta.reports ?? {};
+  const onlineOverrides = new Map<string, boolean>();
+  for (const uuid of delta.online ?? []) onlineOverrides.set(uuid, true);
+  for (const uuid of [...(delta.offline ?? []), ...(delta.removed ?? [])]) {
+    onlineOverrides.set(uuid, false);
+  }
+  const targets = delta.snapshot || delta.resync
+    ? [...allUuids]
+    : Array.from(new Set([...Object.keys(records), ...onlineOverrides.keys()]));
+  return { records, targets, onlineOverrides };
+}
+
 let hydrated = false;
 let hydratePromise: Promise<void> | null = null;
-let refreshInFlight = false;
 let nodeInfoInFlight = false;
 let lastNodeInfoSyncAt = 0;
 
@@ -754,7 +744,7 @@ async function syncNodeInfo(force = false) {
       {
         meta: touchedMeta,
         metrics: touchedMetrics,
-        // traffic trend 只由 refreshLatestStatus 改动;syncNodeInfo 原样带过来,这里无需通知。
+		// traffic trend 只由实时 delta 改动；syncNodeInfo 原样带过来。
         nodeList: nodeListChanged,
         allNodes: orderChanged || touchedMeta.size > 0,
       },
@@ -776,82 +766,85 @@ async function hydrate() {
   return hydratePromise;
 }
 
-async function refreshLatestStatus() {
-  if (refreshInFlight || state.order.length === 0) return;
-  if (scrollActive) {
-    refreshDeferredWhileScrolling = true;
-    return;
-  }
+function commitRealtimeDelta(delta: RealtimeDelta) {
+	const { records, targets, onlineOverrides } = collectRealtimeDeltaTargets(delta, state.order);
+	const applied = applyLatestStatus(records, targets, onlineOverrides);
+	const metricsChanged = applied.touchedMetrics.length > 0;
+	const trafficTrendsChanged = applied.touchedTrafficTrends.length > 0;
+	const storeStatusChanged = state.failureStreak > 0;
 
-  refreshInFlight = true;
-  try {
-    const records = await getNodesLatestStatus([...state.order], {
-      timeout: LIVE_STATUS_REQUEST_TIMEOUT_MS,
-    });
-    const applied = applyLatestStatus(records);
-    const metricsChanged = applied.touchedMetrics.length > 0;
-    const trafficTrendsChanged = applied.touchedTrafficTrends.length > 0;
-    const storeStatusChanged = state.failureStreak > 0;
+	if (metricsChanged || trafficTrendsChanged || storeStatusChanged) {
+		commit(
+			{
+				...state,
+				metricsByUuid: metricsChanged ? applied.nextMetricsByUuid : state.metricsByUuid,
+				trafficTrends: trafficTrendsChanged ? applied.nextTrafficTrends : state.trafficTrends,
+				failureStreak: 0,
+			},
+			{
+				metrics: applied.touchedMetrics,
+				trafficTrends: applied.touchedTrafficTrends,
+				storeStatus: storeStatusChanged,
+			},
+		);
+	}
+}
 
-    if (metricsChanged || trafficTrendsChanged || storeStatusChanged) {
-      commit(
-        {
-          ...state,
-          metricsByUuid: metricsChanged ? applied.nextMetricsByUuid : state.metricsByUuid,
-          trafficTrends:
-            trafficTrendsChanged ? applied.nextTrafficTrends : state.trafficTrends,
-          failureStreak: 0,
-        },
-        {
-          metrics: applied.touchedMetrics,
-          trafficTrends: applied.touchedTrafficTrends,
-          storeStatus: storeStatusChanged,
-        },
-      );
+function waitForRealtimeRetry(signal: AbortSignal, delay: number) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = window.setTimeout(done, delay);
+    function done() {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
     }
-  } catch {
-    commit(
-      {
-        ...state,
-        failureStreak: state.failureStreak + 1,
-      },
-      { storeStatus: true },
-    );
-  } finally {
-    refreshInFlight = false;
-  }
+    signal.addEventListener("abort", done, { once: true });
+  });
 }
 
 async function bootstrap() {
-  try {
-    await hydrate();
-    await refreshLatestStatus();
-  } catch {
-    // 下一个调度 tick 再重试。
+  await hydrate();
+}
+
+let realtimeSequence = 0;
+let realtimeAbort: AbortController | null = null;
+
+async function runRealtimeDeltaLoop(signal: AbortSignal) {
+  let failures = 0;
+  while (!signal.aborted) {
+    try {
+      if (!hydrated) await bootstrap();
+      const delta = await getRealtimeDelta(realtimeSequence, [...state.order], {
+        waitMs: REALTIME_DELTA_WAIT_MS,
+        timeout: REALTIME_DELTA_TIMEOUT_MS,
+        signal,
+      });
+      if (delta.sequence < realtimeSequence && !delta.resync && !delta.snapshot) {
+        throw new Error("Realtime delta sequence moved backwards");
+      }
+      commitRealtimeDelta(delta);
+      realtimeSequence = delta.sequence;
+      failures = 0;
+    } catch (error) {
+      if (signal.aborted) return;
+      commit({ ...state, failureStreak: state.failureStreak + 1 }, { storeStatus: true });
+      const delay = Math.min(1_000 * 2 ** failures, REALTIME_RETRY_MAX_MS);
+      failures += 1;
+      await waitForRealtimeRetry(signal, delay);
+    }
   }
 }
 
 let started = false;
-let liveStatusTimer: number | null = null;
 let nodeInfoTimer: number | null = null;
 
 export function ensureStarted() {
   if (started) return;
   started = true;
 
-  ensureScrollTrackingStarted();
-  void bootstrap();
-  // 两条独立节奏:实时 metrics 每 2s,节点列表/meta sync 走自己的 30s 节奏。之前它们共用
-  // 一条 await 链,跑慢速 /api/nodes 拉取的那个 tick 会拖住本周期的实时刷新。
-  liveStatusTimer = window.setInterval(() => {
-    // 首次 hydrate 成功前没有节点列表可轮询,所以按快节奏持续重试 bootstrap(沿用旧的单链
-    // 行为);hydrate 完成后切到纯实时刷新。
-    if (!hydrated) {
-      void bootstrap();
-      return;
-    }
-    void refreshLatestStatus();
-  }, LIVE_STATUS_REFRESH_INTERVAL_MS);
+  realtimeAbort = new AbortController();
+  void runRealtimeDeltaLoop(realtimeAbort.signal);
   nodeInfoTimer = window.setInterval(() => {
     // syncNodeInfo 只有 finally;吞掉偶发的 /api/nodes 失败,避免失败的 30s tick 抛出
     // unhandled rejection(下一 tick 会重试)。
@@ -860,23 +853,13 @@ export function ensureStarted() {
 }
 
 export function stopStore() {
-  if (liveStatusTimer != null) {
-    window.clearInterval(liveStatusTimer);
-    liveStatusTimer = null;
-  }
+  realtimeAbort?.abort();
+  realtimeAbort = null;
+  realtimeSequence = 0;
   if (nodeInfoTimer != null) {
     window.clearInterval(nodeInfoTimer);
     nodeInfoTimer = null;
   }
-  if (scrollIdleTimer != null) {
-    window.clearTimeout(scrollIdleTimer);
-    scrollIdleTimer = null;
-  }
-  if (scrollTrackingStarted) {
-    window.removeEventListener("scroll", markScrollActivity);
-    scrollTrackingStarted = false;
-  }
-  scrollActive = false;
   started = false;
 }
 

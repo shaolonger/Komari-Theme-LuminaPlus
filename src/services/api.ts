@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { getRpc2Client } from "@/services/rpc2Client";
+import { requireRpcCapability } from "@/services/rpcCapabilities";
+import type { RealtimeDelta } from "@/generated/rpcContract";
 import {
   MeSchema,
   NodeInfoSchema,
@@ -58,6 +60,16 @@ interface PingOverviewResponse {
   tasks: PingTask[];
   basicInfo: PingBasicInfo[];
 }
+
+const RealtimeDeltaSchema = z.object({
+  sequence: z.number().int().nonnegative(),
+  snapshot: z.boolean(),
+  resync: z.boolean().optional(),
+  reports: z.record(z.string(), z.unknown()).optional(),
+  removed: z.array(z.string()).optional(),
+  online: z.array(z.string()).optional(),
+  offline: z.array(z.string()).optional(),
+});
 
 export type ComparisonLoadType =
   | "cpu"
@@ -265,6 +277,27 @@ export async function getNodesLatestStatus(
     options,
   );
   return normalizeRpcLatestStatus(payload);
+}
+
+export async function getRealtimeDelta(
+  since: number,
+  uuids: string[],
+  options?: { waitMs?: number; timeout?: number; signal?: AbortSignal },
+): Promise<RealtimeDelta> {
+  await requireRpcCapability("realtime.delta");
+  const uniqueUuids = Array.from(new Set(uuids.filter(Boolean)));
+  return await rpcCall(
+    "common:getRealtimeDelta",
+    {
+      since: Math.max(0, Math.trunc(since)),
+	  // 空集合表示服务端可见的全部节点。超过单请求 UUID 上限时使用它，
+	  // 从而让 300/1000 节点面板也只维持一条 delta 流。
+      uuids: uniqueUuids.length <= 256 ? uniqueUuids : [],
+      wait_ms: Math.min(25_000, Math.max(0, Math.trunc(options?.waitMs ?? 25_000))),
+    },
+    RealtimeDeltaSchema,
+    { timeout: options?.timeout ?? 30_000, signal: options?.signal },
+  );
 }
 
 export async function getNodes(): Promise<NodeInfo[]> {
