@@ -14,6 +14,7 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:contract": "node scripts/check-rpc-contract.mjs",
+    "test:bundle": "npm run build && node scripts/check-performance-budgets.mjs",
     "test:watch": "vitest",
     "release": "node scripts/release.mjs"
   },

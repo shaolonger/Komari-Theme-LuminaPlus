@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import "@/styles/compare.css";
 import {
   ArrowDown,
   ArrowUp,

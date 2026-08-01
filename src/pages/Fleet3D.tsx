@@ -899,3 +899,4 @@ export function Fleet3D() {
     </section>
   );
 }
+import "@/styles/fleet-3d.css";
