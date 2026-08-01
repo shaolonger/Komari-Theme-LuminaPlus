@@ -10,7 +10,11 @@ vi.mock("@/services/rpc2Client", async (importOriginal) => {
   };
 });
 
-import { getLoadRecords } from "@/services/api";
+import {
+  getComparisonLoadRecords,
+  getComparisonPingRecords,
+  getLoadRecords,
+} from "@/services/api";
 import {
   RpcProtocolError,
   RpcResponseError,
@@ -48,5 +52,51 @@ describe("RPC compatibility fallback", () => {
 
     await expect(getLoadRecords("node-a", 1)).rejects.toBe(error);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("queries a comparison client set once for all load metrics", async () => {
+    rpcCall.mockResolvedValueOnce({
+      count: 2,
+      records: {
+        "node-a": [{ client: "node-a", time: 1, cpu: 10 }],
+        "node-b": [{ client: "node-b", time: 2, cpu: 20 }],
+      },
+    });
+
+    const result = await getComparisonLoadRecords({
+      uuids: ["node-a", "node-b", "node-a"],
+      hours: 6,
+      loadType: "all",
+    });
+
+    expect(rpcCall).toHaveBeenCalledTimes(1);
+    expect(rpcCall.mock.calls[0]?.[1]).toMatchObject({
+      uuids: ["node-a", "node-b"],
+      type: "load",
+      load_type: "all",
+    });
+    expect(result["node-a"]).toHaveLength(1);
+    expect(result["node-b"]?.[0]?.cpu).toBe(20);
+  });
+
+  it("queries a comparison client set once for ping history", async () => {
+    rpcCall.mockResolvedValueOnce({
+      count: 2,
+      records: {
+        "node-a": [{ client: "node-a", task_id: 7, time: 1, value: 10 }],
+        "node-b": [{ client: "node-b", task_id: 7, time: 2, value: 20 }],
+      },
+      tasks: [{ id: 7, name: "edge" }],
+    });
+
+    const result = await getComparisonPingRecords({ uuids: ["node-a", "node-b"], hours: 6 });
+
+    expect(rpcCall).toHaveBeenCalledTimes(1);
+    expect(rpcCall.mock.calls[0]?.[1]).toMatchObject({
+      uuids: ["node-a", "node-b"],
+      type: "ping",
+    });
+    expect(result.records.map((record) => record.client)).toEqual(["node-a", "node-b"]);
+    expect(result.tasks[0]?.id).toBe(7);
   });
 });

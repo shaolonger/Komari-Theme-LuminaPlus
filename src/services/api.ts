@@ -94,6 +94,7 @@ const RealtimeDeltaSchema = z.object({
 });
 
 export type ComparisonLoadType =
+  | "all"
   | "cpu"
   | "ram"
   | "swap"
@@ -349,14 +350,18 @@ export async function getLoadRecords(
     return normalizeRpcLoadRecords(uuid, payload);
   } catch (error) {
     if (!isRpcTransportError(error)) throw error;
-    return (await apiGet(
-      `/api/records/load?${new URLSearchParams({ uuid, hours: String(hours) })}`,
-      z.object({
-        count: z.number().default(0),
-        records: z.array(LoadRecordSchema).default([]),
-      }),
-    )) as LoadRecordsResponse;
+    return await getLegacyLoadRecords(uuid, hours);
   }
+}
+
+async function getLegacyLoadRecords(uuid: string, hours: number): Promise<LoadRecordsResponse> {
+  return (await apiGet(
+    `/api/records/load?${new URLSearchParams({ uuid, hours: String(hours) })}`,
+    z.object({
+      count: z.number().default(0),
+      records: z.array(LoadRecordSchema).default([]),
+    }),
+  )) as LoadRecordsResponse;
 }
 
 export async function getComparisonLoadRecords({
@@ -371,31 +376,30 @@ export async function getComparisonLoadRecords({
   const uniqueUuids = Array.from(new Set(uuids.filter(Boolean)));
   if (uniqueUuids.length === 0) return {};
 
-  const maxCount = getComparisonRecordsMaxCount(hours, LOAD_RECORDS_PER_HOUR);
-  const entries = await Promise.all(
-    uniqueUuids.map(async (uuid) => {
-      try {
-        const payload = await rpcCall(
-          "common:getRecords",
-          {
-            uuid,
-            hours,
-            type: "load",
-            load_type: loadType,
-            maxCount,
-          },
-          RpcRecordsSchema,
-        );
-        return [uuid, normalizeRpcLoadRecords(uuid, payload).records] as const;
-      } catch (error) {
-        if (!isRpcTransportError(error)) throw error;
-        const fallback = await getLoadRecords(uuid, hours);
-        return [uuid, fallback.records] as const;
-      }
-    }),
-  );
-
-  return Object.fromEntries(entries);
+  const perNodeMaxCount = getComparisonRecordsMaxCount(hours, LOAD_RECORDS_PER_HOUR);
+  try {
+    const payload = await rpcCall(
+      "common:getRecords",
+      {
+        uuids: uniqueUuids,
+        hours,
+        type: "load",
+        load_type: loadType,
+        maxCount: Math.min(MAX_RPC_RECORDS, perNodeMaxCount * uniqueUuids.length),
+      },
+      RpcRecordsSchema,
+    );
+    return Object.fromEntries(uniqueUuids.map((uuid) => [
+      uuid,
+      normalizeRpcLoadRecords(uuid, payload).records,
+    ]));
+  } catch (error) {
+    if (!isRpcTransportError(error)) throw error;
+    return Object.fromEntries(await Promise.all(uniqueUuids.map(async (uuid) => [
+      uuid,
+      (await getLegacyLoadRecords(uuid, hours)).records,
+    ] as const)));
+  }
 }
 
 export async function getPingRecords(
@@ -417,15 +421,19 @@ export async function getPingRecords(
     return normalizeRpcPingRecords(uuid, payload);
   } catch (error) {
     if (!isRpcTransportError(error)) throw error;
-    return (await apiGet(
-      `/api/records/ping?${new URLSearchParams({ uuid, hours: String(hours) })}`,
-      z.object({
-        count: z.number().default(0),
-        records: z.array(PingRecordSchema).default([]),
-        tasks: z.array(PingTaskSchema).default([]),
-      }),
-    )) as PingRecordsResponse;
+    return await getLegacyPingRecords(uuid, hours);
   }
+}
+
+async function getLegacyPingRecords(uuid: string, hours: number): Promise<PingRecordsResponse> {
+  return (await apiGet(
+    `/api/records/ping?${new URLSearchParams({ uuid, hours: String(hours) })}`,
+    z.object({
+      count: z.number().default(0),
+      records: z.array(PingRecordSchema).default([]),
+      tasks: z.array(PingTaskSchema).default([]),
+    }),
+  )) as PingRecordsResponse;
 }
 
 export async function getComparisonPingRecords({
@@ -440,18 +448,30 @@ export async function getComparisonPingRecords({
     return { count: 0, records: [], tasks: [] };
   }
 
-  const responses = await Promise.all(
-    uniqueUuids.map(async (uuid) => {
-      const response = await getPingRecords(uuid, hours);
+  const perNodeMaxCount = getComparisonRecordsMaxCount(hours, PING_RECORDS_PER_HOUR);
+  let responses: PingRecordsResponse[];
+  try {
+    const payload = await rpcCall(
+      "common:getRecords",
+      {
+        uuids: uniqueUuids,
+        hours,
+        type: "ping",
+        maxCount: Math.min(MAX_RPC_RECORDS, perNodeMaxCount * uniqueUuids.length),
+      },
+      RpcRecordsSchema,
+    );
+    responses = uniqueUuids.map((uuid) => normalizeRpcPingRecords(uuid, payload));
+  } catch (error) {
+    if (!isRpcTransportError(error)) throw error;
+    responses = await Promise.all(uniqueUuids.map(async (uuid) => {
+      const response = await getLegacyPingRecords(uuid, hours);
       return {
         ...response,
-        records: response.records.map((record) => ({
-          ...record,
-          client: record.client || uuid,
-        })),
+        records: response.records.map((record) => ({ ...record, client: record.client || uuid })),
       };
-    }),
-  );
+    }));
+  }
   const taskById = new Map<number, PingTask>();
   const records = responses.flatMap((response) => response.records);
   for (const response of responses) {

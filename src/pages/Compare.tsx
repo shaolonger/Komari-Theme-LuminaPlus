@@ -1218,22 +1218,15 @@ export function Compare() {
   const loadQuery = useQuery({
     queryKey: ["compare", "load", selectedKey, requestHours, selectedLoadTypes.join(","), activeRangeMode, customStartSeconds, customEndSeconds],
     queryFn: async () => {
-      const recordsByType = new Map(
-        await Promise.all(
-          selectedLoadTypes.map(async (loadType) => [
-            loadType,
-            await getComparisonLoadRecords({
-              uuids: selectedNodes.map((node) => node.uuid),
-              hours: requestHours,
-              loadType,
-            }),
-          ] as const),
-        ),
-      );
+      const records = await getComparisonLoadRecords({
+        uuids: selectedNodes.map((node) => node.uuid),
+        hours: requestHours,
+        loadType: "all",
+      });
       const recordsByMetric: Partial<Record<ComparisonMetricKey, Awaited<ReturnType<typeof getComparisonLoadRecords>>>> = {};
       for (const item of selectedMetrics) {
         if (item.source !== "load" || !item.loadType) continue;
-        recordsByMetric[item.key] = recordsByType.get(item.loadType) ?? {};
+        recordsByMetric[item.key] = records;
       }
       return recordsByMetric;
     },
