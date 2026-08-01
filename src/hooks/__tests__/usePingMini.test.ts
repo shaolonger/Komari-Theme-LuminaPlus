@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/services/api", () => ({
-  getPingOverview: vi.fn(),
+	getPingOverviewForNodes: vi.fn(),
 }));
 
 import { buildHomepagePingOverviewMap } from "@/hooks/usePingMini";
-import { getPingOverview } from "@/services/api";
+import { getPingOverviewForNodes } from "@/services/api";
 
-const mockedGetPingOverview = vi.mocked(getPingOverview);
+const mockedGetPingOverview = vi.mocked(getPingOverviewForNodes);
 
 describe("buildHomepagePingOverviewMap", () => {
   beforeEach(() => {
@@ -16,10 +16,10 @@ describe("buildHomepagePingOverviewMap", () => {
 
   it("drops a deleted task when its response contains retained records but no task metadata", async () => {
     mockedGetPingOverview.mockResolvedValue({
-      count: 1,
-      records: [{ task_id: 20, client: "node-a", time: 1_000, value: 279 }],
+	  from: 1_000,
+	  to: 2_000,
       tasks: [],
-      basicInfo: [],
+	  stats: { "node-a": { "20": { name: "deleted", total: 1, lost: 0, latest: 279, avg: 279, tail: 0, loss: 0, min: 279, max: 279 } } },
     });
 
     const result = await buildHomepagePingOverviewMap(
@@ -36,21 +36,17 @@ describe("buildHomepagePingOverviewMap", () => {
 
   it("keeps an active task with its real metadata", async () => {
     mockedGetPingOverview.mockResolvedValue({
-      count: 1,
-      records: [{ task_id: 3, client: "node-a", time: 1_000, value: 42 }],
+	  from: 1_000,
+	  to: 2_000,
       tasks: [
         {
           id: 3,
           name: "Cloudflare",
           type: "icmp",
           interval: 60,
-          clients: ["node-a"],
-          target: "1.1.1.1",
-          loss: 0,
-          weight: 0,
         },
       ],
-      basicInfo: [],
+	  stats: { "node-a": { "3": { name: "Cloudflare", total: 60, lost: 3, latest: 42, avg: 40, tail: 0.2, loss: 5, min: 30, max: 80 } } },
     });
 
     const result = await buildHomepagePingOverviewMap(

@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useVisibleNodeUuids } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import { getPingOverview } from "@/services/api";
+import { getPingOverviewForNodes } from "@/services/api";
 import type { PingOverviewBucket, PingOverviewItem, PingTask } from "@/types/komari";
 import { signalWithTimeout } from "@/utils/abort";
 import {
   aggregateHomepagePingOverviewItem,
   buildHomepagePingAssignmentKey,
-  buildPingOverviewItemsForTask,
   HOMEPAGE_PING_WINDOW_HOURS,
+	toPingRecordTimestamp,
 } from "@/utils/homepagePingOverview";
 import {
   DEFAULT_HOMEPAGE_PING_AGGREGATION_STRATEGY,
@@ -193,6 +193,7 @@ export async function buildHomepagePingOverviewMap(
   primaryTasks: HomepagePingPrimaryTasks,
   signal?: AbortSignal,
 ): Promise<PingOverviewMapResult> {
+	void hours; // The negotiated overview contract is intentionally fixed to one hour.
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   if (normalizedUuids.length === 0) {
     return {
@@ -215,45 +216,45 @@ export async function buildHomepagePingOverviewMap(
     };
   }
 
-  const overviewResults = await Promise.allSettled(
-    selectedTaskIds.map(async (taskId) => {
-      const requestSignal = signalWithTimeout(signal, PING_REQUEST_TIMEOUT_MS);
-      return {
-        taskId,
-        overview: await getPingOverview(hours, taskId, { signal: requestSignal }),
-      };
-    }),
-  );
+  const requestSignal = signalWithTimeout(signal, PING_REQUEST_TIMEOUT_MS);
+  const overview = await getPingOverviewForNodes(normalizedUuids, { signal: requestSignal });
 
   const itemsByTask = new Map<number, Map<string, PingOverviewItem>>();
   const tasksById = new Map<number, PingTask>();
-  const unavailableTaskIds = new Set<number>();
+  const unavailableTaskIds = new Set<number>(selectedTaskIds);
   const refreshIntervals: number[] = [];
 
-  for (const result of overviewResults) {
-    if (result.status !== "fulfilled") {
-      continue;
+  for (const compactTask of overview.tasks) {
+    if (!selectedTaskIds.includes(compactTask.id)) continue;
+    const task: PingTask = {
+      ...compactTask,
+      loss: 0,
+      clients: normalizedUuids.filter((uuid) => overview.stats[uuid]?.[String(compactTask.id)]),
+      target: "",
+      weight: compactTask.id,
+    };
+    unavailableTaskIds.delete(task.id);
+    tasksById.set(task.id, task);
+    const taskItems = new Map<string, PingOverviewItem>();
+    for (const uuid of normalizedUuids) {
+      const stat = overview.stats[uuid]?.[String(task.id)];
+      if (!stat) continue;
+      const timestamp = toPingRecordTimestamp(overview.to);
+      const validLatest = isValidPingLatency(stat.latest) ? stat.latest : null;
+      taskItems.set(uuid, {
+        client: uuid,
+        isAssigned: true,
+        lastValue: validLatest,
+        values: validLatest == null ? [] : [validLatest],
+        samples: validLatest == null || timestamp <= 0 ? [] : [{ time: timestamp, value: validLatest }],
+        max: Math.max(1, stat.max),
+        loss: stat.loss,
+        taskIds: [task.id],
+        taskCount: 1,
+        taskSummaries: [],
+      });
     }
-
-    const {
-      taskId,
-      overview: { records, tasks },
-    } = result.value;
-
-    // A task can be removed between the theme settings being saved and this
-    // poll. Do not reinterpret its retained history as a valid task with a
-    // synthetic "任务 #id" label. A successful response without that task's
-    // metadata is the backend's authoritative deletion signal.
-    const task = tasks.find((candidate) => candidate.id === taskId);
-    if (!task) {
-      unavailableTaskIds.add(taskId);
-      continue;
-    }
-    for (const task of tasks) {
-      tasksById.set(task.id, task);
-    }
-    itemsByTask.set(taskId, buildPingOverviewItemsForTask(taskId, records, task));
-
+    itemsByTask.set(task.id, taskItems);
     refreshIntervals.push(normalizeRefreshInterval(task.interval));
   }
 

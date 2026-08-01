@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getRpc2Client } from "@/services/rpc2Client";
 import { requireRpcCapability } from "@/services/rpcCapabilities";
-import type { RealtimeDelta } from "@/generated/rpcContract";
+import type { PingOverviewResult, RealtimeDelta } from "@/generated/rpcContract";
 import {
   MeSchema,
   NodeInfoSchema,
@@ -60,6 +60,28 @@ interface PingOverviewResponse {
   tasks: PingTask[];
   basicInfo: PingBasicInfo[];
 }
+
+const PingOverviewResultSchema = z.object({
+  from: z.union([z.string(), z.number()]),
+  to: z.union([z.string(), z.number()]),
+  tasks: z.array(z.object({
+    id: z.number(),
+    name: z.string().default(""),
+    type: z.string().default("icmp"),
+    interval: z.number().default(60),
+  })),
+  stats: z.record(z.string(), z.record(z.string(), z.object({
+    name: z.string().default(""),
+    total: z.number().default(0),
+    lost: z.number().default(0),
+    latest: z.number().default(-1),
+    avg: z.number().default(0),
+    tail: z.number().default(0),
+    loss: z.number().default(0),
+    min: z.number().default(0),
+    max: z.number().default(0),
+  }))),
+});
 
 const RealtimeDeltaSchema = z.object({
   sequence: z.number().int().nonnegative(),
@@ -527,4 +549,17 @@ export async function getPingOverview(
       basicInfo: data.basic_info,
     } as PingOverviewResponse;
   }
+}
+
+export async function getPingOverviewForNodes(
+  uuids: string[],
+  options?: { signal?: AbortSignal },
+): Promise<PingOverviewResult> {
+  await requireRpcCapability("ping.overview");
+  return await rpcCall(
+    "common:getPingOverview",
+    { uuids: Array.from(new Set(uuids.filter(Boolean))) },
+    PingOverviewResultSchema,
+    { signal: options?.signal },
+  ) as PingOverviewResult;
 }

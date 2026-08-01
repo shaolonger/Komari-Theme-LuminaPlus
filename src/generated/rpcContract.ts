@@ -56,15 +56,15 @@ export interface RealtimeDelta {
 }
 
 export interface PingOverviewStat {
+  name: string;
   total: number;
-  valid: number;
+  lost: number;
   loss: number;
   min: number;
   max: number;
   avg: number;
   latest: number;
-  p50: number;
-  p99: number;
+  tail: number;
 }
 
 export interface PingOverviewResult {

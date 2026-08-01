@@ -20,7 +20,7 @@ import {
 import {
   getComparisonLoadRecords,
   getComparisonPingRecords,
-  getPingOverview,
+  getPingOverviewForNodes,
 } from "@/services/api";
 import {
   buildChartTooltipHooks,
@@ -1253,16 +1253,24 @@ export function Compare() {
     refetchOnWindowFocus: false,
   });
   const pingTaskCatalogQuery = useQuery({
-    queryKey: ["compare", "ping-task-catalog", pingTaskCatalogIds.join(",")],
+    queryKey: ["compare", "ping-task-catalog", pingTaskCatalogIds.join(","), visibleNodeUuids.join(",")],
     queryFn: async ({ signal }) => {
-      const results = await Promise.allSettled(
-        pingTaskCatalogIds.map((taskId) => getPingOverview(1, taskId, { signal })),
-      );
-      const catalogTasks: PingTask[] = [];
-      for (const result of results) {
-        if (result.status !== "fulfilled") continue;
-        catalogTasks.push(...result.value.tasks);
-      }
+      const overview = await getPingOverviewForNodes(visibleNodeUuids, { signal });
+      const requested = new Set(pingTaskCatalogIds);
+      const catalogTasks: PingTask[] = overview.tasks
+        .filter((task) => requested.has(task.id))
+        .map((task) => ({
+          id: task.id,
+          interval: task.interval,
+          name: task.name,
+          loss: 0,
+          clients: visibleNodeUuids.filter(
+            (uuid) => overview.stats[uuid]?.[String(task.id)] != null,
+          ),
+          type: task.type,
+          target: "",
+          weight: task.id,
+        }));
       return Array.from(mergePingTasksById([catalogTasks]).values())
         .sort((left, right) => left.id - right.id);
     },
