@@ -39,12 +39,13 @@ import { useAllNodeMeta, useVisibleNodeUuids } from "@/hooks/useNode";
 import { usePreferences } from "@/hooks/usePreferences";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { useComparisonAnalysis } from "@/hooks/useComparisonAnalysis";
 import {
   buildComparisonCsv,
   buildComparisonMarkdown,
   buildComparisonRanking,
   buildComparisonSeries,
-  buildMultiMetricComparisonAnalysis,
+  buildMultiMetricComparisonSeries,
   buildMultiMetricComparisonCsv,
   buildMultiMetricComparisonMarkdown,
   buildPingTaskComparisonSeries,
@@ -1365,9 +1366,9 @@ export function Compare() {
       taskScopedPingMode,
     ],
   );
-  const multiAnalysis = useMemo(
+  const multiMetricSeriesInput = useMemo(
     () =>
-      buildMultiMetricComparisonAnalysis({
+      buildMultiMetricComparisonSeries({
         metricKeys: selectedMetricKeys,
         nodes: compareNodes,
         loadRecordsByMetric: loadQuery.data ?? {},
@@ -1390,6 +1391,8 @@ export function Compare() {
       selectedPingTaskId,
     ],
   );
+  const { analysis: multiAnalysis, workerActive: comparisonWorkerActive } =
+    useComparisonAnalysis(multiMetricSeriesInput);
   const series = useMemo(
     () =>
       activeRangeMode === "custom" && customRangeValid
@@ -1403,7 +1406,8 @@ export function Compare() {
   const rankingRows = useMemo(() => buildComparisonRanking(series), [series]);
   const isLoading =
     (hasLoadMetrics && loadQuery.isLoading) ||
-    (hasPingMetrics && pingQuery.isLoading);
+    (hasPingMetrics && pingQuery.isLoading) ||
+    (multiMetricMode && comparisonWorkerActive);
   const isFetching =
     (hasLoadMetrics && loadQuery.isFetching) ||
     (hasPingMetrics && pingQuery.isFetching);

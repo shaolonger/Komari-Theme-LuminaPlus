@@ -150,6 +150,12 @@ export interface ComparisonMultiMetricInput {
   range?: { start?: number | null; end?: number | null };
 }
 
+export interface ComparisonMultiMetricSeriesInput {
+  metricKeys: ComparisonMetricKey[];
+  nodes: ComparisonNode[];
+  seriesByMetric: Partial<Record<ComparisonMetricKey, ComparisonSeries[]>>;
+}
+
 export type ComparisonRankingSortKey =
   | "name"
   | "group"
@@ -895,9 +901,27 @@ export function buildMultiMetricComparisonAnalysis({
   pingTaskId = null,
   range,
 }: ComparisonMultiMetricInput): ComparisonMultiMetricAnalysis {
+  const input = buildMultiMetricComparisonSeries({
+    metricKeys,
+    nodes,
+    loadRecordsByMetric,
+    pingRecords,
+    pingTaskId,
+    range,
+  });
+  return analyzeMultiMetricComparisonSeries(input);
+}
+
+export function buildMultiMetricComparisonSeries({
+  metricKeys,
+  nodes,
+  loadRecordsByMetric = {},
+  pingRecords = [],
+  pingTaskId = null,
+  range,
+}: ComparisonMultiMetricInput): ComparisonMultiMetricSeriesInput {
   const normalizedMetricKeys = uniqueMetricKeys(metricKeys);
   const seriesByMetric: Partial<Record<ComparisonMetricKey, ComparisonSeries[]>> = {};
-  const rankingByMetric = new Map<ComparisonMetricKey, ComparisonRankingRow[]>();
 
   for (const metricKey of normalizedMetricKeys) {
     const rawSeries = buildSeriesForMultiMetric({
@@ -909,7 +933,20 @@ export function buildMultiMetricComparisonAnalysis({
     });
     const series = trimComparisonSeriesToRange(rawSeries, range);
     seriesByMetric[metricKey] = series;
-    rankingByMetric.set(metricKey, buildComparisonRanking(series));
+  }
+
+  return { metricKeys: normalizedMetricKeys, nodes, seriesByMetric };
+}
+
+export function analyzeMultiMetricComparisonSeries({
+  metricKeys,
+  nodes,
+  seriesByMetric,
+}: ComparisonMultiMetricSeriesInput): ComparisonMultiMetricAnalysis {
+  const normalizedMetricKeys = uniqueMetricKeys(metricKeys);
+  const rankingByMetric = new Map<ComparisonMetricKey, ComparisonRankingRow[]>();
+  for (const metricKey of normalizedMetricKeys) {
+    rankingByMetric.set(metricKey, buildComparisonRanking(seriesByMetric[metricKey] ?? []));
   }
 
   const maxSamplesByMetric = new Map<ComparisonMetricKey, number>();

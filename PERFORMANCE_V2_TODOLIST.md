@@ -19,7 +19,7 @@ tests and a dedicated commit.
 ## L2-2 Rendering and assets
 
 - [x] **L2-201 Suspend invisible card Canvas work and virtualize large fleets**
-- [ ] **L2-202 Move large comparison analysis to a typed-array Worker**
+- [x] **L2-202 Move large comparison analysis to a typed-array Worker**
 - [ ] **L2-203 Pause/scale Fleet 3D and preserve route-only loading**
 - [ ] **L2-204 Meet initial JS/CSS/font/icon bundle budgets**
 
