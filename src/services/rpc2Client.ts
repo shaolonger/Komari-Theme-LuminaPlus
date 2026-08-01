@@ -47,7 +47,7 @@ const MAX_RECONNECT_INTERVAL_MS = 30_000;
 
 // 服务端返回的 JSON-RPC 错误*响应*(请求已送达并被处理),区别于传输失败。调用方不能
 // 把它再用 HTTP 重试,否则服务端会重复处理同一个请求。
-class RpcResponseError extends Error {
+export class RpcResponseError extends Error {
   constructor(
     message: string,
     public readonly code?: number,
@@ -55,6 +55,30 @@ class RpcResponseError extends Error {
     super(message);
     this.name = "RpcResponseError";
   }
+}
+
+// 只有这一类错误表示请求未可靠到达 RPC 服务或未取得响应。上层兼容旧版 REST
+// 接口时必须只捕获该类型，避免把权限、参数、方法不存在和响应结构错误误判成网络故障。
+export class RpcTransportError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "RpcTransportError";
+  }
+}
+
+export class RpcProtocolError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "RpcProtocolError";
+  }
+}
+
+export function isRpcTransportError(error: unknown): error is RpcTransportError {
+  return error instanceof RpcTransportError;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 class RPC2Client {
@@ -88,7 +112,7 @@ class RPC2Client {
       } catch (error) {
         // 只在传输失败时兜底到 HTTP。RPC 错误响应意味着服务端已经处理(并拒绝)了这个
         // 请求,用 HTTP 重试会重复处理并掩盖真正的错误。
-        if (error instanceof RpcResponseError) throw error;
+        if (!isRpcTransportError(error)) throw error;
         return await this.callViaHttp<TParams, TResult>(method, params, options);
       }
     }
@@ -112,7 +136,7 @@ class RPC2Client {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.rejectPendingRequests(new Error("RPC2 client closed"));
+    this.rejectPendingRequests(new RpcTransportError("RPC2 client closed"));
     if (this.ws) {
       this.ws.onclose = null;
       try {
@@ -144,7 +168,7 @@ class RPC2Client {
         } catch {
           /* noop */
         }
-        reject(new Error("RPC2 WebSocket connection timed out"));
+        reject(new RpcTransportError("RPC2 WebSocket connection timed out"));
       }, 10_000);
 
       const cleanup = () => {
@@ -165,7 +189,7 @@ class RPC2Client {
       const handleError = () => {
         cleanup();
         this.state = "error";
-        reject(new Error("RPC2 WebSocket connection failed"));
+        reject(new RpcTransportError("RPC2 WebSocket connection failed"));
       };
 
       // 握手期间的正常关闭(proxy/LB 接受后又断开、WS 层鉴权拒绝)只触发 "close" 不触发
@@ -175,7 +199,7 @@ class RPC2Client {
       const handleConnectClose = () => {
         cleanup();
         this.state = "error";
-        reject(new Error("RPC2 WebSocket closed during connect"));
+        reject(new RpcTransportError("RPC2 WebSocket closed during connect"));
       };
 
       ws.addEventListener("open", handleOpen, { once: true });
@@ -203,7 +227,7 @@ class RPC2Client {
       this.stopHeartbeat();
       this.ws = null;
       this.state = "disconnected";
-      this.rejectPendingRequests(new Error("RPC2 WebSocket disconnected"));
+      this.rejectPendingRequests(new RpcTransportError("RPC2 WebSocket disconnected"));
       this.scheduleReconnect();
     };
 
@@ -239,7 +263,7 @@ class RPC2Client {
     options: RpcCallOptions = {},
   ): Promise<TResult> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("RPC2 WebSocket is not connected");
+      throw new RpcTransportError("RPC2 WebSocket is not connected");
     }
 
     const { signal } = options;
@@ -260,7 +284,7 @@ class RPC2Client {
       const timeout = window.setTimeout(() => {
         cleanup();
         this.pending.delete(id);
-        reject(new Error(`RPC2 request timed out: ${method}`));
+        reject(new RpcTransportError(`RPC2 request timed out: ${method}`));
       }, timeoutMs);
 
       const onAbort = () => {
@@ -295,7 +319,7 @@ class RPC2Client {
       } catch (error) {
         cleanup();
         this.pending.delete(id);
-        reject(error);
+        reject(new RpcTransportError(`RPC2 WebSocket send failed: ${method}`, { cause: error }));
       }
     });
   }
@@ -307,34 +331,50 @@ class RPC2Client {
   ): Promise<TResult> {
     const id = ++this.requestId;
     const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
-    const response = await fetchWithTimeout(
-      this.baseUrl,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(
+        this.baseUrl,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id,
+            method,
+            params,
+          } satisfies JsonRpcRequest<TParams>),
         },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id,
-          method,
-          params,
-        } satisfies JsonRpcRequest<TParams>),
-      },
-      timeoutMs,
-      options.signal,
-    );
+        timeoutMs,
+        options.signal,
+      );
+    } catch (error) {
+      if (options.signal?.aborted || isAbortError(error)) throw error;
+      throw new RpcTransportError(`Request ${this.baseUrl} failed`, { cause: error });
+    }
 
     if (!response.ok) {
-      throw new Error(`Request ${this.baseUrl} failed: ${response.status}`);
+      throw new RpcTransportError(`Request ${this.baseUrl} failed: ${response.status}`);
     }
 
-    const payload = (await response.json()) as JsonRpcResponse<TResult>;
-    if ("error" in payload) {
-      throw new Error(payload.error.message || `RPC Error ${payload.error.code ?? "unknown"}`);
+    let payload: JsonRpcResponse<TResult>;
+    try {
+      payload = (await response.json()) as JsonRpcResponse<TResult>;
+    } catch (error) {
+      throw new RpcProtocolError("RPC2 returned invalid JSON", { cause: error });
     }
+    if ("error" in payload) {
+      throw new RpcResponseError(
+        payload.error.message || `RPC Error ${payload.error.code ?? "unknown"}`,
+        payload.error.code,
+      );
+    }
+
+    if (!("result" in payload)) throw new RpcProtocolError("RPC2 response has no result");
 
     return payload.result;
   }

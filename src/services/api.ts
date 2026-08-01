@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getRpc2Client } from "@/services/rpc2Client";
+import { getRpc2Client, isRpcTransportError } from "@/services/rpc2Client";
 import { requireRpcCapability } from "@/services/rpcCapabilities";
 import type { PingOverviewResult, RealtimeDelta } from "@/generated/rpcContract";
 import {
@@ -347,7 +347,8 @@ export async function getLoadRecords(
       RpcRecordsSchema,
     );
     return normalizeRpcLoadRecords(uuid, payload);
-  } catch {
+  } catch (error) {
+    if (!isRpcTransportError(error)) throw error;
     return (await apiGet(
       `/api/records/load?${new URLSearchParams({ uuid, hours: String(hours) })}`,
       z.object({
@@ -386,7 +387,8 @@ export async function getComparisonLoadRecords({
           RpcRecordsSchema,
         );
         return [uuid, normalizeRpcLoadRecords(uuid, payload).records] as const;
-      } catch {
+      } catch (error) {
+        if (!isRpcTransportError(error)) throw error;
         const fallback = await getLoadRecords(uuid, hours);
         return [uuid, fallback.records] as const;
       }
@@ -413,7 +415,8 @@ export async function getPingRecords(
       RpcRecordsSchema,
     );
     return normalizeRpcPingRecords(uuid, payload);
-  } catch {
+  } catch (error) {
+    if (!isRpcTransportError(error)) throw error;
     return (await apiGet(
       `/api/records/ping?${new URLSearchParams({ uuid, hours: String(hours) })}`,
       z.object({
@@ -524,7 +527,8 @@ export async function getPingOverview(
       { signal: options?.signal },
     );
     return normalizeRpcPingOverview(payload);
-  } catch {
+  } catch (error) {
+    if (!isRpcTransportError(error)) throw error;
     if (taskId == null) {
       throw new Error("Ping overview fallback requires a concrete task_id");
     }

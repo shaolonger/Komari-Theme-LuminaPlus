@@ -14,7 +14,7 @@ tests and a dedicated commit.
 - [x] **L2-102 Replace 2-second full polling with resumable deltas**
 - [x] **L2-103 Replace per-task Ping overview with one set request**
 - [ ] **L2-104 Replace per-node Compare history with one set request**
-- [ ] **L2-105 Restrict fallback to typed transport errors**
+- [x] **L2-105 Restrict fallback to typed transport errors**
 
 ## L2-2 Rendering and assets
 
