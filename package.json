@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:contract": "node scripts/check-rpc-contract.mjs",
     "test:bundle": "npm run build && node scripts/check-performance-budgets.mjs",
+    "test:performance": "node --expose-gc ./node_modules/vitest/vitest.mjs run src/services/__tests__/performanceGate.test.ts src/services/__tests__/apiFallback.test.ts src/workers/__tests__/comparisonAnalysisProtocol.test.ts",
     "test:watch": "vitest",
     "release": "node scripts/release.mjs"
   },

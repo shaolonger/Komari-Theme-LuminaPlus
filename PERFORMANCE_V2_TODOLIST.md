@@ -6,7 +6,7 @@ tests and a dedicated commit.
 ## L2-0 Baseline
 
 - [x] **L2-001 Freeze the V2 design, tests and bundle baseline**
-- [ ] **L2-002 Add RPC request-count, render-time, heap and bundle gates**
+- [x] **L2-002 Add RPC request-count, render-time, heap and bundle gates**
 
 ## L2-1 Contract and data flow
 

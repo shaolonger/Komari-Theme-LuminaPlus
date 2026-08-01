@@ -790,6 +790,100 @@ function commitRealtimeDelta(delta: RealtimeDelta) {
 	}
 }
 
+// Release-gate fixture that runs the exact production delta merge and bounded traffic-ring
+// paths without React or network noise. State is restored before returning, so tests can run
+// 30/300/1000-node matrices and accelerated long soaks in one process.
+export function runRealtimeScaleFixture(nodeCount: number, ticks: number) {
+  const safeNodeCount = Math.max(0, Math.trunc(nodeCount));
+  const safeTicks = Math.max(0, Math.trunc(ticks));
+  const originalState = state;
+  const originalVersion = storeVersion;
+  const order = Array.from({ length: safeNodeCount }, (_, index) => `fixture-${index}`);
+  const metaByUuid: Record<string, NodeInfo> = {};
+  const metricsByUuid: Record<string, NodeMetrics> = {};
+  const trafficTrends: Record<string, NodeTrafficTrend> = {};
+  for (let index = 0; index < safeNodeCount; index += 1) {
+    const uuid = order[index];
+    const meta = {
+      uuid,
+      name: `Fixture ${index}`,
+      group: `g${index % 8}`,
+      region: `r${index % 16}`,
+      hidden: false,
+      mem_total: 2_147_483_648,
+      swap_total: 0,
+      disk_total: 21_474_836_480,
+      weight: index,
+    } as NodeInfo;
+    metaByUuid[uuid] = meta;
+    metricsByUuid[uuid] = emptyMetrics(meta, null);
+    trafficTrends[uuid] = EMPTY_TRAFFIC_TREND;
+  }
+  state = {
+    metaByUuid,
+    metricsByUuid,
+    trafficTrends,
+    order,
+    failureStreak: 0,
+  };
+
+  const startedAt = performance.now();
+  try {
+    for (let tick = 1; tick <= safeTicks; tick += 1) {
+      const reports: Record<string, unknown> = {};
+      for (let index = 0; index < safeNodeCount; index += 1) {
+        reports[order[index]] = {
+          online: true,
+          cpu: (tick + index) % 100,
+          ram: 536_870_912 + ((tick + index) % 128) * 1_048_576,
+          ram_total: 2_147_483_648,
+          disk: 5_368_709_120,
+          disk_total: 21_474_836_480,
+          net_in: tick * 100 + index,
+          net_out: tick * 80 + index,
+          net_total_up: tick * 1_000 + index,
+          net_total_down: tick * 2_000 + index,
+          load: ((tick + index) % 20) / 10,
+          uptime: tick,
+          time: 1_700_000_000 + tick,
+        };
+      }
+      commitRealtimeDelta({
+        sequence: tick,
+        snapshot: tick === 1,
+        reports,
+        online: tick === 1 ? order : undefined,
+      });
+    }
+
+    let maxTrendSamples = 0;
+    let retainedTrendSamples = 0;
+    let checksum = 0;
+    for (const uuid of order) {
+      const trend = state.trafficTrends[uuid];
+      maxTrendSamples = Math.max(maxTrendSamples, (trend?.up.size ?? 0) + (trend?.down.size ?? 0));
+      retainedTrendSamples += (trend?.up.size ?? 0) + (trend?.down.size ?? 0);
+      checksum += state.metricsByUuid[uuid]?.cpuPct ?? 0;
+    }
+    return {
+      nodeCount: state.order.length,
+      ticks: safeTicks,
+      elapsedMs: performance.now() - startedAt,
+      maxTrendSamples,
+      retainedTrendSamples,
+      retainedMetricNodes: Object.keys(state.metricsByUuid).length,
+      checksum,
+    };
+  } finally {
+    state = originalState;
+    storeVersion = originalVersion;
+    visibleNodeUuidsSnapshotVersion = -1;
+    visibleNodeUuidsWithHiddenSnapshotVersion = -1;
+    allNodeMetaSnapshotVersion = -1;
+    homeNodeSummariesSnapshotVersion = -1;
+  }
+}
+
 function waitForRealtimeRetry(signal: AbortSignal, delay: number) {
   return new Promise<void>((resolve) => {
     if (signal.aborted) return resolve();
