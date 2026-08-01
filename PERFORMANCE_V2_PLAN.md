@@ -1,6 +1,6 @@
 # LuminaPlus Performance V2
 
-Status: release gates passing; publication pending
+Status: complete; v1.22.0 release candidate
 
 LuminaPlus keeps React, uPlot, Canvas strips and route-level lazy loading. V2
 removes periodic full-state polling and per-node/task history fan-out by using
