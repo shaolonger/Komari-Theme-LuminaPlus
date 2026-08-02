@@ -120,6 +120,14 @@ class RPC2Client {
     return await this.callViaHttp<TParams, TResult>(method, params, options);
   }
 
+  async callHttp<TParams = Record<string, unknown>, TResult = unknown>(
+    method: string,
+    params?: TParams,
+    options: RpcCallOptions = {},
+  ): Promise<TResult> {
+    return await this.callViaHttp<TParams, TResult>(method, params, options);
+  }
+
   private autoConnect() {
     if (this.closed) return;
     void this.connect().catch(() => {

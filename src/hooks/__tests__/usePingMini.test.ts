@@ -16,10 +16,11 @@ describe("buildHomepagePingOverviewMap", () => {
 
   it("drops a deleted task when its response contains retained records but no task metadata", async () => {
     mockedGetPingOverview.mockResolvedValue({
-	  from: 1_000,
-	  to: 2_000,
+	  from: 1_700_000_000,
+	  to: 1_700_000_100,
       tasks: [],
 	  stats: { "node-a": { "20": { name: "deleted", total: 1, lost: 0, latest: 279, avg: 279, tail: 0, loss: 0, min: 279, max: 279 } } },
+	  series: {},
     });
 
     const result = await buildHomepagePingOverviewMap(
@@ -36,8 +37,8 @@ describe("buildHomepagePingOverviewMap", () => {
 
   it("keeps an active task with its real metadata", async () => {
     mockedGetPingOverview.mockResolvedValue({
-	  from: 1_000,
-	  to: 2_000,
+	  from: 1_700_000_000,
+	  to: 1_700_000_100,
       tasks: [
         {
           id: 3,
@@ -47,6 +48,11 @@ describe("buildHomepagePingOverviewMap", () => {
         },
       ],
 	  stats: { "node-a": { "3": { name: "Cloudflare", total: 60, lost: 3, latest: 42, avg: 40, tail: 0.2, loss: 5, min: 30, max: 80 } } },
+	  series: { "node-a": { "3": [
+	    { time: 1_700_000_000, value: 35, sample_count: 3, loss_count: 0, loss: 0 },
+	    { time: 1_700_000_050, value: 50, sample_count: 3, loss_count: 1, loss: 33.3 },
+	    { time: 1_700_000_100, value: 42, sample_count: 3, loss_count: 0, loss: 0 },
+	  ] } },
     });
 
     const result = await buildHomepagePingOverviewMap(
@@ -61,7 +67,14 @@ describe("buildHomepagePingOverviewMap", () => {
     expect(result.items.get("node-a")).toMatchObject({
       taskIds: [3],
       lastValue: 42,
-      taskSummaries: [expect.objectContaining({ name: "Cloudflare" })],
-    });
+	  taskSummaries: [expect.objectContaining({ name: "Cloudflare" })],
+	  values: [35, 50, 42],
+	});
+	expect(result.items.get("node-a")?.samples).toEqual([
+	  { time: 1_700_000_000_000, value: 35 },
+	  { time: 1_700_000_050_000, value: 50 },
+	  { time: 1_700_000_050_001, value: -1 },
+	  { time: 1_700_000_100_000, value: 42 },
+	]);
   });
 });

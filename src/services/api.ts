@@ -81,6 +81,13 @@ const PingOverviewResultSchema = z.object({
     min: z.number().default(0),
     max: z.number().default(0),
   }))),
+  series: z.record(z.string(), z.record(z.string(), z.array(z.object({
+    time: z.union([z.string(), z.number()]),
+    value: z.number(),
+    sample_count: z.number().default(0),
+    loss_count: z.number().default(0),
+    loss: z.number().default(0),
+  })))).default({}),
 });
 
 const RealtimeDeltaSchema = z.object({
@@ -186,9 +193,11 @@ async function rpcCall<T>(
   method: string,
   params: Record<string, unknown>,
   schema: z.ZodType<T>,
-  options?: { timeout?: number; signal?: AbortSignal },
+  options?: { timeout?: number; signal?: AbortSignal; httpOnly?: boolean },
 ): Promise<T> {
-  const payload = await getRpc2Client().call(method, params, options);
+  const payload = options?.httpOnly
+    ? await getRpc2Client().callHttp(method, params, options)
+    : await getRpc2Client().call(method, params, options);
   const parsed = schema.safeParse(payload);
   if (!parsed.success) {
     throw new Error(
@@ -319,7 +328,7 @@ export async function getRealtimeDelta(
       wait_ms: Math.min(25_000, Math.max(0, Math.trunc(options?.waitMs ?? 25_000))),
     },
     RealtimeDeltaSchema,
-    { timeout: options?.timeout ?? 30_000, signal: options?.signal },
+    { timeout: options?.timeout ?? 30_000, signal: options?.signal, httpOnly: true },
   );
 }
 

@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rpcCall } = vi.hoisted(() => ({ rpcCall: vi.fn() }));
+const { rpcCall, rpcCallHttp } = vi.hoisted(() => ({ rpcCall: vi.fn(), rpcCallHttp: vi.fn() }));
 
 vi.mock("@/services/rpc2Client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/services/rpc2Client")>();
   return {
     ...actual,
-    getRpc2Client: () => ({ call: rpcCall }),
+    getRpc2Client: () => ({ call: rpcCall, callHttp: rpcCallHttp }),
   };
 });
 
@@ -14,17 +14,42 @@ import {
   getComparisonLoadRecords,
   getComparisonPingRecords,
   getLoadRecords,
+  getRealtimeDelta,
 } from "@/services/api";
 import {
   RpcProtocolError,
   RpcResponseError,
   RpcTransportError,
 } from "@/services/rpc2Client";
+import { resetRpcCapabilityCacheForTests } from "@/services/rpcCapabilities";
 
 describe("RPC compatibility fallback", () => {
   beforeEach(() => {
     rpcCall.mockReset();
+    rpcCallHttp.mockReset();
+    resetRpcCapabilityCacheForTests();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps the realtime long poll on HTTP so ordinary WebSocket RPC is never head-of-line blocked", async () => {
+    rpcCall.mockResolvedValueOnce({
+      jsonrpc_version: "2.0",
+      contract: "komari.rpc.v2.4",
+      methods: ["common:getRealtimeDelta"],
+      capabilities: { "realtime.delta": "1", "ping.overview": "2" },
+    });
+    rpcCallHttp.mockResolvedValueOnce({ sequence: 8, snapshot: false, reports: {} });
+
+    const result = await getRealtimeDelta(7, ["node-a"], { waitMs: 25_000 });
+
+    expect(result.sequence).toBe(8);
+    expect(rpcCallHttp).toHaveBeenCalledWith(
+      "common:getRealtimeDelta",
+      expect.objectContaining({ since: 7, wait_ms: 25_000 }),
+      expect.objectContaining({ httpOnly: true }),
+    );
+    expect(rpcCall).toHaveBeenCalledTimes(1);
+    expect(rpcCall).toHaveBeenCalledWith("rpc.discover", {});
   });
 
   it("falls back to legacy HTTP only for a typed transport failure", async () => {

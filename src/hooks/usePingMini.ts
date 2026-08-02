@@ -229,7 +229,7 @@ export async function buildHomepagePingOverviewMap(
     const task: PingTask = {
       ...compactTask,
       loss: 0,
-      clients: normalizedUuids.filter((uuid) => overview.stats[uuid]?.[String(compactTask.id)]),
+      clients: normalizedUuids.filter((uuid) => selectedTaskIdsByClient.get(uuid)?.includes(compactTask.id)),
       target: "",
       weight: compactTask.id,
     };
@@ -237,18 +237,34 @@ export async function buildHomepagePingOverviewMap(
     tasksById.set(task.id, task);
     const taskItems = new Map<string, PingOverviewItem>();
     for (const uuid of normalizedUuids) {
+      if (!selectedTaskIdsByClient.get(uuid)?.includes(task.id)) continue;
       const stat = overview.stats[uuid]?.[String(task.id)];
-      if (!stat) continue;
-      const timestamp = toPingRecordTimestamp(overview.to);
-      const validLatest = isValidPingLatency(stat.latest) ? stat.latest : null;
+      const overviewPoints = overview.series?.[uuid]?.[String(task.id)] ?? [];
+      const samples = overviewPoints.flatMap((point) => {
+        const timestamp = toPingRecordTimestamp(point.time);
+        if (timestamp <= 0) return [];
+        const result: Array<{ time: number; value: number }> = [];
+        if (isValidPingLatency(point.value)) {
+          result.push({ time: timestamp, value: point.value });
+        }
+        if (point.loss_count > 0) {
+          // Keep a loss sentinel next to the bucket's latency point. The
+          // sparkline renders the marker and a visible line break without
+          // discarding the bucket's valid average.
+          result.push({ time: timestamp + 1, value: -1 });
+        }
+        return result;
+      });
+      const values = overviewPoints.map((point) => point.value).filter(isValidPingLatency);
+      const validLatest = stat && isValidPingLatency(stat.latest) ? stat.latest : (values.at(-1) ?? null);
       taskItems.set(uuid, {
         client: uuid,
         isAssigned: true,
         lastValue: validLatest,
-        values: validLatest == null ? [] : [validLatest],
-        samples: validLatest == null || timestamp <= 0 ? [] : [{ time: timestamp, value: validLatest }],
-        max: Math.max(1, stat.max),
-        loss: stat.loss,
+        values,
+        samples,
+        max: Math.max(1, stat?.max ?? 0, ...values),
+        loss: stat?.loss ?? null,
         taskIds: [task.id],
         taskCount: 1,
         taskSummaries: [],

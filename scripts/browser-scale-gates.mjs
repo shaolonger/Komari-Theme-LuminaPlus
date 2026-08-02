@@ -106,9 +106,9 @@ const server = createServer(async (request, response) => {
     if (payload.method === "rpc.discover") {
       result = {
         jsonrpc_version: "2.0",
-        contract: "komari.rpc.v2.3",
+        contract: "komari.rpc.v2.4",
         methods: ["common:getRealtimeDelta", "common:getPingOverview"],
-        capabilities: { "realtime.delta": "1", "ping.overview": "1" },
+        capabilities: { "realtime.delta": "1", "ping.overview": "2" },
       };
     } else if (payload.method === "common:getRealtimeDelta") {
       const since = Number(payload.params?.since ?? 0);
@@ -128,7 +128,21 @@ const server = createServer(async (request, response) => {
       if (!activeFixture.soak && since > 0) await new Promise((resolve) => setTimeout(resolve, 250));
       if (activeFixture.soak && since >= 1_800) await new Promise((resolve) => setTimeout(resolve, 250));
     } else if (payload.method === "common:getPingOverview") {
-      result = { from: 0, to: Date.now(), tasks: [{ id: 1, name: "edge", type: "icmp", interval: 60 }], stats: {} };
+      const to = Math.floor(Date.now() / 1_000);
+      const stats = {};
+      const series = {};
+      for (let index = 0; index < activeFixture.nodes; index += 1) {
+        const uuid = `node-${index}`;
+        stats[uuid] = { "1": { name: "edge", total: 60, lost: 1, latest: 20 + (index % 30), avg: 25, tail: 0.2, loss: 1.67, min: 10, max: 80 } };
+        series[uuid] = { "1": Array.from({ length: 24 }, (_, point) => ({
+          time: to - (23 - point) * 150,
+          value: 20 + ((index + point) % 30),
+          sample_count: 2,
+          loss_count: point === 11 ? 1 : 0,
+          loss: point === 11 ? 50 : 0,
+        })) };
+      }
+      result = { from: to - 3_600, to, tasks: [{ id: 1, name: "edge", type: "icmp", interval: 60 }], stats, series };
     }
     return sendJson(response, { jsonrpc: "2.0", id: payload.id, result });
   }
@@ -243,11 +257,14 @@ try {
     requestCounts.set(run, {});
     await cdp.call("Page.navigate", { url: `http://127.0.0.1:${address.port}/?fixture=${nodes}` });
     await waitUntil(cdp, `document.querySelectorAll('.home-node-card-slot').length === ${nodes}`, budgetMs);
+    await waitUntil(cdp, "document.querySelectorAll('.ping-task-sparkline-line').length > 0", budgetMs);
     const metrics = await cdp.value(`(() => ({
       renderMs: performance.now(),
       cards: document.querySelectorAll('.home-node-card-slot').length,
       canvases: document.querySelectorAll('canvas').length,
       activeCanvases: document.querySelectorAll('canvas[data-render-active="true"]').length,
+      pingTrendLines: document.querySelectorAll('.ping-task-sparkline-line').length,
+      emptyPingTrends: document.querySelectorAll('.ping-task-sparkline-empty').length,
       contentVisibility: getComputedStyle(document.querySelector('.home-node-card-slot')).contentVisibility,
       bodyWidth: document.body.scrollWidth
     }))()`);
@@ -257,6 +274,9 @@ try {
     }
     if (nodes >= 300 && metrics.canvases > 0 && metrics.activeCanvases >= metrics.canvases) {
       throw new Error(`${nodes}-node browser did not suspend offscreen canvases`);
+    }
+    if (metrics.pingTrendLines === 0 || metrics.emptyPingTrends !== 0) {
+      throw new Error(`${nodes}-node Ping trend regression: lines=${metrics.pingTrendLines}, empty=${metrics.emptyPingTrends}`);
     }
     const counts = requestCounts.get(run) ?? {};
     if ((counts.nodes ?? 0) !== 1) throw new Error(`${nodes}-node /api/nodes count=${counts.nodes ?? 0}`);
