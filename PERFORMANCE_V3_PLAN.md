@@ -1,6 +1,6 @@
 # LuminaPlus Performance V3：单请求真实 Ping 趋势
 
-状态：实现完成，目标版本 v1.22.1
+状态：完成，已发布 v1.22.1
 
 本轮修复 Performance V2 集合查询上线后首页卡片出现“暂无趋势”和折线消失的
 回归。问题不是故意牺牲功能换性能，而是 v1.22.0 只消费 `getPingOverview` 的

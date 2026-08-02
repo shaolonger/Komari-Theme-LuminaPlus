@@ -1,6 +1,6 @@
 # LuminaPlus Performance V3 Todo
 
-状态：实现与测试完成，GitHub 发布步骤待执行。
+状态：全部完成。
 
 ## L3-0 契约与正确性
 
@@ -24,4 +24,4 @@
 - [x] **L3-202** 测试 HTTP long-poll 不占用 WebSocket RPC slot
 - [x] **L3-203** browser gate 强制真实趋势线且禁止空趋势
 - [x] **L3-204** 通过 289 项测试、typecheck、lint、contract、bundle、heap 与 scale gate
-- [ ] **L3-205** 版本、提交、推送、tag 与 GitHub Release
+- [x] **L3-205** 版本、提交、推送、tag 与 GitHub Release
